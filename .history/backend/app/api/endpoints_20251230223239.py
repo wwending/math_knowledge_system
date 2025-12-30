@@ -28,7 +28,7 @@ if not os.path.exists(STATIC_DIR):
     os.makedirs(STATIC_DIR, exist_ok=True)
 
 @router.post("/recognize", response_model=OCRResponse)
-def recognize_image(
+async def recognize_image(
     file: UploadFile = File(...), 
     db: Session = Depends(get_db) # <--- 注入数据库会话
 ):
