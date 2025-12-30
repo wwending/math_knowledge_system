@@ -17,11 +17,8 @@ async def lifespan(app: FastAPI):
     # 1. 启动前：加载 AI 模型
     logger.info("🔥 系统正在启动，正在预加载 AI 模型...")
     try:
-        # 并行加载可能导致显存瞬间峰值，这里按顺序加载
-        ocr_service.initialize() # 加载 OCR (Pix2Text)
-        nlp_service.initialize() # 加载 NLP (BERT) <--- 新增
-        
-        logger.success("✅ 所有 AI 模型加载完毕！")
+        ocr_service.initialize() # 这一步会把模型加载到 RTX 2060
+        logger.success("✅ 模型加载完毕，服务就绪！")
     except Exception as e:
         logger.error(f"❌ 模型加载失败: {e}")
     

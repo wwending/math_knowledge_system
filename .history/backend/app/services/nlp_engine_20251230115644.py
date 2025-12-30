@@ -43,8 +43,7 @@ class NLPEngine:
             # device=0 表示使用你的 RTX 2060
             self._classifier = pipeline(
                 "zero-shot-classification", 
-                # 这是一个支持中英混合的超强 Zero-Shot 模型
-                model="MoritzLaurer/mDeBERTa-v3-base-mnli-xnli", 
+                model="joe32140/bert-base-chinese-zero-shot",
                 device=0 
             )
             
