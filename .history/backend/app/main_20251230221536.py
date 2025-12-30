@@ -17,7 +17,9 @@ from app.services.ocr_engine import ocr_service
 from app.core.database import engine, Base
 from app.models import question # 导入模型以确保能被识别
 
-
+# 挂载静态文件目录
+# 这样前端可以通过 /static/images/xxx.jpg 访问后端保存的图片
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # 1. 自动创建表结构 (如果表不存在)
 Base.metadata.create_all(bind=engine)
@@ -48,10 +50,6 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan 
 )
-
-# 挂载静态文件目录
-# 这样前端可以通过 /static/images/xxx.jpg 访问后端保存的图片
-app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # --- 跨域配置 (CORS) ---
 # 允许前端 (Vue/React) 本地开发时的 8080/3000 端口访问这里
