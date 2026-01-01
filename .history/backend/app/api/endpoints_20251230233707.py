@@ -21,11 +21,6 @@ from app.schemas.question import QuestionOut # <--- 新增引入
 from app.api.auth import get_current_user # <--- 引入鉴权依赖
 from app.models.user import User
 
-import fitz # PyMuPDF
-import uuid
-import shutil
-import os
-
 router = APIRouter()
 
 # --- 修改 1: 定义静态资源目录 (永久存储) ---
@@ -144,7 +139,6 @@ def get_history(
     查询历史上传的题目 (按时间倒序)
     """
     query = db.query(Question)
-    
     # 权限控制逻辑
     if current_user.role != "admin":
         # 普通用户只能看自己的
@@ -154,59 +148,3 @@ def get_history(
     
     questions = query.order_by(Question.created_at.desc()).offset(skip).limit(limit).all()
     return questions
-
-@router.post("/upload_pdf")
-def upload_pdf(
-    file: UploadFile = File(...),
-    current_user: User = Depends(get_current_user) # 只有登录用户可以用
-):
-    # 1. 验证是否为 PDF
-    if not file.content_type.endswith("pdf"):
-        raise HTTPException(status_code=400, detail="请上传 PDF 文件")
-
-    # 2. 准备目录
-    pdf_temp_dir = os.path.join("static", "pdf_temp")
-    if not os.path.exists(pdf_temp_dir):
-        os.makedirs(pdf_temp_dir)
-
-    # 3. 保存 PDF 原文件
-    file_ext = file.filename.split(".")[-1]
-    pdf_filename = f"{uuid.uuid4()}.{file_ext}"
-    pdf_path = os.path.join(pdf_temp_dir, pdf_filename)
-    
-    with open(pdf_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-
-    # 4. 核心逻辑: PDF -> 图片列表
-    image_urls = []
-    try:
-        doc = fitz.open(pdf_path) # 打开 PDF
-        # 遍历每一页
-        for i in range(len(doc)):
-            page = doc.load_page(i)
-            # 设置缩放矩阵 (2.0 表示 2 倍清晰度，OCR 需要高清图)
-            mat = fitz.Matrix(2.0, 2.0)
-            pix = page.get_pixmap(matrix=mat)
-            
-            # 保存图片
-            page_img_name = f"{pdf_filename}_page_{i}.jpg"
-            page_img_path = os.path.join(pdf_temp_dir, page_img_name)
-            pix.save(page_img_path)
-            
-            # 记录相对路径供前端访问
-            image_urls.append(f"images/pdf_temp/{page_img_name}") # 注意这里路径要对应 mount 配置
-            
-        doc.close()
-        
-        # 修正返回路径: 我们的 static mount 在 /static
-        # 所以前端访问应该是 http://host/static/pdf_temp/xxx.jpg
-        # 这里返回相对路径: pdf_temp/xxx.jpg
-        return {
-            "success": True, 
-            "total_pages": len(image_urls), 
-            "images": [f"pdf_temp/{os.path.basename(p)}" for p in image_urls]
-        }
-
-    except Exception as e:
-        logger.error(f"PDF 处理失败: {e}")
-        raise HTTPException(status_code=500, detail="PDF 解析失败")

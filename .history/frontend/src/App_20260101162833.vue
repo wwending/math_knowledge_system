@@ -446,33 +446,17 @@ const renderedContent = computed(() => {
 </script>
 
 <style>
-/* === 🚨 强制重置根节点 (解决右侧留白问题的核心) === */
-#app {
-  max-width: none !important;
-  margin: 0 !important;
-  padding: 0 !important;
-  text-align: left !important;
-  width: 100vw !important;
-  height: 100vh !important;
-}
-/* === 全局重置 (关键) === */
-html, body, #app {
-  margin: 0;
-  padding: 0;
-  width: 100%;
-  height: 100%;
-  font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
-  background: #f0f2f5;
-  overflow: hidden; /* 禁止整个页面出现滚动条 */
-}
-
-/* 确保所有元素不因为 padding/border 撑大 */
+/* === 关键修复 1: 全局盒模型设置 === */
+/* 确保 padding 和 border 不会额外增加元素宽度，解决布局挤压问题 */
 *, *::before, *::after {
   box-sizing: border-box;
 }
 
-/* === 登录页样式 === */
-.login-container { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); }
+/* Reset */
+body, html, #app { margin: 0; padding: 0; width: 100%; height: 100%; font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif; background: #f0f2f5; overflow: hidden; }
+
+/* 登录页全屏样式 (保持不变) */
+.login-container { width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); }
 .login-content { display: flex; width: 900px; height: 500px; background: white; border-radius: 20px; box-shadow: 0 20px 40px rgba(0,0,0,0.1); overflow: hidden; }
 .login-left { flex: 1; background: #3b82f6; padding: 40px; color: white; display: flex; flex-direction: column; justify-content: center; position: relative; }
 .login-left h1 { font-size: 32px; margin-bottom: 10px; line-height: 1.2; }
@@ -483,27 +467,11 @@ html, body, #app {
 .login-btn { width: 100%; height: 44px; font-size: 16px; margin-top: 10px; background: linear-gradient(to right, #3b82f6, #2563eb); border: none; }
 .login-footer { margin-top: 20px; text-align: center; }
 
-/* === 主界面布局 (Flex 纵向) === */
-.main-layout {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  background: #f5f7fa;
-}
+/* 主布局 */
+.main-layout { width: 100vw; height: 100vh; display: flex; flex-direction: column; background: #f5f7fa; }
 
-/* === 顶部导航 === */
-.app-header {
-  height: 60px;
-  background: white;
-  border-bottom: 1px solid #e5e7eb;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 24px;
-  flex-shrink: 0; /* 防止被压缩 */
-  z-index: 10;
-}
+/* 顶部 Header */
+.app-header { height: 60px; background: white; border-bottom: 1px solid #e5e7eb; display: flex; align-items: center; justify-content: space-between; padding: 0 24px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); z-index: 10; flex-shrink: 0; }
 .header-left { display: flex; align-items: center; gap: 12px; }
 .logo-box { width: 36px; height: 36px; background: #eff6ff; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 20px; }
 .app-title h3 { margin: 0; font-size: 18px; color: #1f2937; }
@@ -511,82 +479,47 @@ html, body, #app {
 .header-right { display: flex; align-items: center; gap: 16px; }
 .username { font-weight: 500; color: #374151; }
 
-/* === 内容区域 === */
-.app-content {
-  flex: 1; /* 占据剩余高度 */
-  padding: 16px;
-  overflow: hidden; /* 防止内容溢出导致整体滚动 */
-  position: relative;
-}
-
-/* Tabs 容器撑满 */
-.full-height-tabs {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  border: none;
-  box-shadow: 0 4px 6px rgba(0,0,0,0.02);
-  border-radius: 12px;
-  overflow: hidden;
-  background: white;
-}
-.full-height-tabs .el-tabs__header { margin: 0; padding: 0 20px; border-bottom: 1px solid #f0f0f0; background: #fff; flex-shrink: 0; }
-.full-height-tabs .el-tabs__content { flex: 1; padding: 0 !important; overflow: hidden; position: relative; }
-/* 强制 Tab Pane 撑满 */
+/* 主内容区 */
+.app-content { flex: 1; padding: 16px; overflow: hidden; position: relative; }
+.full-height-tabs { height: 100%; display: flex; flex-direction: column; border: none; box-shadow: 0 4px 6px rgba(0,0,0,0.02); border-radius: 12px; overflow: hidden; }
+.full-height-tabs .el-tabs__header { margin: 0; background: #fff; padding: 0 20px; border-bottom: 1px solid #f0f0f0; flex-shrink: 0; }
+.full-height-tabs .el-tabs__content { flex: 1; padding: 0 !important; overflow: hidden; display: flex; position: relative; }
+/* === 关键修复 2: 确保 Tab 内容子元素撑满容器 === */
 .full-height-tabs .el-tabs__content > .el-tab-pane { width: 100%; height: 100%; }
-
 .custom-tab-label { display: flex; align-items: center; gap: 6px; padding: 10px 0; }
 
-/* === 工作台 (左右布局核心) === */
-.workspace-pane { width: 100%; height: 100%; display: flex; flex-direction: column; }
-.workspace-grid {
+/* Workspace 左右分栏 */
+.workspace-pane {
+  width: 100%; /* 显式设置宽度 */
+  height: 100%; /* 显式设置高度 */
   display: flex;
-  height: 100%;
-  width: 100%;
-  overflow: hidden;
+  flex-direction: column;
 }
+.workspace-grid { display: flex; height: 100%; width: 100%; }
 
-/* 左侧面板：固定宽度 */
+/* 左侧面板 */
 .panel-left {
-  width: 450px;       /* 设定固定宽度，操作更舒适 */
-  flex: 0 0 450px;    /* 禁止伸缩，保持固定 */
+  width: 40%;
   background: #f9fafb;
   border-right: 1px solid #e5e7eb;
   display: flex;
   flex-direction: column;
-  z-index: 2;
+  flex-shrink: 0; /* 防止宽度被压缩 */
 }
-
-/* 右侧面板：自动填满剩余空间 */
+/* 右侧面板 */
 .panel-right {
-  flex: 1;            /* 自动占据剩余宽度 */
-  width: 0;           /* 【关键 Hack】强制 Flex 子元素宽度计算不溢出 */
-  min-width: 0;       /* 防止内部长文本撑破容器 */
+  width: 60%;
   background: white;
   display: flex;
   flex-direction: column;
-  position: relative;
+  flex-shrink: 0; /* 防止宽度被压缩 */
 }
 
-.panel-header {
-  height: 50px;
-  padding: 0 20px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-bottom: 1px solid #e5e7eb;
-  background: #fff;
-  flex-shrink: 0;
-}
+.panel-header { height: 50px; padding: 0 20px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #e5e7eb; background: #fff; flex-shrink: 0; }
 .panel-header .title { font-weight: 600; color: #374151; font-size: 14px; }
-.panel-body {
-  flex: 1;
-  padding: 20px;
-  overflow-y: auto;   /* 内部独立滚动 */
-  overflow-x: hidden;
-}
+.panel-body { flex: 1; padding: 20px; overflow-y: auto; overflow-x: hidden; /* 防止出现水平滚动条 */ }
 
-/* 上传样式 */
+/* 上传样式优化 (保持不变) */
 .upload-wrapper { display: flex; flex-direction: column; height: 100%; }
 .upload-box .el-upload-dragger { width: 100%; border: 2px dashed #d1d5db; background: #f9fafb; transition: all 0.3s; }
 .upload-box.mini .el-upload-dragger { height: 80px; padding: 20px; }
@@ -594,21 +527,21 @@ html, body, #app {
 .single-preview { max-height: 300px; width: auto; }
 .action-btn { margin-top: auto; width: 100%; margin-top: 20px; font-weight: 600; letter-spacing: 1px; flex-shrink: 0; }
 
-/* PDF 网格 */
+/* PDF 网格 - Pro (保持不变) */
 .pdf-list-container { margin-top: 20px; flex: 1; overflow-y: auto; padding-right: 5px; }
 .grid-layout { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 12px; }
 .pdf-card { aspect-ratio: 3/4; background: #e5e7eb; border-radius: 8px; overflow: hidden; position: relative; cursor: pointer; border: 2px solid transparent; transition: all 0.2s; }
 .pdf-card:hover { border-color: #3b82f6; transform: translateY(-2px); box-shadow: 0 4px 12px rgba(59,130,246,0.2); }
 .pdf-card .el-image { width: 100%; height: 100%; }
-.pdf-overlay { position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,0.7); color: white; font-size: 10px; padding: 4px; text-align: center; }
+.pdf-overlay { position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,0.7); color: white; font-size: 10px; padding: 4px; text-align: center; display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; }
 
-/* 结果区样式 */
+/* 结果区样式 (保持不变) */
 .knowledge-card { background: linear-gradient(to right, #eff6ff, #fff); padding: 15px; border-radius: 8px; border: 1px solid #dbeafe; margin-bottom: 20px; flex-shrink: 0; }
 .k-title { font-size: 12px; font-weight: 700; color: #2563eb; margin-bottom: 8px; text-transform: uppercase; }
 .k-tags { display: flex; gap: 8px; flex-wrap: wrap; }
-.markdown-content { font-size: 15px; line-height: 1.7; color: #1f2937; background: #fff; padding: 20px; border-radius: 8px; }
+.markdown-content { font-size: 15px; line-height: 1.7; color: #1f2937; background: #fff; padding: 20px; border-radius: 8px; overflow-x: auto; /* 允许 Markdown 内容横向滚动 */ }
 
-/* 历史记录 */
+/* 历史记录瀑布流 (保持不变) */
 .history-pane { width: 100%; height: 100%; display: flex; flex-direction: column; }
 .history-toolbar { padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #f0f0f0; flex-shrink: 0; }
 .history-waterfall { flex: 1; overflow-y: auto; padding: 20px; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 20px; align-content: start; }
@@ -623,11 +556,11 @@ html, body, #app {
 .h-text { font-size: 13px; color: #4b5563; margin-bottom: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .h-date { font-size: 11px; color: #9ca3af; }
 
-/* 裁剪弹窗 */
+/* 裁剪弹窗 (保持不变) */
 .cropper-view { height: 60vh; background: #1f2937; display: flex; align-items: center; justify-content: center; }
 .cropper-view img { max-width: 100%; max-height: 100%; }
 
-/* 滚动条美化 */
+/* 滚动条美化 (保持不变) */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }

@@ -446,15 +446,6 @@ const renderedContent = computed(() => {
 </script>
 
 <style>
-/* === 🚨 强制重置根节点 (解决右侧留白问题的核心) === */
-#app {
-  max-width: none !important;
-  margin: 0 !important;
-  padding: 0 !important;
-  text-align: left !important;
-  width: 100vw !important;
-  height: 100vh !important;
-}
 /* === 全局重置 (关键) === */
 html, body, #app {
   margin: 0;

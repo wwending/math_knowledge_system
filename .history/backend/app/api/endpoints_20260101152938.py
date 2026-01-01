@@ -22,9 +22,6 @@ from app.api.auth import get_current_user # <--- 引入鉴权依赖
 from app.models.user import User
 
 import fitz # PyMuPDF
-import uuid
-import shutil
-import os
 
 router = APIRouter()
 
