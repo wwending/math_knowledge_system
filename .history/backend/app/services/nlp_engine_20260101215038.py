@@ -60,53 +60,41 @@ class NLPEngine:
             logger.error(f"NLP 模型加载失败: {e}")
             # 如果 GPU 显存不够，可以尝试设为 device=-1 (使用 CPU)
             raise e
-        
-    # --- 🆕 新增：文本清洗与整形核心逻辑 ---
-    def clean_text(self, text: str) -> str:
-        if not text:
-            return ""
-        
-        # 1. 基础清洗：去除多余空格，统一标点
-        text = text.strip()
-        text = text.replace("（", "(").replace("）", ")") # 统一括号
-        
-        # 2. 修复常见 OCR 公式错误 (Pix2Text 特有怪癖修复)
-        # 比如把 $ x $ 变成 $x$ (去空格)
-        # text = re.sub(r'\$\s+(.*?)\s+\$', r'$\1$', text)
-        
-        # 3. 核心功能：选择题自动排版 (识别 A. B. C. D.)
-        # 逻辑：找到 A. xxx B. xxx，在它们前面加换行符
-        patterns = [
-            (r'(?<!\n)\s*(A\.|A\、|\(A\))', r'\n\n**A.** '),
-            (r'(?<!\n)\s*(B\.|B\、|\(B\))', r'\n\n**B.** '),
-            (r'(?<!\n)\s*(C\.|C\、|\(C\))', r'\n\n**C.** '),
-            (r'(?<!\n)\s*(D\.|D\、|\(D\))', r'\n\n**D.** '),
-        ]
-        for pattern, replacement in patterns:
-            text = re.sub(pattern, replacement, text)
 
-        return text
+    def classify(self, text: str) -> dict:
+        """
+        输入题目文本，输出可能性最高的前 3 个知识点
+        """
+        if not text or len(text.strip()) < 5:
+            return {"top_label": "未知", "scores": {}}
 
-    def analyze(self, text: str):
-        # 1. 先清洗文本
-        clean_content = self.clean_text(text)
+        if self._classifier is None:
+            self.initialize()
+
+        # 1. 文本截断：如果题目太长，只取前 512 个字 (BERT 的限制)
+        safe_text = text[:512]
+
+        # 2. 推理
+        # multi_label=True 允许一道题属于多个知识点 (比如既是函数又是导数)
+        result = self._classifier(
+            safe_text, 
+            self.LABELS, 
+            multi_label=True
+        )
+
+        # 3. 格式化结果
+        # result['labels'] 是按概率从高到低排序的
+        # result['scores'] 是对应的概率值
         
-        # 2. 再做分类
-        labels = ["函数与导数", "三角函数", "数列", "平面向量", "立体几何", "解析几何", "概率统计", "集合与逻辑"]
-        try:
-            if self.classifier:
-                result = self.classifier(clean_content, labels, multi_label=True)
-                # 过滤置信度 > 0.3 的
-                tags = [{"label": l, "score": s} for l, s in zip(result['labels'], result['scores']) if s > 0.3]
-            else:
-                tags = []
-        except:
-            tags = []
-
-        # 3. 返回清洗后的文本 (content) 和 标签
+        top_labels = result['labels'][:3] # 取前三名
+        top_scores = result['scores'][:3]
+        
         return {
-            "corrected_text": clean_content, # 返回清洗后的版本
-            "tags": tags
+            "top_label": top_labels[0], # 概率最高的那个
+            "all_predictions": [
+                {"label": l, "score": round(s, 3)} 
+                for l, s in zip(top_labels, top_scores)
+            ]
         }
 
 # 单例导出

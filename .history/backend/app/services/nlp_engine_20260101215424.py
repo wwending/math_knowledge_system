@@ -72,7 +72,7 @@ class NLPEngine:
         
         # 2. 修复常见 OCR 公式错误 (Pix2Text 特有怪癖修复)
         # 比如把 $ x $ 变成 $x$ (去空格)
-        # text = re.sub(r'\$\s+(.*?)\s+\$', r'$\1$', text)
+        text = re.sub(r'\$\s+(.*?)\s+\$', r'$\1$', text)
         
         # 3. 核心功能：选择题自动排版 (识别 A. B. C. D.)
         # 逻辑：找到 A. xxx B. xxx，在它们前面加换行符

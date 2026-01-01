@@ -342,11 +342,6 @@ import { ElMessage } from 'element-plus'
 
 import { Files, ArrowRight } from '@element-plus/icons-vue'
 
-import MarkdownIt from 'markdown-it'
-import mk from 'markdown-it-katex'
-
-import 'katex/dist/katex.min.css'
-
 // === 全局配置 ===
 const API_BASE = 'http://127.0.0.1:8000/api/v1'
 
@@ -382,16 +377,6 @@ const currentCropImage = ref('')
 const cropperImgRef = ref(null)
 let cropperInstance = null
 
-// 初始化 Markdown 渲染器
-const md = new MarkdownIt({
-  html: true,       // 允许 HTML 标签
-  breaks: true,     // 转换换行符为 <br>
-  linkify: true     // 自动识别链接
-})
-
-// 使用 Katex 插件
-md.use(mk)
-
 // === 生命周期 ===
 onMounted(() => {
   if (token.value) {
@@ -406,21 +391,6 @@ axios.interceptors.request.use((config) => {
   if (token.value) config.headers.Authorization = `Bearer ${token.value}`
   return config
 }, (error) => Promise.reject(error))
-
-// ⬇️⬇️⬇️ 新增：Response 拦截器 (自动处理 401) ⬇️⬇️⬇️
-axios.interceptors.response.use(
-  (response) => response, // 请求成功，直接放行
-  (error) => {
-    // 如果后端返回 401 (未授权)
-    if (error.response && error.response.status === 401) {
-      console.warn("登录过期，自动退出")
-      logout() // 触发退出逻辑 (清空 Token + localStorage)
-      ElMessage.error('身份验证失效，请重新登录')
-    }
-    return Promise.reject(error)
-  }
-)
-// ⬆️⬆️⬆️ 新增结束 ⬆️⬆️⬆️
 
 // === 认证逻辑 ===
 const handleAuth = async () => {
@@ -508,7 +478,9 @@ const openDetail = (item) => {
 // === 新增：详情页的渲染计算属性 ===
 const detailRenderedContent = computed(() => {
   if (!currentDetailItem.value || !currentDetailItem.value.content) return '暂无文本内容'
-  return md.render(currentDetailItem.value.content)
+  let t = currentDetailItem.value.content.replace(/\n/g, '<br>')
+  try { t = t.replace(/\$([^$]+)\$/g, (m, f) => katex.renderToString(f, {throwOnError: false})) } catch(e){}
+  return t
 })
 
 const handleFileChange = (f) => {
@@ -588,9 +560,10 @@ const clearResult = () => {
 // === 工具 ===
 const formatDate = (s) => new Date(s).toLocaleDateString()
 const renderedContent = computed(() => {
-  if (!ocrResult.value) return ''
-  // Markdown 渲染
-  return md.render(ocrResult.value)
+  if(!ocrResult.value) return ''
+  let t = ocrResult.value.replace(/\n/g, '<br>')
+  try { t = t.replace(/\$([^$]+)\$/g, (m, f) => katex.renderToString(f, {throwOnError: false})) } catch(e){}
+  return t
 })
 </script>
 
@@ -886,34 +859,4 @@ html, body, #app {
 .detail-text-area { font-size: 18px; line-height: 1.8; padding: 10px; background: #fafafa; border-radius: 8px; min-height: 100px; }
 .detail-image-area { text-align: center; margin-top: 20px; }
 .detail-image-area .el-image { max-height: 400px; }
-
-/* Markdown 内容样式优化 */
-.markdown-body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-  font-size: 16px;
-  line-height: 1.8;
-  color: #24292e;
-}
-
-.markdown-body p {
-  margin-bottom: 16px;
-}
-
-/* 选项加粗样式 */
-.markdown-body strong {
-  color: #409EFF; /* 选项 A. B. C. D. 显示为蓝色 */
-  font-weight: bold;
-}
-
-/* 公式样式微调 */
-.katex {
-  font-size: 1.1em; /* 公式稍微大一点点 */
-}
-
-/* 遇到超长公式允许横向滚动 */
-.markdown-body .katex-display {
-  overflow-x: auto;
-  overflow-y: hidden;
-  padding: 10px 0;
-}
 </style>

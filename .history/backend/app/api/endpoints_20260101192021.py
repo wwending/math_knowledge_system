@@ -160,8 +160,6 @@ def get_all_tags(
 def get_history(
     skip: int = 0, 
     limit: int = 100, 
-    keyword: str = None, # 新增搜索关键词
-    tag: str = None,     # 新增标签筛选
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user) # <--- 必须登录
 ):
@@ -176,22 +174,9 @@ def get_history(
         query = query.filter(Question.owner_id == current_user.id)
     
     # 如果是 admin，默认看到所有 (query 不变)
-
-    # --- 核心筛选逻辑 ---
-    # 1. 关键词搜索 (搜索内容)
-    if keyword:
-        query = query.filter(Question.content.like(f"%{keyword}%"))
     
-    # 2. 标签筛选 (因为是 JSON 存的，这里用简单的字符串匹配做 Hack)
-    # 标准做法应该用 JSON 查询，但 SQLite 对此支持有限，这样最稳妥
-    if tag:
-        # 匹配 JSON 字符串中包含该 tag 的记录
-        query = query.filter(Question.knowledge_tags.like(f'%{tag}%'))
-    
-    # 按时间倒序
     questions = query.order_by(Question.created_at.desc()).offset(skip).limit(limit).all()
     return questions
-    
 
 @router.post("/upload_pdf")
 def upload_pdf(

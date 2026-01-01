@@ -342,11 +342,6 @@ import { ElMessage } from 'element-plus'
 
 import { Files, ArrowRight } from '@element-plus/icons-vue'
 
-import MarkdownIt from 'markdown-it'
-import mk from 'markdown-it-katex'
-
-import 'katex/dist/katex.min.css'
-
 // === 全局配置 ===
 const API_BASE = 'http://127.0.0.1:8000/api/v1'
 
@@ -382,16 +377,6 @@ const currentCropImage = ref('')
 const cropperImgRef = ref(null)
 let cropperInstance = null
 
-// 初始化 Markdown 渲染器
-const md = new MarkdownIt({
-  html: true,       // 允许 HTML 标签
-  breaks: true,     // 转换换行符为 <br>
-  linkify: true     // 自动识别链接
-})
-
-// 使用 Katex 插件
-md.use(mk)
-
 // === 生命周期 ===
 onMounted(() => {
   if (token.value) {
@@ -406,21 +391,6 @@ axios.interceptors.request.use((config) => {
   if (token.value) config.headers.Authorization = `Bearer ${token.value}`
   return config
 }, (error) => Promise.reject(error))
-
-// ⬇️⬇️⬇️ 新增：Response 拦截器 (自动处理 401) ⬇️⬇️⬇️
-axios.interceptors.response.use(
-  (response) => response, // 请求成功，直接放行
-  (error) => {
-    // 如果后端返回 401 (未授权)
-    if (error.response && error.response.status === 401) {
-      console.warn("登录过期，自动退出")
-      logout() // 触发退出逻辑 (清空 Token + localStorage)
-      ElMessage.error('身份验证失效，请重新登录')
-    }
-    return Promise.reject(error)
-  }
-)
-// ⬆️⬆️⬆️ 新增结束 ⬆️⬆️⬆️
 
 // === 认证逻辑 ===
 const handleAuth = async () => {
@@ -508,7 +478,9 @@ const openDetail = (item) => {
 // === 新增：详情页的渲染计算属性 ===
 const detailRenderedContent = computed(() => {
   if (!currentDetailItem.value || !currentDetailItem.value.content) return '暂无文本内容'
-  return md.render(currentDetailItem.value.content)
+  let t = currentDetailItem.value.content.replace(/\n/g, '<br>')
+  try { t = t.replace(/\$([^$]+)\$/g, (m, f) => katex.renderToString(f, {throwOnError: false})) } catch(e){}
+  return t
 })
 
 const handleFileChange = (f) => {
@@ -588,9 +560,10 @@ const clearResult = () => {
 // === 工具 ===
 const formatDate = (s) => new Date(s).toLocaleDateString()
 const renderedContent = computed(() => {
-  if (!ocrResult.value) return ''
-  // Markdown 渲染
-  return md.render(ocrResult.value)
+  if(!ocrResult.value) return ''
+  let t = ocrResult.value.replace(/\n/g, '<br>')
+  try { t = t.replace(/\$([^$]+)\$/g, (m, f) => katex.renderToString(f, {throwOnError: false})) } catch(e){}
+  return t
 })
 </script>
 
@@ -781,139 +754,4 @@ html, body, #app {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
-
-/* === 题库布局 === */
-.bank-pane { width: 100%; height: 100%; display: flex; flex-direction: column; }
-.bank-container { display: flex; width: 100%; height: 100%; background: #f5f7fa; }
-
-/* 左侧侧边栏 */
-.bank-sidebar {
-  width: 240px;
-  background: white;
-  border-right: 1px solid #e5e7eb;
-  display: flex;
-  flex-direction: column;
-  flex-shrink: 0;
-}
-.sidebar-header {
-  height: 50px;
-  display: flex;
-  align-items: center;
-  padding: 0 20px;
-  font-weight: 600;
-  color: #374151;
-  border-bottom: 1px solid #f0f0f0;
-  gap: 8px;
-}
-.tag-list { flex: 1; overflow-y: auto; padding: 10px; }
-.tag-item {
-  padding: 10px 15px;
-  margin-bottom: 4px;
-  border-radius: 6px;
-  cursor: pointer;
-  color: #606266;
-  font-size: 14px;
-  transition: all 0.2s;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.tag-item:hover { background: #f0f7ff; color: #409EFF; }
-.tag-item.active { background: #ecf5ff; color: #409EFF; font-weight: 500; }
-.dot { width: 6px; height: 6px; border-radius: 50%; background: #dcdfe6; }
-.tag-item.active .dot { background: #409EFF; }
-.dot.all { background: #909399; }
-
-/* 右侧主区域 */
-.bank-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-
-/* 筛选栏 */
-.filter-bar {
-  height: 60px;
-  background: white;
-  border-bottom: 1px solid #e5e7eb;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 20px;
-  flex-shrink: 0;
-}
-.search-input { width: 300px; }
-.filter-right { display: flex; align-items: center; gap: 15px; color: #909399; font-size: 13px; }
-
-/* 题目列表 */
-.question-list {
-  flex: 1;
-  overflow-y: auto;
-  padding: 20px;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 20px;
-  align-content: start;
-}
-
-/* 题目卡片 */
-.q-card {
-  background: white;
-  border-radius: 8px;
-  border: 1px solid #ebeef5;
-  padding: 15px;
-  cursor: pointer;
-  transition: all 0.2s;
-  display: flex;
-  flex-direction: column;
-  height: 180px;
-}
-.q-card:hover { transform: translateY(-4px); box-shadow: 0 8px 16px rgba(0,0,0,0.08); border-color: #c6e2ff; }
-.q-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
-.q-date { font-size: 12px; color: #c0c4cc; }
-.q-body-preview {
-  flex: 1;
-  font-size: 14px;
-  color: #303133;
-  line-height: 1.5;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  margin-bottom: 10px;
-}
-.q-footer { display: flex; justify-content: space-between; align-items: center; border-top: 1px dashed #f0f0f0; padding-top: 10px; }
-.q-thumb { width: 40px; height: 40px; border-radius: 4px; border: 1px solid #f0f0f0; }
-
-/* 详情弹窗 */
-.detail-text-area { font-size: 18px; line-height: 1.8; padding: 10px; background: #fafafa; border-radius: 8px; min-height: 100px; }
-.detail-image-area { text-align: center; margin-top: 20px; }
-.detail-image-area .el-image { max-height: 400px; }
-
-/* Markdown 内容样式优化 */
-.markdown-body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-  font-size: 16px;
-  line-height: 1.8;
-  color: #24292e;
-}
-
-.markdown-body p {
-  margin-bottom: 16px;
-}
-
-/* 选项加粗样式 */
-.markdown-body strong {
-  color: #409EFF; /* 选项 A. B. C. D. 显示为蓝色 */
-  font-weight: bold;
-}
-
-/* 公式样式微调 */
-.katex {
-  font-size: 1.1em; /* 公式稍微大一点点 */
-}
-
-/* 遇到超长公式允许横向滚动 */
-.markdown-body .katex-display {
-  overflow-x: auto;
-  overflow-y: hidden;
-  padding: 10px 0;
-}
 </style>

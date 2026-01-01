@@ -85,36 +85,50 @@ class OCREngine:
 
     
 
-    def recognize(self, image_path: str):
-        if not self.p2t:
-            raise RuntimeError("OCR 服务未初始化")
-        
-        if not os.path.exists(image_path):
-            return {"success": False, "error": "文件不存在", "content": ""}
+    def recognize(self, image_path: str) -> dict:
+        """
+        核心识别方法
+        :param image_path: 图片的本地路径
+        :return: 包含 markdown 文本和耗时的字典
+        """
+        if self._model is None:
+            # 防止忘记初始化
+            self.initialize()
+
+        logger.info(f"开始识别图片: {image_path}")
+        start_time = time.time()
 
         try:
-            logger.info(f"开始识别图片: {image_path}")
+            # 核心调用: recognize_text
+            # resized_shape=600 是一个平衡点，图片太大显存会爆，太小识别不清
+            result = self._model.recognize_text(
+                image_path,
+                resized_shape=1024,
+                file_type='text_formula', # 混合模式：文字+公式
+                save_analysis_res=None    # 不保存中间结果图片
+            )
             
-            # ⚡️ 关键优化 2: 使用预处理后的图片对象，而不是路径
-            processed_img = self.preprocess_image(image_path)
+            # Pix2Text 的返回值通常是一个字符串（Markdown格式）
+            # 注意：不同版本返回值结构可能略有不同，这里假设返回的是字符串
+            # 如果是列表，我们将其拼接
+            if isinstance(result, list):
+                markdown_content = "\n".join([item.get('text', '') for item in result])
+            elif isinstance(result, dict):
+                 markdown_content = result.get('text', '')
+            else:
+                markdown_content = str(result)
 
-            # 调用 Pix2Text 识别
-            # resized_shape在这也可以传，但我们在初始化时配置更好
-            result = self.p2t.recognize(processed_img)
-
-            final_content = result
-            logger.info(f"识别完成 (长度: {len(final_content)})")
-            logger.debug(f"原始 OCR 结果:\n{final_content}")
+            cost = time.time() - start_time
+            logger.info(f"识别结束，耗时: {cost:.2f}s")
 
             return {
                 "success": True,
-                "content": final_content,
-                "raw_result": result, 
-                "cost_seconds": 0.0 
+                "content": markdown_content,
+                "cost_seconds": round(cost, 3)
             }
 
         except Exception as e:
-            logger.error(f"识别过程出错: {e}")
+            logger.error(f"识别过程中发生错误: {e}")
             return {
                 "success": False,
                 "error": str(e),
