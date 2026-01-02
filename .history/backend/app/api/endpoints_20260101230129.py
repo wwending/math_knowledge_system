@@ -17,12 +17,6 @@ from app.models.user import User
 from app.api.auth import get_current_user
 from sqlalchemy import or_
 
-from pydantic import BaseModel
-
-# 定义一个简单的接收数据的模型
-class QuestionUpdate(BaseModel):
-    content: str
-
 # 定义 API 路由对象
 router = APIRouter()
 
@@ -45,28 +39,6 @@ def get_all_tags(
                      unique_tags.add(tag_obj.label)
     
     return sorted(list(unique_tags))
-
-@router.put("/questions/{question_id}")
-def update_question(
-    question_id: int,
-    question_update: QuestionUpdate,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    # 查找题目
-    q = db.query(Question).filter(Question.id == question_id).first()
-    if not q:
-        raise HTTPException(status_code=404, detail="题目不存在")
-    
-    # 权限检查 (只能改自己的，或者是管理员)
-    if q.owner_id != current_user.id and current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="无权修改")
-    
-    # 更新内容
-    q.content = question_update.content
-    db.commit()
-    db.refresh(q)
-    return {"success": True, "msg": "更新成功"}
 
 # --- 修改：get_history 支持筛选 ---
 # 记得引入 from app.schemas.question import QuestionOut (如果你把 schema 分离了的话)

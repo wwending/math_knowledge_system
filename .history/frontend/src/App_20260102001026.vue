@@ -973,16 +973,18 @@ html, body, #app {
 
 /* Markdown 内容样式优化 */
 .markdown-body {
-  font-family: "Times New Roman", "SimSun", serif;
-  font-size: 18px;     /* 字号加大，如果是高中生用，大点好 */
-  line-height: 2.0;    /* 行高设为 2倍，给分数留空间 */
+  font-family: "Times New Roman", "FangSong", "SimSun", serif; /* 使用衬线字体，更像试卷 */
+  font-size: 18px; /* 字号加大 */
+  line-height: 2.2; /* 🔥 关键：增加行高，防止分数上下打架 */
   color: #2c3e50;
-  padding: 10px;
+  padding: 20px;
+  background: #fff;
+  letter-spacing: 0.5px;
 }
 
 .markdown-body p {
-  overflow-x: auto; /* 允许横向滚动 */
-  margin-bottom: 20px;
+  margin-bottom: 24px;
+  text-align: justify; /* 两端对齐，更整齐 */
 }
 
 /* 选项加粗样式 */
@@ -993,10 +995,12 @@ html, body, #app {
 
 /* 公式样式微调 */
 .katex {
-  font-size: 1.2em !important; /* 公式比文字大 20% */
-  font-weight: 500 !important; /* 字体加粗一点点，更清晰 */
-  color: black !important;
+  font-size: 1.1em !important; /* 公式比文字稍微大一点 */
+  font-family: "KaTeX_Main", "Times New Roman", serif !important;
+  color: #000 !important;
+  font-weight: 500;
 }
+
 /* 独立行公式 */
 .katex-display {
   margin: 1em 0;

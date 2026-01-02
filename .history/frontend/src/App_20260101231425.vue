@@ -423,19 +423,6 @@ const currentCropImage = ref('')
 const cropperImgRef = ref(null)
 let cropperInstance = null
 
-// ... existing refs ...
-const detailMode = ref('preview') // 'preview' | 'edit'
-const editingContent = ref('')    // 编辑框里的内容
-const saveLoading = ref(false)
-
-const openDetail = (item) => {
-  currentDetailItem.value = item
-  // 把内容复制给编辑框
-  editingContent.value = item.content
-  detailMode.value = 'preview' // 默认打开是预览
-  detailVisible.value = true
-}
-
 // 初始化 Markdown 渲染器
 const md = new MarkdownIt({
   html: true,       // 允许 HTML 标签
@@ -553,47 +540,17 @@ const handleTagFilter = (tag) => {
   fetchHistory() // 重新加载列表
 }
 
-
+// === 新增：打开详情 ===
+const openDetail = (item) => {
+  currentDetailItem.value = item
+  detailVisible.value = true
+}
 
 // === 新增：详情页的渲染计算属性 ===
-// 修改渲染计算属性，依赖 editingContent 而不是 item.content
-// 这样我们在编辑时切换预览能实时看到效果
 const detailRenderedContent = computed(() => {
-  // 如果正在编辑，优先显示编辑框里的内容的预览
-  const rawText = detailMode.value === 'edit' ? editingContent.value : (currentDetailItem.value?.content || '')
-  if (!rawText) return '暂无内容'
-  
-  // 渲染 Markdown + KaTeX
-  return md.render(rawText)
+  if (!currentDetailItem.value || !currentDetailItem.value.content) return '暂无文本内容'
+  return md.render(currentDetailItem.value.content)
 })
-
-// 新增：保存修改到后端
-const saveContent = async () => {
-  if (!currentDetailItem.value) return
-  saveLoading.value = true
-  try {
-    // 假设后端有一个更新接口 (下面我们会去后端加这个接口)
-    // 这里我们先用一个临时的 PATCH 请求
-    // 注意：你需要确保后端 endpoints.py 里有 update 接口，或者我们先模拟更新本地数据
-    
-    // 发送请求给后端更新 (Phase 2 我们再写后端接口，现在先更新前端显示)
-    // TODO: 真正的后端保存逻辑
-    await axios.put(`${API_BASE}/questions/${currentDetailItem.value.id}`, { content: editingContent.value })
-    
-    // 暂时先只更新本地数据，演示效果
-    currentDetailItem.value.content = editingContent.value
-    // 同时更新列表里的数据
-    const listItem = historyList.value.find(i => i.id === currentDetailItem.value.id)
-    if (listItem) listItem.content = editingContent.value
-    
-    ElMessage.success('修改已保存 (暂存本地)')
-    detailMode.value = 'preview'
-  } catch (e) {
-    ElMessage.error('保存失败')
-  } finally {
-    saveLoading.value = false
-  }
-}
 
 const handleFileChange = (f) => {
   selectedFile.value = f.raw
@@ -973,16 +930,17 @@ html, body, #app {
 
 /* Markdown 内容样式优化 */
 .markdown-body {
-  font-family: "Times New Roman", "SimSun", serif;
-  font-size: 18px;     /* 字号加大，如果是高中生用，大点好 */
-  line-height: 2.0;    /* 行高设为 2倍，给分数留空间 */
+  font-family: "Times New Roman", "FangSong", "SimSun", serif; /* 使用衬线字体，更像试卷 */
+  font-size: 18px; /* 字号加大 */
+  line-height: 2.2; /* 🔥 关键：增加行高，防止分数上下打架 */
   color: #2c3e50;
-  padding: 10px;
+  padding: 20px;
+  background: #fff;
 }
 
 .markdown-body p {
-  overflow-x: auto; /* 允许横向滚动 */
-  margin-bottom: 20px;
+  margin-bottom: 24px;
+  text-align: justify; /* 两端对齐，更整齐 */
 }
 
 /* 选项加粗样式 */
@@ -993,20 +951,16 @@ html, body, #app {
 
 /* 公式样式微调 */
 .katex {
-  font-size: 1.2em !important; /* 公式比文字大 20% */
-  font-weight: 500 !important; /* 字体加粗一点点，更清晰 */
-  color: black !important;
+  font-size: 1.15em !important; /* 公式比文字稍微大一点 */
+  font-family: "KaTeX_Main", "Times New Roman", serif !important;
 }
+
 /* 独立行公式 */
 .katex-display {
   margin: 1em 0;
   overflow-x: auto;
   overflow-y: hidden;
   padding: 10px 0;
-}
-
-.katex .frac-line {
-  border-bottom-width: 0.08em !important;
 }
 
 /* 遇到超长公式允许横向滚动 */

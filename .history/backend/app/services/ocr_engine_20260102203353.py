@@ -2,20 +2,12 @@ import requests
 import base64
 import os
 from loguru import logger
-from dotenv import load_dotenv # <--- 引入这个
-
-# 1. 加载 .env 文件里的变量
-load_dotenv()
 
 class OCREngine:
     def __init__(self):
-        # 2. 从环境变量中读取，而不是写死
-        self.API_KEY = os.getenv("BAIDU_API_KEY")
-        self.SECRET_KEY = os.getenv("BAIDU_SECRET_KEY")
-
-        # 增加一个检查，防止忘记配置
-        if not self.API_KEY or not self.SECRET_KEY:
-            logger.critical("❌ 未找到百度 API Key！请检查 .env 文件是否配置正确。")
+        # ⚠️⚠️⚠️ 请在这里填入你在百度云申请的 Key ⚠️⚠️⚠️
+        self.API_KEY = "s81wuWTIoRFzbPUVGAmzLFZ6"
+        self.SECRET_KEY = "XK3vIgDkHEIwV6IhWuI3IFYnPSTJvL6M"
         
         self.access_token = None
         
