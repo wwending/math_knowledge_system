@@ -51,11 +51,11 @@
               :auto-upload="false"
               :on-change="handleFileChange"
               :show-file-list="false"
-              accept=".jpg,.jpeg,.png,.bmp,.webp,.pdf"
+              accept=".jpg,.jpeg,.png,.bmp,.webp"
             >
               <el-icon class="el-icon--upload"><upload-filled /></el-icon>
               <div class="el-upload__text">
-                将图片或PDF拖到此处，或 <em>点击上传</em>
+                将图片拖到此处，或 <em>点击上传</em>
               </div>
             </el-upload>
           </div>
@@ -301,18 +301,10 @@ const saveLoading = ref(false)
 // ============================================
 // 3. 工具函数
 // ============================================
-// ✅ 终极版：不做任何处理
-// DeepSeek 已经处理了所有重复分数、缺失 $ 等问题。
-// 前端只需要负责把转义符弄干净即可。
 const smartLatexFix = (text) => {
   if (!text) return ''
-  
-  // 1. 仅处理 JSON 传输中可能残留的转义
   let res = text.replace(/\\\{/g, '{').replace(/\\\}/g, '}')
-  
-  // 2. 统一一下括号（可选）
   res = res.replace(/（/g, '(').replace(/）/g, ')')
-
   return res
 }
 
@@ -398,59 +390,9 @@ const handleMenuSelect = (index) => {
   }
 }
 
-// 修改 handleFileChange 函数
-const handleFileChange = async (uploadFile) => {
+const handleFileChange = (uploadFile) => {
   if (!uploadFile.raw) return
-  
-  const file = uploadFile.raw
-  const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
-
-  if (isPdf) {
-    // === PDF 处理流程 ===
-    // 1. 开启 Loading，防止用户以为没反应
-    ocrLoading.value = true
-    ElMessage.info('正在解析 PDF 文件...')
-
-    const formData = new FormData()
-    formData.append('file', file)
-    
-    try {
-      // 2. 上传 PDF 到后端转换为图片
-      // 注意：这里利用了 axios 拦截器，自动带了 Token
-      const res = await axios.post(`${API_BASE}/upload_pdf`, formData, {
-         headers: { 'Content-Type': 'multipart/form-data' }
-      })
-      
-      if (res.data.success && res.data.images && res.data.images.length > 0) {
-        // 3. 拿到第一张图片的相对路径 (例如: pdf_temp/xxx_page_0.jpg)
-        const imgRelPath = res.data.images[0]
-        
-        // 拼接完整的图片 URL (假设后端开在 8000 端口)
-        // 注意：这里硬编码了后端地址，如果你的端口变了记得改
-        const imgUrl = `http://127.0.0.1:8000/static/${imgRelPath}`
-        
-        // 4. 将远程图片下载为 Blob 对象，伪装成一个 File
-        // 这样 runRecognition 就不需要改动代码了
-        const blob = await fetch(imgUrl).then(r => r.blob())
-        const imgFile = new File([blob], "pdf_converted_page_1.jpg", { type: "image/jpeg" })
-        
-        ElMessage.success('PDF 解析成功，正在识别内容...')
-        
-        // 5. 走正常的图片识别流程
-        runRecognition(imgFile)
-      } else {
-        ElMessage.warning('PDF 解析成功但未生成图片，请重试')
-        ocrLoading.value = false
-      }
-    } catch (e) {
-      console.error(e)
-      ElMessage.error('PDF 上传或解析失败，请检查文件')
-      ocrLoading.value = false
-    }
-  } else {
-    // === 普通图片流程 (保持不变) ===
-    runRecognition(file)
-  }
+  runRecognition(uploadFile.raw)
 }
 
 const runRecognition = async (file) => {

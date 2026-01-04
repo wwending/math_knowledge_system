@@ -301,18 +301,10 @@ const saveLoading = ref(false)
 // ============================================
 // 3. 工具函数
 // ============================================
-// ✅ 终极版：不做任何处理
-// DeepSeek 已经处理了所有重复分数、缺失 $ 等问题。
-// 前端只需要负责把转义符弄干净即可。
 const smartLatexFix = (text) => {
   if (!text) return ''
-  
-  // 1. 仅处理 JSON 传输中可能残留的转义
   let res = text.replace(/\\\{/g, '{').replace(/\\\}/g, '}')
-  
-  // 2. 统一一下括号（可选）
   res = res.replace(/（/g, '(').replace(/）/g, ')')
-
   return res
 }
 
