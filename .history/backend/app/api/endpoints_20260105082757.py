@@ -4,8 +4,6 @@ import time
 import uuid
 from typing import List, Optional
 
-
-
 from fastapi import APIRouter, File, UploadFile, HTTPException, Depends
 from sqlalchemy.orm import Session
 from loguru import logger
@@ -18,17 +16,10 @@ from app.models.question import Question
 from app.models.user import User
 from app.api.auth import get_current_user
 from sqlalchemy import or_
-from app.core.config import settings
 
 from pydantic import BaseModel
 
 from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException
-
-from app.schemas.token import Token 
-from fastapi.security import OAuth2PasswordRequestForm
-
-from app.services.llm import nlp_service 
-from app.models.question import Question # 确保引入模型
 
 # 定义一个简单的接收数据的模型
 class QuestionUpdate(BaseModel):
@@ -46,7 +37,6 @@ def get_mock_user_simple():
     class MockUser:
         id = 1
         username = "admin"
-        role = "admin"  # <--- 关键！补上了这一行
     return MockUser()
 
 # --- 新增：获取所有知识点标签的接口 (用于前端左侧菜单) ---
@@ -164,83 +154,113 @@ def upload_pdf(
 def recognize_image(
     file: UploadFile = File(...), 
     db: Session = Depends(get_db),
-    # 注意：这里用 get_mock_user_simple 或 get_mock_user 都可以，看你定义了哪个
-    current_user = Depends(get_mock_user_simple) 
+    current_user: User = Depends(get_mock_user_simple)
 ):
-    start_total = time.time()
+    """
+    [Core API] 上传 -> OCR -> NLP(清洗+分类) -> 入库 -> 返回
+    """
+    # 1. 校验文件类型
+    allowed_extensions = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+    file_ext = os.path.splitext(file.filename)[1].lower()
+    is_image_type = file.content_type.startswith("image/")
     
-    # 1. 校验与保存文件 (保持你之前的逻辑，这里简化展示)
-    file_ext = os.path.splitext(file.filename)[1]
-    unique_filename = f"{uuid.uuid4()}{file_ext}"
-    file_path = os.path.join(settings.UPLOAD_DIR, unique_filename)
-    
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-        
-    # 2. 百度 OCR
-    ocr_start = time.time()
+    if not (is_image_type or file_ext in allowed_extensions):
+        raise HTTPException(status_code=400, detail="不支持的文件类型，请上传图片")
+
+    # 2. 生成路径
+    unique_name = f"{uuid.uuid4()}{file_ext if file_ext else '.jpg'}"
+    relative_path = f"images/{unique_name}"
+    full_file_path = os.path.join("static", relative_path)
+    os.makedirs(os.path.dirname(full_file_path), exist_ok=True)
+
     try:
-        ocr_result = ocr_service.recognize(file_path)
+        # 3. 保存文件
+        with open(full_file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+
+        # -------------------------------------------------------
+        # STEP 1: OCR 识别
+        # -------------------------------------------------------
+        ocr_start = time.time()
+        ocr_result = ocr_service.recognize(full_file_path)
+        ocr_cost = time.time() - ocr_start
+        
         raw_content = ocr_result.get("content", "")
-    except Exception as e:
-        print(f"OCR Failed: {e}")
-        raw_content = ""
-        ocr_result = {"success": False}
-
-    # 3. DeepSeek 分析 (关键！)
-    final_content = raw_content
-    knowledge_tags = []
-    
-    # 只有 OCR 有内容才调用 LLM
-    if ocr_result.get("success") and raw_content.strip():
-        print(f"🧠 准备调用 DeepSeek...")
-        nlp_out = nlp_service.analyze(raw_content)
         
-        # 获取修复后的 LaTeX 文本
-        final_content = nlp_out.get("corrected_text", raw_content)
-        
-        # 转换标签格式为前端需要的对象数组
-        raw_tags = nlp_out.get("tags", [])
-        for tag in raw_tags:
-            knowledge_tags.append({"label": tag, "score": 1.0})
-    else:
-        print("⚠️ 跳过 DeepSeek (OCR为空)")
+        # 默认值
+        final_content = raw_content 
+        knowledge_tags = []
+        nlp_cost = 0.0
 
-    # 4. 入库 (修正字段名！)
-    try:
-        new_question = Question(
-            # 🔥 修正点 1: 数据库里叫 origin_image，不叫 image_url
-            origin_image=unique_filename, 
-            
-            # 🔥 修正点 2: 数据库里叫 user_id，不叫 owner_id
-            user_id=current_user.id,
-            
-            content=final_content,
-            knowledge_tags=knowledge_tags
-        )
-        db.add(new_question)
-        db.commit()
-        db.refresh(new_question)
-    except Exception as e:
-        print(f"Database Error: {e}")
-        db.rollback()
-        # 即使入库失败，也返回结果给前端看
+        # -------------------------------------------------------
+        # STEP 2: NLP 处理 (核心修改处)
+        # -------------------------------------------------------
+        if ocr_result["success"] and raw_content.strip():
+            try:
+                nlp_start = time.time()
+                
+                # 调用 DeepSeek
+                nlp_out = nlp_service.analyze(raw_content)
+                
+                # 获取清洗后的文本
+                final_content = nlp_out.get("corrected_text", raw_content)
+                
+                # 🔥🔥🔥 修复点在这里 🔥🔥🔥
+                # DeepSeek 返回的是 ["标签A", "标签B"]
+                # 但前端/Schema 可能需要 [{"label": "标签A", "score": 1.0}]
+                raw_tags = nlp_out.get("tags", [])
+                knowledge_tags = []
+                
+                for tag in raw_tags:
+                    # 如果已经是字典(兼容旧数据)，直接用
+                    if isinstance(tag, dict):
+                        knowledge_tags.append(tag)
+                    # 如果是字符串(DeepSeek数据)，包装一下
+                    elif isinstance(tag, str):
+                        knowledge_tags.append({"label": tag, "score": 1.0})
+                
+                nlp_cost = time.time() - nlp_start
+            except Exception as e:
+                logger.error(f"NLP 处理失败: {e}")
+
+        total_cost = ocr_cost + nlp_cost
+
+        # -------------------------------------------------------
+        # STEP 3: 数据库入库
+        # -------------------------------------------------------
+        if ocr_result["success"]:
+            try:
+                new_question = Question(
+                    image_url=relative_path,
+                    content=final_content,       # 存清洗后的文本
+                    knowledge_tags=knowledge_tags,
+                    owner_id=current_user.id,
+                    status="pending"
+                )
+                db.add(new_question)
+                db.commit()
+                db.refresh(new_question)
+                logger.success(f"✅ 题目入库成功 ID: {new_question.id}")
+            except Exception as db_e:
+                logger.error(f"❌ 数据库保存失败: {db_e}")
+        
         return OCRResponse(
-            success=True,
+            success=ocr_result["success"],
             content=final_content,
             knowledge=knowledge_tags,
-            cost_seconds=round(time.time() - start_total, 2),
-            image_url=unique_filename,
-            id=-1, # 表示入库失败
-            created_at=None
+            cost_seconds=round(total_cost, 3),
+            error=ocr_result.get("error")
         )
 
-    return OCRResponse(
-        success=True,
-        content=final_content,
-        knowledge=knowledge_tags,
-        cost_seconds=round(time.time() - start_total, 2),
-        image_url=unique_filename,
-        id=new_question.id,
-        created_at=new_question.created_at
-    )
+    except Exception as e:
+        logger.exception("API 处理过程中发生严重错误")
+        if os.path.exists(full_file_path):
+            try:
+                os.remove(full_file_path)
+            except:
+                pass
+        
+        return OCRResponse(
+            success=False, content="", knowledge=[], cost_seconds=0.0, error=str(e)
+        )
+

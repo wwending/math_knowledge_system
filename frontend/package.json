@@ -15,10 +15,12 @@
     "katex": "^0.16.27",
     "markdown-it": "^14.1.0",
     "markdown-it-mathjax3": "^5.2.0",
-    "vue": "^3.5.24"
+    "vue": "^3.5.24",
+    "vue-router": "^4.6.4"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^6.0.1",
+    "sass": "^1.97.1",
     "vite": "^7.2.4"
   }
 }

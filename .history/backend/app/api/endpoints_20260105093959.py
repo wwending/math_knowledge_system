@@ -27,9 +27,6 @@ from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException
 from app.schemas.token import Token 
 from fastapi.security import OAuth2PasswordRequestForm
 
-from app.services.llm import nlp_service 
-from app.models.question import Question # 确保引入模型
-
 # 定义一个简单的接收数据的模型
 class QuestionUpdate(BaseModel):
     content: str
@@ -164,83 +161,110 @@ def upload_pdf(
 def recognize_image(
     file: UploadFile = File(...), 
     db: Session = Depends(get_db),
-    # 注意：这里用 get_mock_user_simple 或 get_mock_user 都可以，看你定义了哪个
-    current_user = Depends(get_mock_user_simple) 
+    # 注意：这里我们用之前改好的 mock user
+    current_user = Depends(get_mock_user_simple)
 ):
-    start_total = time.time()
-    
-    # 1. 校验与保存文件 (保持你之前的逻辑，这里简化展示)
-    file_ext = os.path.splitext(file.filename)[1]
-    unique_filename = f"{uuid.uuid4()}{file_ext}"
-    file_path = os.path.join(settings.UPLOAD_DIR, unique_filename)
-    
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-        
-    # 2. 百度 OCR
-    ocr_start = time.time()
-    try:
-        ocr_result = ocr_service.recognize(file_path)
-        raw_content = ocr_result.get("content", "")
-    except Exception as e:
-        print(f"OCR Failed: {e}")
-        raw_content = ""
-        ocr_result = {"success": False}
+    request_id = int(time.time())
+    print(f"[{request_id}] 1. 收到上传请求，文件名: {file.filename}")
 
-    # 3. DeepSeek 分析 (关键！)
+    # 1. 验证文件
+    if not file.filename.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.webp')):
+        print(f"[{request_id}] ❌ 文件格式错误")
+        raise HTTPException(status_code=400, detail="只支持图片文件")
+
+    # 2. 保存文件
+    try:
+        file_ext = os.path.splitext(file.filename)[1]
+        unique_filename = f"{uuid.uuid4()}{file_ext}"
+        file_path = os.path.join(settings.UPLOAD_DIR, unique_filename)
+        
+        print(f"[{request_id}] 2. 正在保存文件到: {file_path}")
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        print(f"[{request_id}] ✅ 文件保存成功")
+    except Exception as e:
+        print(f"[{request_id}] ❌ 保存文件失败: {e}")
+        raise HTTPException(status_code=500, detail="文件保存失败")
+
+    # 3. 调用百度 OCR
+    try:
+        print(f"[{request_id}] 3. 正在呼叫百度 OCR...")
+        ocr_start = time.time()
+        
+        # ---> 这里的 recognize 可能会卡住
+        ocr_result = ocr_service.recognize(file_path)
+        
+        print(f"[{request_id}] ✅ 百度 OCR 响应成功! 耗时: {time.time() - ocr_start:.2f}s")
+        raw_content = ocr_result.get("content", "")
+        print(f"[{request_id}] -> 识别字数: {len(raw_content)}")
+    except Exception as e:
+        print(f"[{request_id}] ❌ 百度 OCR 报错: {e}")
+        return {"success": False, "error": f"OCR识别失败: {str(e)}"}
+
+    # 4. 调用 DeepSeek
     final_content = raw_content
     knowledge_tags = []
     
-    # 只有 OCR 有内容才调用 LLM
+    # 只有当 OCR 成功且有内容时才调用 LLM
     if ocr_result.get("success") and raw_content.strip():
-        print(f"🧠 准备调用 DeepSeek...")
-        nlp_out = nlp_service.analyze(raw_content)
-        
-        # 获取修复后的 LaTeX 文本
-        final_content = nlp_out.get("corrected_text", raw_content)
-        
-        # 转换标签格式为前端需要的对象数组
-        raw_tags = nlp_out.get("tags", [])
-        for tag in raw_tags:
-            knowledge_tags.append({"label": tag, "score": 1.0})
-    else:
-        print("⚠️ 跳过 DeepSeek (OCR为空)")
+        try:
+            print(f"[{request_id}] 4. 正在呼叫 DeepSeek 进行分析...")
+            nlp_start = time.time()
+            
+            # ---> 这里最容易卡住 (网络慢或 API 没响应)
+            nlp_out = nlp_service.analyze(raw_content)
+            
+            print(f"[{request_id}] ✅ DeepSeek 响应成功! 耗时: {time.time() - nlp_start:.2f}s")
+            
+            final_content = nlp_out.get("corrected_text", raw_content)
+            
+            # 处理标签格式
+            raw_tags = nlp_out.get("tags", [])
+            for tag in raw_tags:
+                if isinstance(tag, dict):
+                    knowledge_tags.append(tag)
+                elif isinstance(tag, str):
+                    knowledge_tags.append({"label": tag, "score": 1.0})
+            
+            print(f"[{request_id}] -> 获取标签: {knowledge_tags}")
 
-    # 4. 入库 (修正字段名！)
+        except Exception as e:
+            # 注意：即使 NLP 失败，也不应该阻断流程，打印错误即可
+            print(f"[{request_id}] ⚠️ DeepSeek 调用出错 (已跳过): {e}")
+    else:
+        print(f"[{request_id}] ⚠️ 跳过 DeepSeek (OCR内容为空或失败)")
+
+    # 5. 写入数据库
     try:
-        new_question = Question(
-            # 🔥 修正点 1: 数据库里叫 origin_image，不叫 image_url
-            origin_image=unique_filename, 
-            
-            # 🔥 修正点 2: 数据库里叫 user_id，不叫 owner_id
+        print(f"[{request_id}] 5. 正在写入数据库...")
+        print(f"[{request_id}] -> 当前用户 ID: {current_user.id}")
+        
+        question = Question(
             user_id=current_user.id,
-            
+            origin_image=unique_filename,
             content=final_content,
             knowledge_tags=knowledge_tags
         )
-        db.add(new_question)
+        db.add(question)
+        
+        # ---> 这里如果数据库锁死，会卡住
         db.commit()
-        db.refresh(new_question)
+        db.refresh(question)
+        print(f"[{request_id}] ✅ 数据库写入成功! ID: {question.id}")
+        
     except Exception as e:
-        print(f"Database Error: {e}")
+        print(f"[{request_id}] ❌ 数据库错误: {e}")
         db.rollback()
-        # 即使入库失败，也返回结果给前端看
-        return OCRResponse(
-            success=True,
-            content=final_content,
-            knowledge=knowledge_tags,
-            cost_seconds=round(time.time() - start_total, 2),
-            image_url=unique_filename,
-            id=-1, # 表示入库失败
-            created_at=None
-        )
+        # return {"success": False, "error": "数据库保存失败"}
+        raise HTTPException(status_code=500, detail=f"数据库保存失败: {str(e)}")
 
+    print(f"[{request_id}] 6. 全部流程结束，返回结果")
     return OCRResponse(
         success=True,
         content=final_content,
         knowledge=knowledge_tags,
-        cost_seconds=round(time.time() - start_total, 2),
+        cost_seconds=round(time.time() - request_id, 2),
         image_url=unique_filename,
-        id=new_question.id,
-        created_at=new_question.created_at
+        id=question.id,
+        created_at=question.created_at
     )
