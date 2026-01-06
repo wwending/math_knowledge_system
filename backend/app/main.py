@@ -1,22 +1,30 @@
+import os
+from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+
+# 1. 导入数据库引擎 (Engine) 和 Session
+# 假设你的 engine 和 SessionLocal 还在 core.database 里
+from app.core.database import engine, SessionLocal
+from app.core.security import get_password_hash
+
+# 2. 🔥🔥🔥 导入统一的 Base 🔥🔥🔥
+from app.db.base import Base
+
+# 3. 🔥🔥🔥 显式导入所有模型 (触发注册) 🔥🔥🔥
+# 即使下面代码没直接用到 Question，也必须导入，否则 create_all 不会创建 questions 表
+from app.models.user import User
+from app.models.question import Question
 from app.api.endpoints import router as api_router
 
-# 👇 1. 引入数据库基础配置
-from app.db.base import Base
-from app.db.session import engine, SessionLocal
-
-# 👇👇👇 2. 关键！必须在这里显式导入模型，否则建表时会报错找不到表 👇👇👇
-from app.models.user import User       # <--- 必须导入这个！
-from app.models.question import Question # <--- 还有这个！
-
-# 3. 创建数据库表 (因为上面导入了 User，这里就不会报找不到 users 表了)
+# 4. 创建所有表
+# 因为上面导入了 User 和 Question，Base 现在知道要创建这两个表了
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="Math Knowledge System")
+app = FastAPI(title="错题本 AI", version="1.0")
 
-# 4. 配置跨域
+# 配置 CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -25,43 +33,38 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 5. 挂载静态文件 (图片上传目录)
-app.mount("/static", StaticFiles(directory="static"), name="static")
+# 挂载静态文件
+BASE_DIR = Path(__file__).resolve().parent
+BACKEND_DIR = BASE_DIR.parent
+STATIC_DIR = BACKEND_DIR / "static"
+os.makedirs(STATIC_DIR / "uploads", exist_ok=True)
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
-# 6. 注册路由
-app.include_router(api_router, prefix="/api/v1")
-
-# 7. 启动时自动检查管理员
-@app.on_event("startup")
-def init_data():
+# 自动创建管理员
+def create_admin():
     db = SessionLocal()
     try:
         user = db.query(User).filter(User.id == 1).first()
         if not user:
-            print("⚠️ 检测到管理员缺失，正在自动创建...")
-            try:
-                from passlib.context import CryptContext
-                pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-                hashed_pw = pwd_context.hash("123456")
-            except:
-                hashed_pw = "123456"
-
-            new_user = User(
-                id=1, 
+            print("⚠️ 管理员缺失，正在创建...")
+            admin = User(
+                id=1,
                 username="admin",
-                email="admin@example.com",
-                hashed_password=hashed_pw,
-                is_active=True,
+                hashed_password=get_password_hash("123456"),
                 role="admin"
             )
-            db.add(new_user)
+            db.add(admin)
             db.commit()
-            print("✅ 管理员 (ID:1) 已自动恢复！")
+            print("✅ 管理员 (ID:1) 已恢复！")
     except Exception as e:
-        print(f"❌ 初始化数据失败: {e}")
+        print(f"初始化管理员失败: {e}")
     finally:
         db.close()
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+create_admin()
+
+app.include_router(api_router, prefix="/api/v1")
+
+@app.get("/")
+def root():
+    return {"message": "Math Knowledge System API is running!"}

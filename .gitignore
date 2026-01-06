@@ -65,3 +65,13 @@ htmlcov/
 .DS_Store
 # VS Code Local History 插件
 .history/
+
+# --- 上传的临时文件 (不要提交图片/PDF) ---
+backend/static/uploads/*
+!backend/static/uploads/.gitkeep
+backend/static/pdf_temp/*
+!backend/static/pdf_temp/.gitkeep
+
+# --- IDE ---
+.vscode/
+.idea/

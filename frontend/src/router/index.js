@@ -3,14 +3,32 @@ import { createRouter, createWebHistory } from 'vue-router'
 import Login from '../views/Login.vue' 
 import Dashboard from '../views/Dashboard.vue'
 
+
+
 const routes = [
   { path: '/login', component: Login },
-  { path: '/', component: Dashboard } // 需要登录保护的页面
+  { 
+    path: '/', 
+    component: Dashboard, 
+    meta: { requiresAuth: true } 
+  }
 ]
 
 const router = createRouter({
   history: createWebHistory(),
   routes
+})
+
+// 全局前置守卫：检查是否有 token
+router.beforeEach((to, from, next) => {
+  const token = localStorage.getItem('token')
+  
+  // 如果要去需要权限的页面，且没有 token -> 踢回登录页
+  if (to.meta.requiresAuth && !token) {
+    next('/login')
+  } else {
+    next()
+  }
 })
 
 export default router
