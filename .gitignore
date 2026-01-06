@@ -29,25 +29,39 @@ wheels/
 *.onnx
 *.bin
 backend/weights/
-# Pix2Text 自动下载的模型通常在用户目录，但防万一本地有缓存也忽略
+# Jupyter Notebook Checkpoints
+.ipynb_checkpoints/
+
+# --- Frontend (Vue/Node) ---
+node_modules/
+npm-debug.log*
+yarn-error.log*
+# 前端构建输出
+frontend/dist/
 
 # --- Project Specific (临时文件) ---
-# 忽略上传的临时图片，保护用户隐私且不占空间
 backend/temp_uploads/
 test_data/results/
 *.log
+
+# --- Testing & Quality ---
+.pytest_cache/
+.mypy_cache/
+htmlcov/
+.coverage
+
+# --- Database ---
+*.sqlite3
+*.db
 
 # --- Environment Variables (安全) ---
 .env
 .env.local
 
-# 忽略环境配置文件，保护密钥安全
-.env
-__pycache__/
-*.pyc
-
-# --- IDE Settings ---
+# --- IDE & Editors ---
 .idea/
 .vscode/
 *.swp
 .DS_Store
+# VS Code Local History 插件
+.history/

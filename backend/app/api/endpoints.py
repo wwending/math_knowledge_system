@@ -162,7 +162,7 @@ def upload_pdf(
 # --- 核心：图片识别 API ---
 @router.post("/recognize", response_model=OCRResponse)
 def recognize_image(
-    file: UploadFile = File(...), 
+    file: UploadFile = File(...), # 👈 前端现在传过来的，永远是 jpg 图片
     db: Session = Depends(get_db),
     # 注意：这里用 get_mock_user_simple 或 get_mock_user 都可以，看你定义了哪个
     current_user = Depends(get_mock_user_simple) 
@@ -170,7 +170,7 @@ def recognize_image(
     start_total = time.time()
     
     # 1. 校验与保存文件 (保持你之前的逻辑，这里简化展示)
-    file_ext = os.path.splitext(file.filename)[1]
+    file_ext = os.path.splitext(file.filename)[1].lower()
     unique_filename = f"{uuid.uuid4()}{file_ext}"
     file_path = os.path.join(settings.UPLOAD_DIR, unique_filename)
     
