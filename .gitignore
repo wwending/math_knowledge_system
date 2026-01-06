@@ -72,6 +72,16 @@ backend/static/uploads/*
 backend/static/pdf_temp/*
 !backend/static/pdf_temp/.gitkeep
 
+static/
+
+backend/static/
+
 # --- IDE ---
 .vscode/
 .idea/
+
+# --- 敏感信息 ---
+config_local.py
+secrets.json
+
+
