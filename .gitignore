@@ -85,3 +85,36 @@ config_local.py
 secrets.json
 
 
+# --- 忽略 Python 用户级配置文件 ---
+.spyderproject (Spyder IDE)
+
+.ropeproject (Rope 库生成)
+
+# --- 系统相关 (通用) ---
+.DS_Store
+Thumbs.db
+*.swp
+*.tmp
+
+# --- 安全与敏感信息 ---
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# --- Python 进阶 ---
+.spyderproject
+.ropeproject
+.python-version
+pip-log.txt
+pip-delete-this-directory.txt
+
+# --- 前端进阶 (Vite/Vue) ---
+frontend/.vite/
+frontend/.eslintcache
+frontend/coverage/
+
+# --- 本地测试输出 ---
+backend/test/output/
+test_data/output_images/
