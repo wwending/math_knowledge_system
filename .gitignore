@@ -40,6 +40,7 @@ yarn-error.log*
 frontend/dist/
 
 # --- Project Specific (临时文件) ---
+test_data/
 backend/temp_uploads/
 test_data/results/
 *.log
