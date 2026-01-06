@@ -30,8 +30,9 @@ class NLPService:
         prompt = f"""
         你是一个高中数学助教。请对以下OCR识别的数学题目文本进行处理：
         1. 修正OCR错误（如将 'ln' 误识别为 '1n'，'e^x' 格式错误等）。
-        2. 将数学公式转换为标准的 LaTeX 格式（使用 $...$ 包裹行内公式）。
+        2. 将数学公式转换为标准的 LaTeX 格式（使用 $...$ 包裹行内公式,复杂的方程组、联立公式、分段函数必须使用双美元符号 $$...$$ 包裹（如 $$ \\begin{{cases}} ... \\end{{cases}} $$）。）。
         3. 提取3-5个关键知识点标签。
+        4.保持题目原意不变。
 
         原始文本：
         {text}
@@ -47,7 +48,7 @@ class NLPService:
             response = self.client.chat.completions.create(
                 model=settings.DEEPSEEK_MODEL,
                 messages=[
-                    {"role": "system", "content": "你是一个输出 JSON 格式的数学助手。"},
+                    {"role": "system", "content": "你是一个专业的数学助教，擅长处理 LaTeX 公式，严格遵循 JSON 格式输出的数学助手。"},
                     {"role": "user", "content": prompt},
                 ],
                 stream=False,

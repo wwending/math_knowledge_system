@@ -79,6 +79,10 @@
                     :auto-crop="true"
                     :center-box="true"
                     :fixed-box="false"
+                    
+                    :full="true"   
+                    :high="true"
+                    mode="contain"
                   ></vue-cropper>
                   <el-button type="primary" class="confirm-btn" @click="confirmCropAndUpload" :loading="ocrLoading">
                     确认裁剪并上传

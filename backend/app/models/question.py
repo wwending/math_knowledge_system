@@ -10,7 +10,7 @@ class Question(Base):
     # 👇 关键！必须加上这行，关联到 users 表
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     
-    origin_image = Column(String, nullable=False)
+    origin_image = Column(String, nullable=True)
     content = Column(Text, nullable=True) # 存放 OCR/DeepSeek 结果
     knowledge_tags = Column(JSON, nullable=True)   # 存放知识点标签
     
