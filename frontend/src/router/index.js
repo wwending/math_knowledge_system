@@ -23,12 +23,19 @@ const router = createRouter({
 router.beforeEach((to, from, next) => {
   const token = localStorage.getItem('token')
   
-  // 如果要去需要权限的页面，且没有 token -> 踢回登录页
+  // ????????? -> ???
+  if (to.path === '/login' && token) {
+    next('/')
+    return
+  }
+
+  // ??????????????? token -> ?????
   if (to.meta.requiresAuth && !token) {
     next('/login')
-  } else {
-    next()
+    return
   }
+
+  next()
 })
 
 export default router
