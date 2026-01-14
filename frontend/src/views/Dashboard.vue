@@ -1,12 +1,15 @@
 <template>
   <div class="common-layout">
     <el-container>
-      <el-aside width="220px">
+      <el-aside width="220px" class="sidebar-aside">
         <div class="logo-area">
-          <el-icon :size="24" color="#409EFF"><EditPen /></el-icon>
-          <span class="logo-text">错题本 AI</span>
+          <div class="logo-left">
+            <el-icon :size="24" color="#409EFF"><EditPen /></el-icon>
+            <span class="logo-text">错题本 AI</span>
+          </div>
+          <el-button text size="small" class="logout-btn" @click="handleLogout">退出登录</el-button>
         </div>
-        <el-menu :default-active="activeMenu" class="el-menu-vertical" @select="handleMenuSelect">
+        <el-menu :default-active="activeMenu" class="el-menu-vertical sidebar-menu" @select="handleMenuSelect">
            <el-menu-item index="upload"><el-icon><UploadFilled /></el-icon><span>题目采集</span></el-menu-item>
            <el-menu-item index="bank"><el-icon><Collection /></el-icon><span>智能题库</span></el-menu-item>
            <el-menu-item index="history"><el-icon><Clock /></el-icon><span>历史记录</span></el-menu-item>
@@ -102,7 +105,7 @@
 
           <div v-if="ocrLoading && step === 'uploading'" class="loading-state">
              <el-skeleton :rows="5" animated />
-             <p>正在请求 DeepSeek 进行智能分析...</p>
+             <p>正在请求 AI 进行智能分析...</p>
           </div>
 
           <div v-if="ocrResult && step === 'result'" class="result-section">
@@ -301,6 +304,13 @@ const handleMenuSelect = (index) => {
   // 这样侧边栏就不会消失了
   activeMenu.value = index
 }
+
+
+const handleLogout = () => {
+  localStorage.removeItem('token')
+  localStorage.removeItem('username')
+  router.push('/login')
+}
 </script>
 
 <style scoped>
@@ -308,6 +318,95 @@ const handleMenuSelect = (index) => {
 .upload-container { max-width: 900px; margin: 0 auto; padding: 20px; }
 .upload-header { text-align: center; margin-bottom: 30px; }
 .subtitle { color: #666; font-size: 14px; margin-top: 5px; }
+
+/* Sidebar */
+.sidebar-aside {
+  background: #f8fafc;
+  border-right: 1px solid #e6e8eb;
+  padding: 16px 12px;
+  box-sizing: border-box;
+}
+
+.logo-area {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 8px 18px;
+  margin-bottom: 6px;
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.08);
+}
+
+.logo-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.logout-btn {
+  color: #d14343;
+}
+
+
+.logo-text {
+  font-size: 16px;
+  font-weight: 600;
+  color: #2b3a4a;
+  letter-spacing: 0.3px;
+}
+
+:deep(.sidebar-menu) {
+  border-right: none;
+  background: transparent;
+  padding-top: 4px;
+}
+
+:deep(.sidebar-menu .el-menu-item) {
+  height: 48px;
+  line-height: 48px;
+  font-size: 15px;
+  margin: 4px 6px;
+  border-radius: 10px;
+  padding-left: 16px;
+  padding-right: 12px;
+  color: #2b3a4a;
+  position: relative;
+  transition: background-color 0.2s ease, box-shadow 0.2s ease, color 0.2s ease;
+}
+
+:deep(.sidebar-menu .el-menu-item .el-icon) {
+  font-size: 19px;
+  margin-right: 10px;
+  color: #5b6b7a;
+}
+
+:deep(.sidebar-menu .el-menu-item:hover) {
+  background: #eef4ff;
+}
+
+:deep(.sidebar-menu .el-menu-item.is-active) {
+  background: #e6f0ff;
+  color: #1f5fbf;
+  box-shadow: 0 6px 14px rgba(31, 95, 191, 0.12);
+  font-weight: 600;
+}
+
+:deep(.sidebar-menu .el-menu-item.is-active .el-icon) {
+  color: #1f5fbf;
+}
+
+:deep(.sidebar-menu .el-menu-item.is-active::before) {
+  content: '';
+  position: absolute;
+  left: -6px;
+  top: 8px;
+  width: 4px;
+  height: 32px;
+  border-radius: 4px;
+  background: #1f5fbf;
+}
 
 /* 文件选择框 */
 .upload-box { border: 2px dashed #dcdfe6; padding: 40px 0; text-align: center; border-radius: 8px; cursor: pointer; transition: 0.3s; }
