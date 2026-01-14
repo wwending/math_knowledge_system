@@ -7,10 +7,7 @@ from app.core.config import settings
 class NLPService:
     def __init__(self):
         # 打印配置信息，确保读到了 Key
-        print(f"🔧 初始化 NLP 服务...")
-        print(f"   - Base URL: {settings.DEEPSEEK_BASE_URL}")
-        print(f"   - Model: {settings.DEEPSEEK_MODEL}")
-        print(f"   - API Key: {settings.DEEPSEEK_API_KEY[:5]}*** (Len: {len(settings.DEEPSEEK_API_KEY)})")
+        print("[LLM] initialized")
         
         self.client = OpenAI(
             api_key=settings.DEEPSEEK_API_KEY,

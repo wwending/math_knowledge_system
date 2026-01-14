@@ -22,6 +22,7 @@ from app.services.llm import nlp_service
 # 模型
 from app.models.question import Question
 from app.models.user import User
+from app.api.auth import get_current_user
 
 # 初始化路由
 router = APIRouter()
@@ -49,6 +50,21 @@ class OCRResponse(BaseModel):
     id: int
     created_at: Optional[datetime] = None
 
+# Question list/detail response models
+class QuestionListItem(BaseModel):
+    id: int
+    content: Optional[str] = None
+    knowledge_tags: List[KnowledgeTag] = []
+    origin_image: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+class QuestionDetail(BaseModel):
+    id: int
+    content: Optional[str] = None
+    knowledge_tags: List[KnowledgeTag] = []
+    origin_image: Optional[str] = None
+    created_at: Optional[datetime] = None
+
 # ==========================================
 # 2. 依赖注入 (Mock User)
 # ==========================================
@@ -63,6 +79,19 @@ def get_mock_user_simple():
         role = "admin"
     return MockUser()
 
+def normalize_tags(raw_tags: Any) -> List[KnowledgeTag]:
+    tags: List[KnowledgeTag] = []
+    if not raw_tags:
+        return tags
+    for tag_obj in raw_tags:
+        if isinstance(tag_obj, dict):
+            tags.append(KnowledgeTag(label=tag_obj.get("label"), score=tag_obj.get("score", 1.0)))
+        elif hasattr(tag_obj, "label"):
+            tags.append(KnowledgeTag(label=getattr(tag_obj, "label"), score=getattr(tag_obj, "score", 1.0)))
+        else:
+            tags.append(KnowledgeTag(label=str(tag_obj), score=1.0))
+    return tags
+
 # ==========================================
 # 3. API 接口实现
 # ==========================================
@@ -71,7 +100,7 @@ def get_mock_user_simple():
 @router.get("/tags", response_model=List[str])
 def get_all_tags(
     db: Session = Depends(get_db),
-    current_user = Depends(get_mock_user_simple)
+    current_user: User = Depends(get_current_user)
 ):
     # 🔥 修正：使用 user_id 而不是 owner_id
     questions = db.query(Question).filter(Question.user_id == current_user.id).all()
@@ -209,7 +238,7 @@ def upload_pdf(
 def recognize_image(
     file: UploadFile = File(...), 
     db: Session = Depends(get_db),
-    current_user = Depends(get_mock_user_simple) 
+    current_user: User = Depends(get_current_user)
 ):
     start_total = time.time()
     
@@ -283,4 +312,51 @@ def recognize_image(
         image_url=unique_filename,
         id=new_question.id,
         created_at=new_question.created_at
+    )
+
+# --- API: question list (current user) ---
+@router.get("/questions", response_model=List[QuestionListItem])
+def list_questions(
+    skip: int = 0,
+    limit: int = 50,
+    q: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    query = db.query(Question).filter(Question.user_id == current_user.id)
+    if q:
+        query = query.filter(Question.content.contains(q))
+    questions = query.order_by(Question.created_at.desc(), Question.id.desc()).offset(skip).limit(limit).all()
+
+    return [
+        QuestionListItem(
+            id=item.id,
+            content=item.content,
+            knowledge_tags=normalize_tags(item.knowledge_tags),
+            origin_image=item.origin_image,
+            created_at=item.created_at
+        )
+        for item in questions
+    ]
+
+# --- API: question detail (current user) ---
+@router.get("/questions/{question_id}", response_model=QuestionDetail)
+def get_question_detail(
+    question_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    question = db.query(Question).filter(
+        Question.id == question_id,
+        Question.user_id == current_user.id
+    ).first()
+    if not question:
+        raise HTTPException(status_code=404, detail="Question not found")
+
+    return QuestionDetail(
+        id=question.id,
+        content=question.content,
+        knowledge_tags=normalize_tags(question.knowledge_tags),
+        origin_image=question.origin_image,
+        created_at=question.created_at
     )
