@@ -22,7 +22,8 @@ from app.services.llm import nlp_service
 # 模型
 from app.models.question import Question
 from app.models.user import User
-from app.api.auth import get_current_user
+# from app.api.auth import get_current_user
+
 
 # 初始化路由
 router = APIRouter()
@@ -100,7 +101,7 @@ def normalize_tags(raw_tags: Any) -> List[KnowledgeTag]:
 @router.get("/tags", response_model=List[str])
 def get_all_tags(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_mock_user_simple)
 ):
     # 🔥 修正：使用 user_id 而不是 owner_id
     questions = db.query(Question).filter(Question.user_id == current_user.id).all()
@@ -238,7 +239,7 @@ def upload_pdf(
 def recognize_image(
     file: UploadFile = File(...), 
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_mock_user_simple)
 ):
     start_total = time.time()
     
@@ -258,7 +259,7 @@ def recognize_image(
 
         # 👇👇👇 【新增】在这里打印原始数据 👇👇👇
         print("="*30)
-        print("🧐 [DEBUG] 百度 OCR 原始输出:")
+        print("🧐 [DEBUG]  OCR 原始输出:")
         print(raw_content)
         print("="*30)
         # 👆👆👆 【新增结束】 👆👆👆
@@ -272,7 +273,7 @@ def recognize_image(
     knowledge_tags = []
     
     if ocr_result.get("success") and raw_content.strip():
-        print(f"🧠 准备调用 DeepSeek...")
+        print(f"🧠 准备调用 AI分析...")
         nlp_out = nlp_service.analyze(raw_content)
         final_content = nlp_out.get("corrected_text", raw_content)
         
@@ -280,7 +281,7 @@ def recognize_image(
         for tag in raw_tags:
             knowledge_tags.append({"label": tag, "score": 1.0})
     else:
-        print("⚠️ 跳过 DeepSeek (OCR为空)")
+        print("⚠️ 跳过 AI分析 (OCR为空)")
 
     # 4. 入库
     try:
@@ -321,7 +322,7 @@ def list_questions(
     limit: int = 50,
     q: Optional[str] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_mock_user_simple)
 ):
     query = db.query(Question).filter(Question.user_id == current_user.id)
     if q:
@@ -344,7 +345,7 @@ def list_questions(
 def get_question_detail(
     question_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_mock_user_simple)
 ):
     question = db.query(Question).filter(
         Question.id == question_id,
