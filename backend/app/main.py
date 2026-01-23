@@ -1,70 +1,43 @@
-import os
-from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
-# 1. 导入数据库引擎 (Engine) 和 Session
-# 假设你的 engine 和 SessionLocal 还在 core.database 里
-from app.core.database import engine, SessionLocal
-from app.core.security import get_password_hash
-
-# 2. 🔥🔥🔥 导入统一的 Base 🔥🔥🔥
+from app.core.config import settings
+from app.core.database import engine
 from app.db.base import Base
 
-# 3. 🔥🔥🔥 显式导入所有模型 (触发注册) 🔥🔥🔥
-# 即使下面代码没直接用到 Question，也必须导入，否则 create_all 不会创建 questions 表
-from app.models.user import User
-from app.models.question import Question
-from app.api.endpoints import router as api_router
+# 重要：确保模型被导入，create_all 才知道有哪些表
+from app.models import user, question  # noqa: F401
 
-# 4. 创建所有表
-# 因为上面导入了 User 和 Question，Base 现在知道要创建这两个表了
-Base.metadata.create_all(bind=engine)
+from app.api.router import api_router
 
-app = FastAPI(title="错题本 AI", version="1.0")
 
-# 配置 CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+def create_app() -> FastAPI:
+    app = FastAPI(title=settings.PROJECT_NAME)
 
-# 挂载静态文件
-BASE_DIR = Path(__file__).resolve().parent
-BACKEND_DIR = BASE_DIR.parent
-STATIC_DIR = BACKEND_DIR / "static"
-os.makedirs(STATIC_DIR / "uploads", exist_ok=True)
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+    # CORS：正式版后续要收紧；先保证开发可用
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
-# 自动创建管理员
-def create_admin():
-    db = SessionLocal()
-    try:
-        user = db.query(User).filter(User.id == 1).first()
-        if not user:
-            print("⚠️ 管理员缺失，正在创建...")
-            admin = User(
-                id=1,
-                username="admin",
-                hashed_password=get_password_hash("123456"),
-                role="admin"
-            )
-            db.add(admin)
-            db.commit()
-            print("✅ 管理员 (ID:1) 已恢复！")
-    except Exception as e:
-        print(f"初始化管理员失败: {e}")
-    finally:
-        db.close()
+    # 静态文件（你的 endpoints 会返回 image_url）
+    app.mount("/static", StaticFiles(directory="static"), name="static")
 
-create_admin()
+    # 数据库建表（正式版会换成 Alembic；先保持 MVP 可跑）
+    Base.metadata.create_all(bind=engine)
 
-app.include_router(api_router, prefix="/api/v1")
+    # 路由
+    app.include_router(api_router, prefix=settings.API_V1_STR)
 
-@app.get("/")
-def root():
-    return {"message": "Math Knowledge System API is running!"}
+    @app.get("/")
+    def root():
+        return {"message": "Math Knowledge System API is running!"}
+
+    return app
+
+
+app = create_app()

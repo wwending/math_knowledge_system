@@ -22,6 +22,7 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+.venv_clean/
 
 # --- AI & Models (大文件不进 Git) ---
 *.pth
