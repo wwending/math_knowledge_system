@@ -1,3 +1,4 @@
+import os
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,23 +16,46 @@ from app.api.router import api_router
 def create_app() -> FastAPI:
     app = FastAPI(title=settings.PROJECT_NAME)
 
-    # CORS：正式版后续要收紧；先保证开发可用
+    # -----------------------------
+    # 0) 目录保障（部署环境经常缺目录）
+    # -----------------------------
+    os.makedirs("static", exist_ok=True)
+    os.makedirs(getattr(settings, "UPLOAD_DIR", "static/uploads"), exist_ok=True)
+
+    # -----------------------------
+    # 1) CORS（开发先放开；正式版务必收紧）
+    # -----------------------------
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=["*"],  # TODO: 生产环境改成你的前端域名列表
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
 
-    # 静态文件（你的 endpoints 会返回 image_url）
+    # -----------------------------
+    # 2) 静态文件（你的 endpoints 会返回 image_url）
+    # -----------------------------
     app.mount("/static", StaticFiles(directory="static"), name="static")
 
-    # 数据库建表（正式版会换成 Alembic；先保持 MVP 可跑）
-    Base.metadata.create_all(bind=engine)
+    # -----------------------------
+    # 3) 数据库建表（正式版换 Alembic；先保留但加开关）
+    # -----------------------------
+    # 默认开发环境 True；生产环境可在 settings 里加 AUTO_CREATE_TABLES=False
+    if getattr(settings, "AUTO_CREATE_TABLES", True):
+        Base.metadata.create_all(bind=engine)
 
-    # 路由
+    # -----------------------------
+    # 4) 路由
+    # -----------------------------
     app.include_router(api_router, prefix=settings.API_V1_STR)
+
+    # -----------------------------
+    # 5) 健康检查 / 根路由
+    # -----------------------------
+    @app.get("/healthz")
+    def healthz():
+        return {"status": "ok"}
 
     @app.get("/")
     def root():
