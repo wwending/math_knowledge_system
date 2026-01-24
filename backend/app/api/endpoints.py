@@ -22,7 +22,7 @@ from app.services.llm import nlp_service
 # 模型
 from app.models.question import Question
 from app.models.user import User
-# from app.api.auth import get_current_user
+from app.api.auth import get_current_user
 
 
 # 初始化路由
@@ -70,16 +70,6 @@ class QuestionDetail(BaseModel):
 # 2. 依赖注入 (Mock User)
 # ==========================================
 
-def get_mock_user_simple():
-    """
-    返回一个模拟的管理员用户对象
-    """
-    class MockUser:
-        id = 1
-        username = "admin"
-        role = "admin"
-    return MockUser()
-
 def normalize_tags(raw_tags: Any) -> List[KnowledgeTag]:
     tags: List[KnowledgeTag] = []
     if not raw_tags:
@@ -101,7 +91,7 @@ def normalize_tags(raw_tags: Any) -> List[KnowledgeTag]:
 @router.get("/tags", response_model=List[str])
 def get_all_tags(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_mock_user_simple)
+    current_user: User = Depends(get_current_user)
 ):
     # 🔥 修正：使用 user_id 而不是 owner_id
     questions = db.query(Question).filter(Question.user_id == current_user.id).all()
@@ -126,34 +116,38 @@ def update_question(
     question_id: int,
     question_update: QuestionUpdate,
     db: Session = Depends(get_db),
-    current_user = Depends(get_mock_user_simple)
+    current_user: User = Depends(get_current_user)
 ):
-    # 查找题目
-    q = db.query(Question).filter(Question.id == question_id).first()
+    # æ¥æ¾é¢ç®
+    q = db.query(Question).filter(
+        Question.id == question_id,
+        Question.user_id == current_user.id
+    ).first()
     if not q:
-        raise HTTPException(status_code=404, detail="题目不存在")
-    
-    # 权限检查 
-    # 🔥 修正：使用 user_id
-    if q.user_id != current_user.id and current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="无权修改")
-    
-    # 更新内容
+        raise HTTPException(status_code=404, detail="é¢ç®ä¸å­å¨")
+
+    # æ´æ°åå®¹
     q.content = question_update.content
     db.commit()
     db.refresh(q)
-    return {"success": True, "msg": "更新成功"}
+    return {"success": True, "msg": "æ´æ°æå"}
 
-# --- 接口: 获取历史记录 ---
 @router.get("/history", response_model=List[OCRResponse])
 def read_history(
     skip: int = 0, 
     limit: int = 100, 
     db: Session = Depends(get_db),
-    current_user = Depends(get_mock_user_simple)
+    current_user: User = Depends(get_current_user)
 ):
     # 查询数据库，按时间倒序
-    questions = db.query(Question).order_by(Question.created_at.desc()).offset(skip).limit(limit).all()
+    questions = (
+        db.query(Question)
+        .filter(Question.user_id == current_user.id)
+        .order_by(Question.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
     
     results = []
     print(f"🔍 正在读取历史记录，共找到 {len(questions)} 条...")
@@ -186,7 +180,7 @@ def read_history(
 @router.post("/upload_pdf")
 def upload_pdf(
     file: UploadFile = File(...),
-    current_user = Depends(get_mock_user_simple)
+    current_user: User = Depends(get_current_user)
 ):
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="请上传 PDF 文件")
@@ -239,7 +233,7 @@ def upload_pdf(
 def recognize_image(
     file: UploadFile = File(...), 
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_mock_user_simple)
+    current_user: User = Depends(get_current_user)
 ):
     start_total = time.time()
     
@@ -322,7 +316,7 @@ def list_questions(
     limit: int = 50,
     q: Optional[str] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_mock_user_simple)
+    current_user: User = Depends(get_current_user)
 ):
     query = db.query(Question).filter(Question.user_id == current_user.id)
     if q:
@@ -345,7 +339,7 @@ def list_questions(
 def get_question_detail(
     question_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_mock_user_simple)
+    current_user: User = Depends(get_current_user)
 ):
     question = db.query(Question).filter(
         Question.id == question_id,
