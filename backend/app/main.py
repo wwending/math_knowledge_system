@@ -10,7 +10,7 @@ from app.db.base import Base
 # 重要：确保模型被导入，create_all 才知道有哪些表
 from app.models import user, question  # noqa: F401
 
-from app.api.router import api_router
+from app.api.v1.router import api_router
 
 
 def create_app() -> FastAPI:
