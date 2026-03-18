@@ -18,7 +18,7 @@
         <div class="list-item-content">
           <div class="thumb-box" @click="openDetail(item)">
              <el-image 
-                :src="getImageUrl(item.image_url)" 
+                :src="getImageUrl(item)" 
                 fit="cover"
                 class="thumb-img"
              >
@@ -71,8 +71,8 @@
           <div class="image-wrapper">
             
             <el-image 
-              :src="getImageUrl(currentItem.image_url)" 
-              :preview-src-list="[getImageUrl(currentItem.image_url)]"
+              :src="getImageUrl(currentItem)" 
+              :preview-src-list="[getImageUrl(currentItem)]"
               fit="scale-down"
               class="detail-image"
                 
@@ -116,10 +116,11 @@ import axios from 'axios'
 import { Refresh, Picture as IconPicture } from '@element-plus/icons-vue'
 import MarkdownIt from 'markdown-it'
 import markdownItMathjax3 from 'markdown-it-mathjax3'
+import { API_V1_BASE_URL, resolveQuestionImageUrl } from '../config/api'
 
 // Markdown 配置
 const md = new MarkdownIt({ html: true }).use(markdownItMathjax3)
-const API_BASE = 'http://127.0.0.1:8000/api/v1'
+const API_BASE = API_V1_BASE_URL
 
 const loading = ref(false)
 const list = ref([])
@@ -129,9 +130,7 @@ const currentItem = ref(null)
 const fetchHistory = async () => {
   loading.value = true
   try {
-    const res = await axios.get(`${API_BASE}/history?limit=50`, {
-      headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-    })
+    const res = await axios.get(`${API_BASE}/history?limit=50`)
     list.value = res.data
   } catch (e) {
     console.error(e)
@@ -158,7 +157,7 @@ const getPreviewText = (text) => {
 
 const formatTime = (str) => new Date(str).toLocaleString()
 
-const getImageUrl = (path) => path ? `http://127.0.0.1:8000/static/uploads/${path}` : ''
+const getImageUrl = (item) => resolveQuestionImageUrl(item)
 
 onMounted(() => {
   fetchHistory()

@@ -6,8 +6,8 @@
           <el-icon :size="40"><DataAnalysis /></el-icon>
         </div>
         <h1>Math Knowledge</h1>
-        <p class="subtitle">高中数学错题与知识图谱系统</p>
-        <p class="desc">AI 赋能 · 智能 OCR · 知识点自动分类</p>
+        <p class="subtitle">高中数学错题与知识管理</p>
+        <p class="desc">真实登录已启用，失败时会返回明确提示</p>
       </div>
       <div class="bg-circle circle-1"></div>
       <div class="bg-circle circle-2"></div>
@@ -15,8 +15,8 @@
 
     <div class="login-right">
       <div class="form-wrapper">
-        <h2>欢迎回来 👋</h2>
-        <p class="form-tip">请输入您的账号密码登录系统</p>
+        <h2>欢迎回来</h2>
+        <p class="form-tip">请输入用户名和密码登录系统</p>
 
         <el-form
           ref="loginFormRef"
@@ -26,18 +26,18 @@
           class="login-form"
         >
           <el-form-item prop="username">
-            <el-input 
-              v-model="loginForm.username" 
-              placeholder="用户名 / 邮箱" 
+            <el-input
+              v-model="loginForm.username"
+              placeholder="用户名 / 邮箱"
               :prefix-icon="User"
             />
           </el-form-item>
 
           <el-form-item prop="password">
-            <el-input 
-              v-model="loginForm.password" 
-              type="password" 
-              placeholder="密码" 
+            <el-input
+              v-model="loginForm.password"
+              type="password"
+              placeholder="密码"
               show-password
               :prefix-icon="Lock"
               @keyup.enter="handleLogin"
@@ -45,18 +45,18 @@
           </el-form-item>
 
           <el-form-item>
-            <el-button 
-              type="primary" 
-              class="login-btn" 
-              :loading="loading" 
+            <el-button
+              type="primary"
+              class="login-btn"
+              :loading="loading"
               @click="handleLogin"
             >
-              登 录
+              登录
             </el-button>
           </el-form-item>
-          
+
           <div class="form-footer">
-            <el-link type="info" :underline="false">忘记密码？</el-link>
+            <el-link type="info" :underline="false">忘记密码</el-link>
             <el-link type="primary" :underline="false">注册新账号</el-link>
           </div>
         </el-form>
@@ -66,61 +66,83 @@
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
+import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { User, Lock, DataAnalysis } from '@element-plus/icons-vue'
-import axios from 'axios' // 确保你安装了 axios
+import axios from 'axios'
+
+import { API_V1_BASE_URL } from '../config/api'
+import { clearAuthSession, setAccessToken } from '../utils/auth'
 
 const router = useRouter()
 const loginFormRef = ref(null)
 const loading = ref(false)
 
-// 表单数据
 const loginForm = reactive({
   username: '',
   password: ''
 })
 
-// 表单校验规则
 const rules = {
   username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
   password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
 }
 
-// 登录逻辑
+const getLoginErrorMessage = (error) => {
+  const status = error.response?.status
+  const detail = error.response?.data?.detail
+
+  if (status === 401) {
+    return detail || '用户名或密码错误'
+  }
+  if (status === 403) {
+    return detail || '当前账号不可用，请联系管理员'
+  }
+  if (detail && typeof detail === 'string') {
+    return detail
+  }
+  if (error.message === 'Missing access token') {
+    return '登录响应无效，请稍后重试'
+  }
+  return '登录失败，请检查网络或稍后重试'
+}
+
 const handleLogin = async () => {
   if (!loginFormRef.value) return
-  
-  await loginFormRef.value.validate(async (valid) => {
-    if (valid) {
-      loading.value = true
-      try {
-        // ⚠️ 这里的 API 地址请根据你后端的实际情况修改
-        // 假设是 OAuth2 标准格式： /api/v1/auth/token
-        // const res = await axios.post('http://127.0.0.1:8000/api/v1/auth/token', 
-        //   new URLSearchParams({
-        //     username: loginForm.username,
-        //     password: loginForm.password
-        //   })
-        // )
 
-        // 🔥 模拟登录成功 (等你后端写好 Login 接口后，解开上面的注释)
-        setTimeout(() => {
-          localStorage.setItem('token', 'fake-jwt-token') // 存储 Token
-          localStorage.setItem('username', loginForm.username)
-          
-          ElMessage.success('登录成功')
-          router.push('/') // 跳转回首页
-          loading.value = false
-        }, 1000)
+  const isValid = await loginFormRef.value.validate().then(() => true).catch(() => false)
+  if (!isValid) {
+    return
+  }
 
-      } catch (error) {
-        ElMessage.error('登录失败：账号或密码错误')
-        loading.value = false
-      }
+  loading.value = true
+  try {
+    const formData = new URLSearchParams()
+    formData.append('username', loginForm.username)
+    formData.append('password', loginForm.password)
+
+    const res = await axios.post(`${API_V1_BASE_URL}/auth/token`, formData, {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      skipAuthRedirect: true
+    })
+
+    const accessToken = res.data?.access_token
+    if (!accessToken) {
+      throw new Error('Missing access token')
     }
-  })
+
+    setAccessToken(accessToken)
+    ElMessage.success('登录成功')
+    router.replace('/')
+  } catch (error) {
+    clearAuthSession()
+    ElMessage.error(getLoginErrorMessage(error))
+  } finally {
+    loading.value = false
+  }
 }
 </script>
 
@@ -133,7 +155,6 @@ const handleLogin = async () => {
   font-family: 'PingFang SC', 'Helvetica Neue', Helvetica, 'Microsoft YaHei', Arial;
 }
 
-/* 左侧样式 */
 .login-left {
   flex: 1;
   background: linear-gradient(135deg, #1c2434 0%, #2c3e50 100%);
@@ -147,7 +168,7 @@ const handleLogin = async () => {
   .brand-content {
     z-index: 2;
     text-align: center;
-    
+
     .logo-circle {
       width: 80px;
       height: 80px;
@@ -182,17 +203,27 @@ const handleLogin = async () => {
     }
   }
 
-  /* 装饰背景圆 */
   .bg-circle {
     position: absolute;
     border-radius: 50%;
     background: rgba(255, 255, 255, 0.03);
   }
-  .circle-1 { width: 400px; height: 400px; top: -100px; left: -100px; }
-  .circle-2 { width: 600px; height: 600px; bottom: -200px; right: -200px; }
+
+  .circle-1 {
+    width: 400px;
+    height: 400px;
+    top: -100px;
+    left: -100px;
+  }
+
+  .circle-2 {
+    width: 600px;
+    height: 600px;
+    bottom: -200px;
+    right: -200px;
+  }
 }
 
-/* 右侧样式 */
 .login-right {
   width: 500px;
   background: #fff;
@@ -222,9 +253,9 @@ const handleLogin = async () => {
       height: 44px;
       font-size: 16px;
       border-radius: 8px;
-      background-color: #2c3e50; /* 与左侧呼应 */
+      background-color: #2c3e50;
       border-color: #2c3e50;
-      
+
       &:hover {
         background-color: #34495e;
         border-color: #34495e;
@@ -239,11 +270,11 @@ const handleLogin = async () => {
   }
 }
 
-/* 响应式：手机端隐藏左侧 */
 @media (max-width: 768px) {
   .login-left {
     display: none;
   }
+
   .login-right {
     width: 100%;
   }

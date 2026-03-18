@@ -1,20 +1,21 @@
 import { createApp } from 'vue'
-import App from './App.vue'
+import axios from 'axios'
 import ElementPlus from 'element-plus'
 import 'element-plus/dist/index.css'
 import * as ElementPlusIconsVue from '@element-plus/icons-vue'
-import router from './router'
-import axios from 'axios' // 1. 引入 axios
+import { ElMessage } from 'element-plus'
 
-// 2. 配置 Axios 全局拦截器 (核心代码)
-// 设置后端地址 (根据你实际情况调整)
-axios.defaults.baseURL = 'http://127.0.0.1:8000' 
+import App from './App.vue'
+import { API_BASE_URL } from './config/api'
+import { clearAuthSession, getAccessToken } from './utils/auth'
+import router from './router'
+
+axios.defaults.baseURL = API_BASE_URL
 
 axios.interceptors.request.use(config => {
-  // 每次发送请求前，去 localStorage 拿 token
-  const token = localStorage.getItem('token')
+  const token = getAccessToken()
   if (token) {
-    // 如果有 token，就放到 Header 里
+    config.headers = config.headers || {}
     config.headers.Authorization = `Bearer ${token}`
   }
   return config
@@ -22,13 +23,22 @@ axios.interceptors.request.use(config => {
   return Promise.reject(error)
 })
 
-// 3. 拦截 401 响应 (可选：Token 过期自动踢回登录页)
 axios.interceptors.response.use(response => {
   return response
 }, error => {
-  if (error.response && error.response.status === 401) {
-    localStorage.removeItem('token')
-    router.push('/login')
+  const shouldHandleUnauthorized = (
+    error.response &&
+    error.response.status === 401 &&
+    !error.config?.skipAuthRedirect
+  )
+
+  if (shouldHandleUnauthorized) {
+    clearAuthSession()
+    const detail = error.response?.data?.detail
+    ElMessage.error(detail || '登录状态已失效，请重新登录')
+    if (router.currentRoute.value.path !== '/login') {
+      router.replace('/login')
+    }
   }
   return Promise.reject(error)
 })

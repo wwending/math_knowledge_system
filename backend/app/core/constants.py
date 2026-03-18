@@ -76,3 +76,12 @@ def normalize_event_type(value: str) -> str:
         return value
     key = value.lower()
     return _EVENT_TYPE_NORMALIZATION_MAP.get(key, value)
+
+
+# Upload limits and allowed asset types.
+MAX_ASSET_SIZE_BYTES = 20 * 1024 * 1024
+ALLOWED_ASSET_MIME_TYPES = {
+    "image/png",
+    "image/jpeg",
+    "application/pdf",
+}

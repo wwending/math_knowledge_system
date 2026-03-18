@@ -1,79 +1,63 @@
+import hashlib
+import json
+import mimetypes
 import os
 import shutil
 import time
 import uuid
-import fitz  # PyMuPDF
-from datetime import datetime
-from typing import List, Optional, Union, Any
+from typing import Any, List, Optional
 
-from fastapi import APIRouter, File, UploadFile, HTTPException, Depends, Form
-from sqlalchemy.orm import Session
-from pydantic import BaseModel
+import fitz
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from loguru import logger
+from PIL import Image
+from pydantic import BaseModel
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
-# 数据库与配置
-from app.core.database import get_db
-from app.core.config import settings
-
-# 服务
-from app.services.ocr_engine import ocr_service
-from app.services.llm import nlp_service
-
-# 模型
-from app.models.question import Question
-from app.models.user import User
 from app.api.v1.auth import get_current_user
+from app.core.config import settings
+from app.core.constants import ALLOWED_ASSET_MIME_TYPES, MAX_ASSET_SIZE_BYTES
+from app.core.database import get_db
+from app.models.question import Question
+from app.models.source_asset import SourceAsset
+from app.models.user import User
+from app.schemas.ocr import OCRResponse
+from app.schemas.question import KnowledgeTag, QuestionDetail, QuestionListItem, QuestionUpdate
+from app.services.llm import nlp_service
+from app.services.ocr_engine import ocr_service
 
 
-# 初始化路由
 router = APIRouter()
 
-# ==========================================
-# 1. Pydantic Schema 定义
-# ==========================================
+NOT_FOUND_MESSAGE = "\u8d44\u6e90\u4e0d\u5b58\u5728"
+FORBIDDEN_MESSAGE = "\u65e0\u6743\u8bbf\u95ee\u8be5\u8d44\u6e90"
+QUESTION_UPDATED_MESSAGE = "\u9898\u76ee\u5185\u5bb9\u5df2\u66f4\u65b0"
+PDF_ONLY_MESSAGE = "\u8bf7\u4e0a\u4f20 PDF \u6587\u4ef6"
+PDF_PARSE_FAILED_MESSAGE = "\u672a\u80fd\u89e3\u6790 PDF \u6587\u4ef6"
+UPLOAD_SAVE_FAILED_MESSAGE = "\u4e0a\u4f20\u6587\u4ef6\u4fdd\u5b58\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5"
+QUESTION_SAVE_FAILED_MESSAGE = "\u9898\u76ee\u4fdd\u5b58\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5"
 
-# 接收修改内容的模型
-class QuestionUpdate(BaseModel):
-    content: str
 
-# 知识点标签模型
-class KnowledgeTag(BaseModel):
-    label: str
-    score: float
+class SourceAssetResponse(BaseModel):
+    asset_id: int
+    kind: str
+    mime: str
+    size_bytes: int
+    width: Optional[int] = None
+    height: Optional[int] = None
+    sha256: str
 
-# OCR 结果响应模型
-class OCRResponse(BaseModel):
-    success: bool
-    content: str
-    knowledge: List[KnowledgeTag]
-    cost_seconds: float
-    image_url: Optional[str] = None
-    id: int
-    created_at: Optional[datetime] = None
-
-# Question list/detail response models
-class QuestionListItem(BaseModel):
-    id: int
-    content: Optional[str] = None
-    knowledge_tags: List[KnowledgeTag] = []
-    origin_image: Optional[str] = None
-    created_at: Optional[datetime] = None
-
-class QuestionDetail(BaseModel):
-    id: int
-    content: Optional[str] = None
-    knowledge_tags: List[KnowledgeTag] = []
-    origin_image: Optional[str] = None
-    created_at: Optional[datetime] = None
-
-# ==========================================
-# 2. 依赖注入 (Mock User)
-# ==========================================
 
 def normalize_tags(raw_tags: Any) -> List[KnowledgeTag]:
     tags: List[KnowledgeTag] = []
     if not raw_tags:
         return tags
+    if isinstance(raw_tags, str):
+        try:
+            raw_tags = json.loads(raw_tags)
+        except json.JSONDecodeError:
+            raw_tags = [raw_tags]
     for tag_obj in raw_tags:
         if isinstance(tag_obj, dict):
             tags.append(KnowledgeTag(label=tag_obj.get("label"), score=tag_obj.get("score", 1.0)))
@@ -83,61 +67,149 @@ def normalize_tags(raw_tags: Any) -> List[KnowledgeTag]:
             tags.append(KnowledgeTag(label=str(tag_obj), score=1.0))
     return tags
 
-# ==========================================
-# 3. API 接口实现
-# ==========================================
 
-# --- 接口: 获取所有知识点标签 (修复了字段名) ---
+def build_upload_image_url(raw_path: Optional[str]) -> Optional[str]:
+    if not raw_path:
+        return None
+
+    normalized_path = str(raw_path).strip()
+    if not normalized_path:
+        return None
+
+    if normalized_path.startswith(("http://", "https://")):
+        return normalized_path
+
+    if normalized_path.startswith(f"{settings.STATIC_URL_PREFIX_NORMALIZED}/"):
+        return normalized_path
+
+    upload_relative_dir = os.path.relpath(
+        str(settings.UPLOAD_DIR_PATH),
+        str(settings.STATIC_DIR_PATH),
+    ).replace("\\", "/").strip("./")
+
+    relative_path = normalized_path.lstrip("/")
+    if relative_path.startswith("static/"):
+        relative_path = relative_path[len("static/"):]
+    elif upload_relative_dir and not relative_path.startswith(f"{upload_relative_dir}/"):
+        relative_path = f"{upload_relative_dir}/{os.path.basename(relative_path)}"
+
+    return f"{settings.STATIC_URL_PREFIX_NORMALIZED}/{relative_path.lstrip('/')}"
+
+
+def _safe_remove_file(path: str) -> None:
+    if not path:
+        return
+    try:
+        if os.path.exists(path):
+            os.remove(path)
+    except OSError as exc:
+        logger.warning("Failed to remove file {}: {}", path, exc)
+
+
+def _save_upload_file(file: UploadFile, file_path: str) -> tuple[int, str]:
+    sha256 = hashlib.sha256()
+    size_bytes = 0
+    with open(file_path, "wb") as buffer:
+        while True:
+            chunk = file.file.read(1024 * 1024)
+            if not chunk:
+                break
+            size_bytes += len(chunk)
+            if size_bytes > MAX_ASSET_SIZE_BYTES:
+                raise HTTPException(status_code=413, detail="File too large")
+            sha256.update(chunk)
+            buffer.write(chunk)
+    return size_bytes, sha256.hexdigest()
+
+
+def _build_recognize_response(
+    *,
+    success: bool,
+    content: str,
+    knowledge: Optional[list[dict[str, Any]]] = None,
+    cost_seconds: float,
+    image_url: Optional[str],
+    question_id: int = -1,
+    created_at=None,
+    error: Optional[str] = None,
+    error_type: Optional[str] = None,
+    partial_success: bool = False,
+    warning: Optional[str] = None,
+) -> OCRResponse:
+    return OCRResponse(
+        success=success,
+        content=content,
+        knowledge=knowledge or [],
+        cost_seconds=round(cost_seconds, 2),
+        image_url=image_url,
+        id=question_id,
+        created_at=created_at,
+        error=error,
+        error_type=error_type,
+        partial_success=partial_success,
+        warning=warning,
+    )
+
+
+def _normalize_llm_tags(raw_tags: Any) -> list[dict[str, Any]]:
+    knowledge_tags: list[dict[str, Any]] = []
+    if not isinstance(raw_tags, list):
+        return knowledge_tags
+
+    for tag in raw_tags:
+        if isinstance(tag, str):
+            label = tag.strip()
+        elif isinstance(tag, dict):
+            label = str(tag.get("label", "")).strip()
+        else:
+            label = str(tag).strip()
+
+        if label:
+            knowledge_tags.append({"label": label, "score": 1.0})
+    return knowledge_tags
+
+
 @router.get("/tags", response_model=List[str])
 def get_all_tags(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
-    # 🔥 修正：使用 user_id 而不是 owner_id
     questions = db.query(Question).filter(Question.user_id == current_user.id).all()
-    
+
     unique_tags = set()
-    for q in questions:
-        if q.knowledge_tags:
-            for tag_obj in q.knowledge_tags:
-                # 兼容 dict 和 object 两种存储格式
-                if isinstance(tag_obj, dict):
-                    unique_tags.add(tag_obj.get("label"))
-                elif hasattr(tag_obj, 'label'):
-                     unique_tags.add(tag_obj.label)
-                elif isinstance(tag_obj, str):
-                    unique_tags.add(tag_obj)
-    
+    for question in questions:
+        for tag_obj in normalize_tags(question.knowledge_tags):
+            unique_tags.add(tag_obj.label)
+
     return sorted(list(unique_tags))
 
-# --- 接口: 修改题目内容 ---
+
 @router.put("/questions/{question_id}")
 def update_question(
     question_id: int,
     question_update: QuestionUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
-    # æ¥æ¾é¢ç®
-    q = db.query(Question).filter(Question.id == question_id).first()
-    if not q:
-        raise HTTPException(status_code=404, detail="资源不存在")
-    if q.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="访问别人的资源")
-# æ´æ°åå®¹
-    q.content = question_update.content
+    question = db.query(Question).filter(Question.id == question_id).first()
+    if not question:
+        raise HTTPException(status_code=404, detail=NOT_FOUND_MESSAGE)
+    if question.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail=FORBIDDEN_MESSAGE)
+
+    question.content = question_update.content
     db.commit()
-    db.refresh(q)
-    return {"success": True, "msg": "æ´æ°æå"}
+    db.refresh(question)
+    return {"success": True, "msg": QUESTION_UPDATED_MESSAGE}
+
 
 @router.get("/history", response_model=List[OCRResponse])
 def read_history(
-    skip: int = 0, 
-    limit: int = 100, 
+    skip: int = 0,
+    limit: int = 100,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
-    # 查询数据库，按时间倒序
     questions = (
         db.query(Question)
         .filter(Question.user_id == current_user.id)
@@ -146,180 +218,297 @@ def read_history(
         .limit(limit)
         .all()
     )
-    
+
+    logger.info("Reading history records user_id={} rows={}", current_user.id, len(questions))
     results = []
-    print(f"🔍 正在读取历史记录，共找到 {len(questions)} 条...")
-
-    for q in questions:
-        # print(f"   -> [ID:{q.id}] DB存的文件名: '{q.origin_image}'") # 调试用，可注释
-
-        # 转换 Tag 格式
-        k_tags = []
-        if q.knowledge_tags:
-            for t in q.knowledge_tags:
-                if isinstance(t, dict):
-                    k_tags.append(KnowledgeTag(label=t.get("label"), score=t.get("score", 1.0)))
-                else:
-                    k_tags.append(KnowledgeTag(label=str(t), score=1.0))
-        
-        results.append(OCRResponse(
-            success=True,
-            content=q.content or "",
-            knowledge=k_tags,
-            cost_seconds=0.0,
-            image_url=q.origin_image,
-            id=q.id,
-            created_at=q.created_at
-        ))
-        
+    for question in questions:
+        results.append(
+            OCRResponse(
+                success=True,
+                content=question.content or "",
+                knowledge=normalize_tags(question.knowledge_tags),
+                cost_seconds=0.0,
+                image_url=build_upload_image_url(question.origin_image),
+                id=question.id,
+                created_at=question.created_at,
+            )
+        )
     return results
 
-# --- 接口: PDF 转图片 ---
+
 @router.post("/upload_pdf")
 def upload_pdf(
     file: UploadFile = File(...),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
-    if not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="请上传 PDF 文件")
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail=PDF_ONLY_MESSAGE)
 
-    # 确保目录存在 (static 必须已在 main.py 挂载)
-    pdf_temp_dir = os.path.join(settings.BASE_DIR, "static", "pdf_temp") 
-    # 如果 settings 没有 BASE_DIR，可以用相对路径: os.path.join("static", "pdf_temp")
-    if not os.path.exists(pdf_temp_dir):
-        os.makedirs(pdf_temp_dir, exist_ok=True)
+    pdf_temp_dir = str(settings.PDF_TEMP_DIR_PATH)
+    os.makedirs(pdf_temp_dir, exist_ok=True)
 
     file_ext = file.filename.split(".")[-1]
     task_id = str(uuid.uuid4())
     pdf_filename = f"{task_id}.{file_ext}"
     pdf_path = os.path.join(pdf_temp_dir, pdf_filename)
-    
-    # 保存 PDF
+
     with open(pdf_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
     image_list = []
     try:
-        # 打开 PDF
-        doc = fitz.open(pdf_path)
-        for page_index in range(len(doc)):
-            page = doc.load_page(page_index)
-            
-            # 设置缩放 (2.0 = 200% 清晰度)
-            mat = fitz.Matrix(2.0, 2.0) 
-            pix = page.get_pixmap(matrix=mat)
-            
+        document = fitz.open(pdf_path)
+        for page_index in range(len(document)):
+            page = document.load_page(page_index)
+            pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
             img_name = f"{task_id}_page_{page_index}.jpg"
             img_path = os.path.join(pdf_temp_dir, img_name)
-            
-            # 保存图片
             pix.save(img_path)
-            
-            # 返回给前端的 URL 路径 (注意不需要 static/ 前缀，如果前端通过 /static 访问)
-            # 或者返回相对路径，由前端拼接
             image_list.append(f"pdf_temp/{img_name}")
-            
-        doc.close()
+        document.close()
         return {"success": True, "total_pages": len(image_list), "images": image_list}
-        
-    except Exception as e:
-        logger.error(f"PDF 处理失败: {e}")
-        raise HTTPException(status_code=500, detail=f"PDF 解析失败: {str(e)}")
+    except Exception:
+        logger.exception("PDF parse failed user_id={} path={}", current_user.id, pdf_path)
+        raise HTTPException(status_code=500, detail=PDF_PARSE_FAILED_MESSAGE)
+    finally:
+        try:
+            file.file.close()
+        except Exception:
+            pass
 
-# --- 接口: 图片识别 (核心) ---
+
+@router.post("/assets", response_model=SourceAssetResponse)
+def upload_asset(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Missing filename")
+
+    mime = file.content_type or mimetypes.guess_type(file.filename)[0] or ""
+    if mime not in ALLOWED_ASSET_MIME_TYPES:
+        raise HTTPException(status_code=400, detail="Unsupported file type")
+
+    original_name = os.path.basename(file.filename)
+    if not original_name:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    unique_prefix = uuid.uuid4().hex
+    stored_filename = f"{unique_prefix}_{original_name}"
+    file_path = str(settings.UPLOAD_DIR_PATH / stored_filename)
+
+    try:
+        size_bytes, sha256_digest = _save_upload_file(file, file_path)
+    except HTTPException:
+        _safe_remove_file(file_path)
+        raise
+    finally:
+        try:
+            file.file.close()
+        except Exception:
+            pass
+
+    width = None
+    height = None
+    kind = "pdf"
+    if mime.startswith("image/"):
+        kind = "image"
+        try:
+            with Image.open(file_path) as img:
+                width, height = img.size
+        except Exception:
+            _safe_remove_file(file_path)
+            raise HTTPException(status_code=400, detail="Invalid image file")
+
+    asset = SourceAsset(
+        user_id=current_user.id,
+        kind=kind,
+        original_path=stored_filename,
+        normalized_path=None,
+        mime=mime,
+        size_bytes=size_bytes,
+        width=width,
+        height=height,
+        sha256=sha256_digest,
+    )
+
+    db.add(asset)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        _safe_remove_file(file_path)
+        raise HTTPException(status_code=409, detail="Asset already exists")
+    db.refresh(asset)
+
+    return SourceAssetResponse(
+        asset_id=asset.id,
+        kind=asset.kind,
+        mime=asset.mime,
+        size_bytes=asset.size_bytes,
+        width=asset.width,
+        height=asset.height,
+        sha256=asset.sha256,
+    )
+
+
 @router.post("/recognize", response_model=OCRResponse)
 def recognize_image(
-    file: UploadFile = File(...), 
+    file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     start_total = time.time()
-    
-    # 1. 保存文件
-    file_ext = os.path.splitext(file.filename)[1].lower()
+
+    file_ext = os.path.splitext(file.filename or "")[1].lower()
     unique_filename = f"{uuid.uuid4()}{file_ext}"
-    file_path = os.path.join(settings.UPLOAD_DIR, unique_filename)
-    
-    print(f"💾 正在保存文件: {file_path}")
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-        
-    # 2. 百度 OCR
+    file_path = str(settings.UPLOAD_DIR_PATH / unique_filename)
+    image_url = build_upload_image_url(unique_filename)
+
+    logger.info("Saving recognize upload user_id={} path={}", current_user.id, file_path)
+    try:
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+    except Exception:
+        logger.exception("Failed to save recognize upload path={}", file_path)
+        _safe_remove_file(file_path)
+        raise HTTPException(status_code=500, detail=UPLOAD_SAVE_FAILED_MESSAGE)
+    finally:
+        try:
+            file.file.close()
+        except Exception:
+            pass
+
     try:
         ocr_result = ocr_service.recognize(file_path)
-        raw_content = ocr_result.get("content", "")
+    except Exception:
+        logger.exception("Unexpected OCR crash user_id={} path={}", current_user.id, file_path)
+        _safe_remove_file(file_path)
+        return _build_recognize_response(
+            success=False,
+            content="",
+            cost_seconds=time.time() - start_total,
+            image_url=None,
+            error="\u6587\u5b57\u8bc6\u522b\u670d\u52a1\u8c03\u7528\u5931\u8d25",
+            error_type="service_error",
+        )
 
-        # 👇👇👇 【新增】在这里打印原始数据 👇👇👇
-        print("="*30)
-        print("🧐 [DEBUG]  OCR 原始输出:")
-        print(raw_content)
-        print("="*30)
-        # 👆👆👆 【新增结束】 👆👆👆
-    except Exception as e:
-        print(f"❌ OCR Failed: {e}")
-        raw_content = ""
-        ocr_result = {"success": False}
+    raw_content = (ocr_result.get("content") or "").strip()
+    if not ocr_result.get("success"):
+        logger.warning(
+            "Recognize OCR failed user_id={} type={} detail={}",
+            current_user.id,
+            ocr_result.get("error_type"),
+            ocr_result.get("detail"),
+        )
+        _safe_remove_file(file_path)
+        return _build_recognize_response(
+            success=False,
+            content="",
+            cost_seconds=time.time() - start_total,
+            image_url=None,
+            error=ocr_result.get("error"),
+            error_type=ocr_result.get("error_type"),
+        )
 
-    # 3. DeepSeek 分析
+    logger.info(
+        "Recognize OCR succeeded user_id={} chars={} cost_seconds={}",
+        current_user.id,
+        len(raw_content),
+        ocr_result.get("cost_seconds"),
+    )
+    logger.debug("OCR raw content: {}", raw_content)
+
     final_content = raw_content
-    knowledge_tags = []
-    
-    if ocr_result.get("success") and raw_content.strip():
-        print(f"🧠 准备调用 AI分析...")
-        nlp_out = nlp_service.analyze(raw_content)
-        final_content = nlp_out.get("corrected_text", raw_content)
-        
-        raw_tags = nlp_out.get("tags", [])
-        for tag in raw_tags:
-            knowledge_tags.append({"label": tag, "score": 1.0})
-    else:
-        print("⚠️ 跳过 AI分析 (OCR为空)")
+    knowledge_tags: list[dict[str, Any]] = []
+    warning = None
+    partial_success = False
 
-    # 4. 入库
+    if raw_content:
+        try:
+            logger.info("Running LLM post-processing user_id={}", current_user.id)
+            llm_result = nlp_service.analyze(raw_content)
+        except Exception:
+            logger.exception("Unexpected LLM crash user_id={}", current_user.id)
+            llm_result = {
+                "success": False,
+                "error_type": "service_error",
+                "error": "\u667a\u80fd\u6574\u7406\u670d\u52a1\u8c03\u7528\u5931\u8d25",
+                "detail": "llm_unexpected_error",
+                "corrected_text": raw_content,
+                "tags": [],
+            }
+
+        if llm_result.get("success"):
+            final_content = llm_result.get("corrected_text", raw_content) or raw_content
+            knowledge_tags = _normalize_llm_tags(llm_result.get("tags", []))
+        else:
+            partial_success = True
+            warning = llm_result.get("error") or "\u667a\u80fd\u6574\u7406\u5931\u8d25\uff0c\u5df2\u4fdd\u7559\u539f\u59cb\u8bc6\u522b\u7ed3\u679c"
+            logger.warning(
+                "Recognize LLM failed user_id={} type={} detail={}",
+                current_user.id,
+                llm_result.get("error_type"),
+                llm_result.get("detail"),
+            )
+            final_content = llm_result.get("corrected_text", raw_content) or raw_content
+            knowledge_tags = _normalize_llm_tags(llm_result.get("tags", []))
+
     try:
         new_question = Question(
-            origin_image=unique_filename, 
-            user_id=current_user.id,  # 🔥 统一使用 user_id
+            origin_image=unique_filename,
+            user_id=current_user.id,
             content=final_content,
-            knowledge_tags=knowledge_tags
+            knowledge_tags=knowledge_tags,
         )
         db.add(new_question)
         db.commit()
         db.refresh(new_question)
-        print(f"✅ 数据库写入成功! ID: {new_question.id}")
-        
-    except Exception as e:
-        print(f"❌ Database Error: {e}")
-        db.rollback()
-        return OCRResponse(
-            success=True, content=final_content, knowledge=knowledge_tags, 
-            cost_seconds=round(time.time() - start_total, 2), 
-            image_url=unique_filename, id=-1, created_at=None
+        logger.info(
+            "Question persisted id={} user_id={} partial_success={}",
+            new_question.id,
+            current_user.id,
+            partial_success,
         )
+    except Exception:
+        logger.exception("Database error while creating question user_id={}", current_user.id)
+        db.rollback()
+        _safe_remove_file(file_path)
+        raise HTTPException(status_code=500, detail=QUESTION_SAVE_FAILED_MESSAGE)
 
-    return OCRResponse(
+    return _build_recognize_response(
         success=True,
         content=final_content,
         knowledge=knowledge_tags,
-        cost_seconds=round(time.time() - start_total, 2),
-        image_url=unique_filename,
-        id=new_question.id,
-        created_at=new_question.created_at
+        cost_seconds=time.time() - start_total,
+        image_url=image_url,
+        question_id=new_question.id,
+        created_at=new_question.created_at,
+        partial_success=partial_success,
+        warning=warning,
+        error_type="llm_failed" if partial_success else None,
     )
 
-# --- API: question list (current user) ---
+
 @router.get("/questions", response_model=List[QuestionListItem])
 def list_questions(
     skip: int = 0,
     limit: int = 50,
     q: Optional[str] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     query = db.query(Question).filter(Question.user_id == current_user.id)
     if q:
         query = query.filter(Question.content.contains(q))
-    questions = query.order_by(Question.created_at.desc(), Question.id.desc()).offset(skip).limit(limit).all()
+
+    questions = (
+        query.order_by(Question.created_at.desc(), Question.id.desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
 
     return [
         QuestionListItem(
@@ -327,27 +516,30 @@ def list_questions(
             content=item.content,
             knowledge_tags=normalize_tags(item.knowledge_tags),
             origin_image=item.origin_image,
-            created_at=item.created_at
+            image_url=build_upload_image_url(item.origin_image),
+            created_at=item.created_at,
         )
         for item in questions
     ]
 
-# --- API: question detail (current user) ---
+
 @router.get("/questions/{question_id}", response_model=QuestionDetail)
 def get_question_detail(
     question_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     question = db.query(Question).filter(Question.id == question_id).first()
     if not question:
-        raise HTTPException(status_code=404, detail="资源不存在")
+        raise HTTPException(status_code=404, detail=NOT_FOUND_MESSAGE)
     if question.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="访问别人的资源")
+        raise HTTPException(status_code=403, detail=FORBIDDEN_MESSAGE)
+
     return QuestionDetail(
         id=question.id,
         content=question.content,
         knowledge_tags=normalize_tags(question.knowledge_tags),
         origin_image=question.origin_image,
-        created_at=question.created_at
+        image_url=build_upload_image_url(question.origin_image),
+        created_at=question.created_at,
     )

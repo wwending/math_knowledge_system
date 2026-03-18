@@ -23,6 +23,11 @@ wheels/
 .installed.cfg
 *.egg
 .venv_clean/
+.venv/
+venv/
+backend/.venv/
+backend/venv/
+backend/.venv_reqcheck/
 
 # --- AI & Models (大文件不进 Git) ---
 *.pth

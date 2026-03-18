@@ -3,19 +3,29 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from jose import JWTError, jwt
+from jose import ExpiredSignatureError, JWTError, jwt
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.security import verify_password, get_password_hash, create_access_token
+from app.core.security import create_access_token, get_password_hash, verify_password
 from app.models.user import User
 
-router = APIRouter(prefix="/auth", tags=["auth"])
 
-# 注意：tokenUrl 必须和你真正暴露的接口一致（含 API_V1_STR）
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/auth/token")
+LOGIN_REQUIRED_MESSAGE = "\u8bf7\u5148\u767b\u5f55"
+INVALID_TOKEN_MESSAGE = "\u767b\u5f55\u72b6\u6001\u65e0\u6548\uff0c\u8bf7\u91cd\u65b0\u767b\u5f55"
+EXPIRED_TOKEN_MESSAGE = "\u767b\u5f55\u5df2\u8fc7\u671f\uff0c\u8bf7\u91cd\u65b0\u767b\u5f55"
+BAD_CREDENTIALS_MESSAGE = "\u7528\u6237\u540d\u6216\u5bc6\u7801\u9519\u8bef"
+DISABLED_USER_MESSAGE = "\u8d26\u6237\u5df2\u88ab\u7981\u7528"
+ADMIN_REQUIRED_MESSAGE = "\u9700\u8981\u7ba1\u7406\u5458\u6743\u9650"
+
+
+router = APIRouter(prefix="/auth", tags=["auth"])
+oauth2_scheme = OAuth2PasswordBearer(
+    tokenUrl=f"{settings.API_V1_STR}/auth/token",
+    auto_error=False,
+)
 
 
 class Token(BaseModel):
@@ -44,10 +54,18 @@ def _get_user_by_username(db: Session, username: str) -> Optional[User]:
     return db.query(User).filter(User.username == username).first()
 
 
+def _raise_auth_error(detail: str) -> None:
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail=detail,
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
 @router.post("/register", response_model=UserOut)
 def register(payload: RegisterIn, db: Session = Depends(get_db)):
     if _get_user_by_username(db, payload.username):
-        raise HTTPException(status_code=409, detail="用户名已存在")
+        raise HTTPException(status_code=409, detail="\u7528\u6237\u540d\u5df2\u5b58\u5728")
 
     user = User(
         username=payload.username,
@@ -69,13 +87,9 @@ def login_for_access_token(
 ):
     user = _get_user_by_username(db, form_data.username)
     if not user or not verify_password(form_data.password, user.hashed_password):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="用户名或密码错误",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        _raise_auth_error(BAD_CREDENTIALS_MESSAGE)
     if not user.is_active:
-        raise HTTPException(status_code=403, detail="用户已被禁用")
+        raise HTTPException(status_code=403, detail=DISABLED_USER_MESSAGE)
 
     access_token = create_access_token(
         data={"sub": user.username, "role": user.role},
@@ -86,33 +100,32 @@ def login_for_access_token(
 
 def get_current_user(
     db: Session = Depends(get_db),
-    token: str = Depends(oauth2_scheme),
+    token: Optional[str] = Depends(oauth2_scheme),
 ) -> User:
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="无效的认证信息",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
+    if not token:
+        _raise_auth_error(LOGIN_REQUIRED_MESSAGE)
 
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-        username: str = payload.get("sub")
+        username = payload.get("sub")
         if not username:
-            raise credentials_exception
+            _raise_auth_error(INVALID_TOKEN_MESSAGE)
+    except ExpiredSignatureError:
+        _raise_auth_error(EXPIRED_TOKEN_MESSAGE)
     except JWTError:
-        raise credentials_exception
+        _raise_auth_error(INVALID_TOKEN_MESSAGE)
 
     user = _get_user_by_username(db, username)
     if not user:
-        raise credentials_exception
+        _raise_auth_error(INVALID_TOKEN_MESSAGE)
     if not user.is_active:
-        raise HTTPException(status_code=403, detail="用户已被禁用")
+        raise HTTPException(status_code=403, detail=DISABLED_USER_MESSAGE)
     return user
 
 
 def require_admin(user: User = Depends(get_current_user)) -> User:
     if user.role != "admin":
-        raise HTTPException(status_code=403, detail="需要管理员权限")
+        raise HTTPException(status_code=403, detail=ADMIN_REQUIRED_MESSAGE)
     return user
 
 
