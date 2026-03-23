@@ -1,7 +1,8 @@
 import uuid
 
 from app.core.constants import DraftEventType, DraftStatus
-from app.db.base import Base
+from app.core.security import utcnow
+from app.db.migrations import upgrade_database
 from app.db.session import SessionLocal, engine
 from app.models.draft import Draft
 from app.models.draft_event import DraftEvent
@@ -11,16 +12,21 @@ from app.services.draft_state import create_draft_event, transition_draft_status
 
 
 def main() -> None:
-    Base.metadata.create_all(bind=engine)
+    upgrade_database(str(engine.url))
 
     db = SessionLocal()
     try:
+        phone = f"188{uuid.uuid4().int % 10**8:08d}"
         user = User(
-            username=f"smoke_draft_state_{uuid.uuid4().hex[:8]}",
+            username=phone,
+            phone=phone,
+            display_name="Smoke Test",
             email=None,
             hashed_password="not_secure",
-            is_active=True,
             role="user",
+            status="active",
+            must_change_password=False,
+            password_changed_at=utcnow(),
         )
         db.add(user)
         db.commit()

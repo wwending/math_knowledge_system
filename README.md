@@ -1,78 +1,78 @@
 # Math Knowledge System
 
-## 2026-03-19 交接结论
+当前仓库已完成鉴权生产化改造的阶段 3 收口，前后端统一切到手机号登录、`access token + refresh session` 会话体系。公开注册能力仍然保留，但作为 demo/staging 可开启能力，由后端 `PUBLIC_SIGNUP_ENABLED` 与 `/api/v1/auth/capabilities` 统一驱动；正式环境默认不应开放。
 
-当前仓库已经完成本轮交付所需的兼容修复和链路收口，重点是：
+详细鉴权基线说明见 [docs/auth-backend-stage2.md](/d:/math_knowledge_system/docs/auth-backend-stage2.md)，验收步骤见 [docs/auth-acceptance-checklist.md](/d:/math_knowledge_system/docs/auth-acceptance-checklist.md)。
 
-- 配置已收敛到 `backend/app/core/config.py`，后端启动与静态目录解析不再依赖运行时 `cwd`
-- `Question` 旧契约已做兼容修复，老库缺少 `content / knowledge_tags / origin_image` 列时可在启动阶段补齐
-- 前端已改为真实 JWT 登录，不再使用假 token
-- 图片地址已统一为后端返回 `image_url`，前端兼容读取 `image_url` 和旧字段 `origin_image`
-- OCR / LLM 的主要失败路径已做最小可用修复，`OCR 全失败` 与 `OCR 成功但 LLM 失败` 已明确区分
+## 当前鉴权行为
 
-当前可以客观表述为：
+- 登录入口：`POST /api/v1/auth/login`
+- 兼容旧入口：`POST /api/v1/auth/token`
+- 会话续期：`POST /api/v1/auth/refresh`
+- 当前用户：`GET /api/v1/auth/me`
+- 自助改密：`POST /api/v1/auth/change-password`
+- 登出：`POST /api/v1/auth/logout`
+- 管理员用户管理：
+  - `GET /api/v1/admin/users`
+  - `POST /api/v1/admin/users`
+  - `PATCH /api/v1/admin/users/{id}/status`
+  - `PATCH /api/v1/admin/users/{id}/role`
+  - `POST /api/v1/admin/users/{id}/reset-password`
+- 公开注册：
+  - 路由保留为 `POST /api/v1/auth/register`
+  - 是否开放由 `PUBLIC_SIGNUP_ENABLED` 控制
+  - 前端登录页入口与 `/register` 可达性由 `GET /api/v1/auth/capabilities` 驱动
+  - demo/staging 可按需开启，正式环境默认关闭
+- 自助找回密码：
+  - 当前不开放
+  - 前后端统一提示“联系管理员重置”
+  - 已预留短信相关能力开关，但默认关闭
 
-- 可本地启动
-- 可用真实 JWT 登录
-- 正向链路已人工浏览器验收通过
-- 已确认真实百度 OCR 能返回
-- 已确认真实 LLM 能返回
-- 尚未系统完成真实第三方失败场景的在线烟雾测试
+## 环境变量
 
-不建议表述为：
-
-- 第三方异常场景已全面验证
-- 已具备正式上线级别的部署一致性验证
-- 已具备正式迁移体系
-
-## 启动方式
-
-### 后端
-
-1. 在 `backend/.env` 中准备最小配置：
+后端建议在 `backend/.env` 配置：
 
 ```env
-SECRET_KEY=请替换为真实密钥
-BAIDU_API_KEY=你的百度 OCR Key
-BAIDU_SECRET_KEY=你的百度 OCR Secret
-DEEPSEEK_API_KEY=你的 LLM Key
+APP_ENV=development
+DATABASE_URL=sqlite:///./math_knowledge.db
+SECRET_KEY=请替换为至少 32 位的真实密钥
+CORS_ALLOW_ORIGINS=http://localhost:5173
+
+ACCESS_TOKEN_EXPIRE_MINUTES=15
+REFRESH_TOKEN_EXPIRE_DAYS=14
+REFRESH_TOKEN_COOKIE_NAME=refresh_token
+REFRESH_TOKEN_COOKIE_PATH=/
+# 开发环境可为 false，生产环境必须为 true
+REFRESH_TOKEN_COOKIE_SECURE=false
+# 开发环境可用 lax/strict/none，生产环境只允许 lax 或 strict
+REFRESH_TOKEN_COOKIE_SAMESITE=lax
+
+PUBLIC_SIGNUP_ENABLED=false
+# demo/staging 可切为 true 验证公开注册；正式环境默认保持 false
+SMS_CODE_LOGIN_ENABLED=false
+SMS_PASSWORD_RECOVERY_ENABLED=false
+PASSWORD_RECOVERY_MODE=admin_contact
+
+LOGIN_RATE_LIMIT_WINDOW_SECONDS=900
+LOGIN_RATE_LIMIT_MAX_ATTEMPTS=5
+LOGIN_RATE_LIMIT_BLOCK_SECONDS=1800
+
+AUTO_CREATE_TABLES=false
+AUTO_APPLY_LEGACY_QUESTION_COMPAT=false
 ```
 
-可选项：
+生产环境要求：
 
-- `DATABASE_URL`，默认是相对 `backend` 目录解析的 `sqlite:///./math_knowledge.db`
-- `CORS_ALLOW_ORIGINS`
-- `STATIC_URL_PREFIX`
-- `STATIC_DIR`
-- `UPLOAD_DIR`
-- `PDF_TEMP_DIR`
-- `DEEPSEEK_BASE_URL`
-- `DEEPSEEK_MODEL`
+- `APP_ENV=production`
+- `SECRET_KEY` 不能使用默认值，且长度至少 32 位
+- `CORS_ALLOW_ORIGINS` 不能为 `*`
+- `REFRESH_TOKEN_COOKIE_NAME` 不能为空
+- `REFRESH_TOKEN_COOKIE_PATH` 必须以 `/` 开头
+- `REFRESH_TOKEN_COOKIE_SECURE=true`
+- `REFRESH_TOKEN_COOKIE_SAMESITE` 必须显式配置，且只允许 `lax` 或 `strict`
+- 必须通过 Alembic 迁移建表，不依赖运行时自动补列
 
-2. 安装依赖并启动：
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r backend\requirements.txt
-uvicorn --app-dir backend app.main:app --reload
-```
-
-说明：
-
-- 推荐从仓库根目录启动，当前配置已按仓库路径解析，不要求先 `cd backend`
-- 启动时会自动创建静态目录，并在 `AUTO_CREATE_TABLES=True` 时自动建表
-- 启动时会执行 `Question` 旧契约兼容补列
-
-### 前端
-
-```powershell
-cd frontend
-npm install
-npm run dev
-```
-
-可选环境变量：
+前端可选环境变量：
 
 ```env
 VITE_API_BASE_URL=http://127.0.0.1:8000
@@ -80,94 +80,112 @@ VITE_API_V1_PREFIX=/api/v1
 VITE_STATIC_URL_PREFIX=/static
 ```
 
-默认前提：
+## 初始化管理员
 
-- 前端默认请求 `http://127.0.0.1:8000`
-- 登录接口使用 `POST /api/v1/auth/token`
-- 路由鉴权会调用 `GET /api/v1/auth/me` 校验已存 token
+1. 安装依赖
 
-## 本轮主变更
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r backend\requirements.txt
+```
 
-### 1. 配置收敛与 `cwd` 依赖消除
+2. 执行数据库迁移
 
-- 路径解析统一走 `settings`
-- `STATIC_DIR / UPLOAD_DIR / PDF_TEMP_DIR / DATABASE_URL` 均按后端目录解析
-- 静态目录挂载与运行时目录创建已收敛到应用启动阶段
-- 从仓库根目录执行 `uvicorn --app-dir backend app.main:app --reload` 已成为推荐方式
+```powershell
+cd backend
+..\.\venv\Scripts\python.exe -m alembic upgrade head
+cd ..
+```
 
-### 2. `Question` 旧契约修复
+3. 初始化管理员
 
-- 启动时会检查 `questions` 表
-- 若老库缺少 `content / knowledge_tags / origin_image` 列，会补齐最小兼容列
-- 当前做法是兼容修复，不是正式迁移体系
+```powershell
+.\.venv\Scripts\python.exe -m backend.app.scripts.create_admin --phone 13800000000 --password "AdminPass123!" --display-name "Super Admin"
+```
 
-### 3. 前端真实 JWT 登录接入
+说明：
 
-- 登录页改为调用真实 `/api/v1/auth/token`
-- token 统一保存在前端鉴权工具中
-- axios 请求拦截器自动附带 `Bearer token`
-- 路由守卫会用 `/api/v1/auth/me` 验证本地会话
-- `401` 会统一清理会话并跳回登录页
+- 管理员脚本会创建或升级该账号为 `super_admin`
+- 新创建用户统一通过管理员用户管理界面或管理员 API 创建
+- 如需演示公开注册，可在 demo/staging 环境将 `PUBLIC_SIGNUP_ENABLED=true`
+- 正式环境默认不开放公开注册，也不开放短信找回
 
-### 4. 图片 URL 统一
+## 启动方式
 
-- 后端列表、详情、历史、识别结果统一返回 `image_url`
-- 前端通过统一方法解析图片地址
-- 兼容读取旧字段 `origin_image`
+后端：
 
-### 5. 失败路径处理修复
+```powershell
+uvicorn --app-dir backend app.main:app --reload
+```
 
-- OCR 全失败：稳定返回失败，不落库
-- OCR 成功但 LLM 失败：返回 `partial_success`，保留 OCR 原文并允许落库
-- 登录失败、缺 token、无效 token、过期 token 均有明确提示
-- 图片资源缺失时，前端展示占位，不直接暴露 broken image
+前端：
 
-## 当前验证边界
+```powershell
+cd frontend
+npm install
+npm run dev
+```
 
-### 已验证：真实人工浏览器 + 真实第三方成功链路
+## 迁移流程
 
-- 已完成今天的人工浏览器验收
-- 已确认真实 JWT 登录可用
-- 已确认上传图片后百度 OCR 真能返回
-- 已确认 OCR 成功后 LLM 真能返回
-- 已确认正向结果可回到页面展示链路
+新增数据库结构时必须：
 
-当前正向链路可描述为：
+1. 先在 `backend/app/models` 增加正式模型
+2. 再在 `backend/alembic/versions` 增加迁移脚本
+3. 本地执行 `alembic upgrade head`
+4. 运行测试和最小验收后再发布
 
-`登录 -> 上传图片 -> OCR 返回 -> LLM 返回 -> 结果展示 -> 历史/题库可查看`
+本阶段新增的正式迁移：
 
-### 已验证：stub 条件下的失败路径
+- `backend/alembic/versions/20260319_0001_auth_production_baseline.py`
+- `backend/alembic/versions/20260320_0002_auth_audit_and_rate_limit.py`
 
-- 仓库已补充 `backend/tests/test_failure_paths.py`
-- 这组验证覆盖的是接口稳定性与返回语义
-- 其中 OCR / LLM 异常、无效返回、部分成功等场景属于 `patch / monkeypatch` 条件下验证
-- 这部分不能替代真实第三方在线异常验证
+## 发布与回滚建议
 
-### 未系统验证
+发布前：
 
-- 真实第三方失败场景的在线烟雾测试还没有系统跑完
-- 尚未形成“断网 / 错密钥 / 三方限流 / 三方异常结构”全套线上验收记录
-- 尚未验证多部署环境下静态路径、反向代理、CORS 与数据库路径差异
+1. 先备份数据库
+2. 在预发布环境执行 `alembic upgrade head`
+3. 校验管理员登录、创建用户、强制改密、refresh、登出和审计日志
+4. 确认生产环境 `SECRET_KEY`、`CORS_ALLOW_ORIGINS` 和 Cookie 配置正确
+   - 至少确认 `REFRESH_TOKEN_COOKIE_SECURE=true`
+   - 至少确认 `REFRESH_TOKEN_COOKIE_SAMESITE` 为 `lax` 或 `strict`
 
-## 已知限制
+发布时：
 
-- 当前没有正式迁移体系，`Question` 旧契约兼容依赖启动时补列
-- 静态资源策略目前是“后端统一给 URL，前端展示层兜底”，不会自动修复丢失文件
-- 真实第三方失败场景仍是当前最大未闭环项
-- 当前登录态只有 access token，没有 refresh token 体系
-- 这轮目标是交付可提交、可交接版本，不是继续推进新模型体系或重做数据结构
+1. 先发布后端并执行迁移
+2. 再发布前端
+3. 完成 smoke test 后开放流量
 
-## 交付状态
+回滚建议：
 
-当前项目已经达到：
+1. 若是前端问题，优先回滚前端静态资源
+2. 若是后端逻辑问题且数据库结构未破坏，可先回滚应用版本
+3. 若必须回滚迁移，先确认新表 `auth_audit_logs`、`login_rate_limits` 是否有需要保留的审计数据，再执行 `alembic downgrade`
+4. 不要通过删除列或手工改表替代正式迁移回滚
 
-- 可提交
-- 可交接
-- 可继续由接手者在本地复现主链路
-- 可继续补做真实第三方失败场景烟雾测试
+## 阶段 3 验证命令
 
-当前项目尚未达到：
+后端测试：
 
-- 真实第三方异常场景已系统验收
-- 多环境部署差异已完全收口
-- 正式迁移治理已补齐
+```powershell
+.\.venv\Scripts\python.exe -m unittest backend.tests.test_auth_stage3 -v
+```
+
+前端契约与构建：
+
+```powershell
+cd frontend
+npm run test:auth-contract
+npm run test:stage3-contract
+npm run build
+```
+
+## Public Signup Governance Update (2026-03-24)
+
+- 前端公开注册入口、`/register` 路由可达性和关闭态提示，统一由 `GET /api/v1/auth/capabilities` 驱动。
+- capability 未确认前，登录页和注册页都按安全关闭态处理，不向用户呈现“可注册”的可见状态。
+- capability 获取失败与 capability=false 在 UI 上都保持关闭态，但内部状态与测试意图会继续区分两者。
+- 公开注册仅为 demo/staging 可开启能力，不是正式环境默认策略。
+- 当前仍缺少正式开放公开注册所需的防刷、审计和身份验证能力。

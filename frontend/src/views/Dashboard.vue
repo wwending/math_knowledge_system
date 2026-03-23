@@ -1,26 +1,63 @@
 <template>
-  <div class="common-layout">
-    <el-container>
-      <el-aside width="220px" class="sidebar-aside">
-        <div class="logo-area">
-          <div class="logo-left">
-            <el-icon :size="24" color="#409EFF"><EditPen /></el-icon>
-            <span class="logo-text">错题集 AI</span>
-          </div>
-          <el-button text size="small" class="logout-btn" @click="handleLogout">退出登录</el-button>
+  <div class="dashboard-layout">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-icon">
+          <el-icon :size="24"><DataAnalysis /></el-icon>
         </div>
-        <el-menu :default-active="activeMenu" class="el-menu-vertical sidebar-menu" @select="handleMenuSelect">
-          <el-menu-item index="upload"><el-icon><UploadFilled /></el-icon><span>题目录入</span></el-menu-item>
-          <el-menu-item index="bank"><el-icon><Collection /></el-icon><span>智能题库</span></el-menu-item>
-          <el-menu-item index="history"><el-icon><Clock /></el-icon><span>历史记录</span></el-menu-item>
-        </el-menu>
-      </el-aside>
+        <div>
+          <strong>Math Knowledge</strong>
+          <span>生产鉴权后台</span>
+        </div>
+      </div>
 
-      <el-main>
-        <div v-if="activeMenu === 'upload'" class="upload-container">
-          <div class="upload-header">
+      <el-menu :default-active="activeMenu" class="sidebar-menu" @select="handleMenuSelect">
+        <el-menu-item index="upload">
+          <el-icon><UploadFilled /></el-icon>
+          <span>题目录入</span>
+        </el-menu-item>
+        <el-menu-item index="bank">
+          <el-icon><Collection /></el-icon>
+          <span>智能题库</span>
+        </el-menu-item>
+        <el-menu-item index="history">
+          <el-icon><Clock /></el-icon>
+          <span>历史记录</span>
+        </el-menu-item>
+        <el-menu-item v-if="adminMode" index="users">
+          <el-icon><UserFilled /></el-icon>
+          <span>用户管理</span>
+        </el-menu-item>
+      </el-menu>
+    </aside>
+
+    <div class="main-shell">
+      <header class="topbar">
+        <div>
+          <h1>{{ pageTitle }}</h1>
+          <p>{{ pageDescription }}</p>
+        </div>
+        <div class="topbar-actions">
+          <div class="identity-card">
+            <div class="identity-name">
+              <strong>{{ currentUser?.display_name || '当前用户' }}</strong>
+              <span>{{ currentUser?.phone || '-' }}</span>
+            </div>
+            <div class="identity-tags">
+              <el-tag :type="adminMode ? 'warning' : 'info'">{{ roleLabel(currentUser?.role) }}</el-tag>
+              <el-tag :type="statusTagType(currentUser?.status)">{{ statusLabel(currentUser?.status) }}</el-tag>
+            </div>
+          </div>
+          <el-button @click="handleChangePassword">修改密码</el-button>
+          <el-button type="danger" plain @click="handleLogout">退出登录</el-button>
+        </div>
+      </header>
+
+      <main class="main-content">
+        <section v-if="activeMenu === 'upload'" class="content-panel">
+          <div class="section-heading">
             <h2>题目录入</h2>
-            <p class="subtitle">上传图片或 PDF，失败时页面不会退出，可直接重试</p>
+            <p>上传图片或 PDF 进入 OCR / AI 识别流程。鉴权失效时会自动清理会话并重新登录。</p>
           </div>
 
           <div v-if="step === 'select-file'" class="upload-box">
@@ -34,13 +71,13 @@
             >
               <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
               <div class="el-upload__text">
-                拖拽 PDF 或图片到此处，或<em>点击选择</em>
+                拖拽 PDF 或图片到此处，或 <em>点击选择文件</em>
               </div>
             </el-upload>
           </div>
 
           <div v-if="step === 'preview-pdf'" class="pdf-preview-section">
-            <div class="section-header">
+            <div class="section-toolbar">
               <h3>请选择要识别的 PDF 页面</h3>
               <el-button size="small" @click="resetUpload">重新上传</el-button>
             </div>
@@ -59,7 +96,7 @@
           </div>
 
           <div v-if="step === 'process-image'" class="image-process-section">
-            <div class="section-header">
+            <div class="section-toolbar">
               <h3>图片确认</h3>
               <el-button size="small" @click="resetUpload">取消</el-button>
             </div>
@@ -85,60 +122,60 @@
                   :high="true"
                   mode="contain"
                 />
-                <el-button type="primary" class="confirm-btn" @click="confirmCropAndUpload" :loading="ocrLoading">
+                <el-button type="primary" class="confirm-btn" :loading="ocrLoading" @click="confirmCropAndUpload">
                   确认裁剪并上传
                 </el-button>
               </div>
 
               <div v-else class="full-preview">
                 <img :src="currentImageUrl" />
-                <div style="margin-top: 15px;">
-                  <el-button type="primary" @click="uploadFullImage" :loading="ocrLoading">
-                    确认整页上传
-                  </el-button>
-                </div>
+                <el-button type="primary" :loading="ocrLoading" @click="uploadFullImage">确认整页上传</el-button>
               </div>
             </div>
           </div>
 
           <div v-if="ocrLoading && step === 'uploading'" class="loading-state">
             <el-skeleton :rows="5" animated />
-            <p>正在请求 OCR / AI 服务处理图片...</p>
+            <p>正在请求 OCR / AI 服务处理图片，请稍候...</p>
           </div>
 
           <div v-if="ocrResult && step === 'result'" class="result-section">
-            <el-button @click="resetUpload" style="margin-bottom: 10px;">继续上传下一题</el-button>
+            <el-button class="reset-result-btn" @click="resetUpload">继续录入下一题</el-button>
             <el-alert
               v-if="recognizeWarning"
               :title="recognizeWarning"
               type="warning"
               show-icon
               :closable="false"
-              style="margin-bottom: 12px;"
+              class="result-alert"
             />
             <el-card shadow="hover">
               <div class="markdown-body" v-html="renderedContent"></div>
             </el-card>
           </div>
-        </div>
+        </section>
 
-        <div v-else-if="activeMenu === 'bank'">
+        <section v-else-if="activeMenu === 'bank'" class="content-panel">
           <bank-panel />
-        </div>
+        </section>
 
-        <div v-else-if="activeMenu === 'history'">
+        <section v-else-if="activeMenu === 'history'" class="content-panel">
           <history-panel />
-        </div>
-      </el-main>
-    </el-container>
+        </section>
+
+        <section v-else-if="activeMenu === 'users'" class="content-panel">
+          <user-management-panel />
+        </section>
+      </main>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
-import { UploadFilled, EditPen, Collection, Clock } from '@element-plus/icons-vue'
+import { Clock, Collection, DataAnalysis, UploadFilled, UserFilled } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import MarkdownIt from 'markdown-it'
 import markdownItMathjax3 from 'markdown-it-mathjax3'
@@ -146,9 +183,15 @@ import 'vue-cropper/dist/index.css'
 import { VueCropper } from 'vue-cropper'
 
 import { API_V1_BASE_URL } from '../config/api'
-import { clearAuthSession } from '../utils/auth'
+import {
+  authState,
+  fetchCurrentUser,
+  isAdminUser,
+  logout
+} from '../utils/auth'
 import HistoryPanel from '../components/HistoryPanel.vue'
 import BankPanel from '../components/BankPanel.vue'
+import UserManagementPanel from '../components/UserManagementPanel.vue'
 
 import * as pdfjsLib from 'pdfjs-dist'
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.mjs?url'
@@ -156,7 +199,6 @@ import pdfWorker from 'pdfjs-dist/build/pdf.worker.mjs?url'
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker
 
 const router = useRouter()
-const API_BASE = API_V1_BASE_URL
 const md = new MarkdownIt({ html: true, breaks: true, linkify: true })
 md.use(markdownItMathjax3)
 
@@ -172,14 +214,73 @@ const ocrResult = ref('')
 const recognizeWarning = ref('')
 const cropperRef = ref(null)
 
+const currentUser = computed(() => authState.currentUser)
+const adminMode = computed(() => isAdminUser(currentUser.value))
+
+const pageTitle = computed(() => {
+  if (activeMenu.value === 'bank') {
+    return '智能题库'
+  }
+  if (activeMenu.value === 'history') {
+    return '历史记录'
+  }
+  if (activeMenu.value === 'users') {
+    return '用户管理'
+  }
+  return '题目录入'
+})
+
+const pageDescription = computed(() => {
+  if (activeMenu.value === 'users') {
+    return '管理员可以创建账号、调整角色、启停用和重置密码。'
+  }
+  if (activeMenu.value === 'bank') {
+    return '查看已沉淀的题库内容。'
+  }
+  if (activeMenu.value === 'history') {
+    return '查看近期识别与处理历史。'
+  }
+  return '上传题目素材并进入识别工作流。'
+})
+
+const roleLabel = (role) => {
+  if (role === 'super_admin') {
+    return '超级管理员'
+  }
+  if (role === 'admin') {
+    return '管理员'
+  }
+  return '普通用户'
+}
+
+const statusLabel = (status) => {
+  if (status === 'disabled') {
+    return '已禁用'
+  }
+  if (status === 'pending_password_change') {
+    return '待改密'
+  }
+  return '已启用'
+}
+
+const statusTagType = (status) => {
+  if (status === 'disabled') {
+    return 'danger'
+  }
+  if (status === 'pending_password_change') {
+    return 'warning'
+  }
+  return 'success'
+}
+
 const getRecognizeErrorMessage = (payload) => {
   if (!payload) {
-    return '识别失败，请稍后重试'
+    return '识别失败，请稍后重试。'
   }
   if (typeof payload === 'string') {
     return payload
   }
-  return payload.warning || payload.error || '识别失败，请稍后重试'
+  return payload.warning || payload.error || '识别失败，请稍后重试。'
 }
 
 const getRequestErrorMessage = (error) => {
@@ -187,12 +288,21 @@ const getRequestErrorMessage = (error) => {
   if (detail && typeof detail === 'string') {
     return detail
   }
-  return '请求失败，请稍后重试'
+  return '请求失败，请稍后重试。'
+}
+
+const handleMenuSelect = (index) => {
+  if (index === 'users' && !adminMode.value) {
+    return
+  }
+  activeMenu.value = index
 }
 
 const handleFileSelect = async (uploadFile) => {
   const file = uploadFile.raw
-  if (!file) return
+  if (!file) {
+    return
+  }
 
   const fileType = file.name.split('.').pop().toLowerCase()
   if (fileType === 'pdf') {
@@ -214,10 +324,9 @@ const renderPdfToImages = async (file) => {
     const arrayBuffer = await file.arrayBuffer()
     const pdf = await pdfjsLib.getDocument(arrayBuffer).promise
 
-    for (let i = 1; i <= pdf.numPages; i += 1) {
-      const page = await pdf.getPage(i)
+    for (let index = 1; index <= pdf.numPages; index += 1) {
+      const page = await pdf.getPage(index)
       const viewport = page.getViewport({ scale: 2.5 })
-
       const canvas = document.createElement('canvas')
       const context = canvas.getContext('2d')
       canvas.height = viewport.height
@@ -228,7 +337,7 @@ const renderPdfToImages = async (file) => {
     }
   } catch (error) {
     console.error(error)
-    ElMessage.error('PDF 解析失败，可能是加密文件或文件已损坏')
+    ElMessage.error('PDF 解析失败，可能是加密文件或文件损坏。')
     resetUpload()
   } finally {
     pdfLoading.value = false
@@ -242,7 +351,10 @@ const selectPdfPage = (base64Img) => {
 }
 
 const confirmCropAndUpload = () => {
-  if (!cropperRef.value) return
+  if (!cropperRef.value) {
+    return
+  }
+
   cropperRef.value.getCropBlob((blob) => {
     const file = new File([blob], 'crop_question.jpg', { type: 'image/jpeg' })
     runRecognition(file)
@@ -257,7 +369,7 @@ const uploadFullImage = async () => {
     runRecognition(file)
   } catch (error) {
     console.error(error)
-    ElMessage.error('当前图片不可用，请重新选择后再试')
+    ElMessage.error('当前图片不可用，请重新选择后再试。')
     step.value = 'process-image'
   }
 }
@@ -272,17 +384,17 @@ const runRecognition = async (file) => {
   formData.append('file', file)
 
   try {
-    const res = await axios.post(`${API_BASE}/recognize`, formData)
-    const payload = res.data || {}
+    const response = await axios.post(`${API_V1_BASE_URL}/recognize`, formData)
+    const payload = response.data || {}
 
     if (payload.success) {
       ocrResult.value = payload.content || ''
       step.value = 'result'
       if (payload.partial_success) {
-        recognizeWarning.value = payload.warning || 'OCR 已完成，但 AI 整理失败，当前展示原始识别结果'
+        recognizeWarning.value = payload.warning || 'OCR 已完成，但 AI 整理失败，当前展示 OCR 原始结果。'
         ElMessage.warning(getRecognizeErrorMessage(payload))
       } else {
-        ElMessage.success('识别完成')
+        ElMessage.success('识别完成。')
       }
       return
     }
@@ -306,197 +418,359 @@ const resetUpload = () => {
   recognizeWarning.value = ''
 }
 
-const renderedContent = computed(() => {
-  return ocrResult.value ? md.render(ocrResult.value) : ''
-})
+const renderedContent = computed(() => (ocrResult.value ? md.render(ocrResult.value) : ''))
 
-const handleMenuSelect = (index) => {
-  activeMenu.value = index
-}
-
-const handleLogout = () => {
-  clearAuthSession()
+const handleLogout = async () => {
+  await logout()
   router.replace('/login')
 }
+
+const handleChangePassword = () => {
+  router.push('/change-password')
+}
+
+onMounted(async () => {
+  if (!currentUser.value) {
+    await fetchCurrentUser()
+  }
+
+  if (!adminMode.value && activeMenu.value === 'users') {
+    activeMenu.value = 'upload'
+  }
+})
 </script>
 
-<style scoped>
-.upload-container { max-width: 900px; margin: 0 auto; padding: 20px; }
-.upload-header { text-align: center; margin-bottom: 30px; }
-.subtitle { color: #666; font-size: 14px; margin-top: 5px; }
-
-.sidebar-aside {
-  background: #f8fafc;
-  border-right: 1px solid #e6e8eb;
-  padding: 16px 12px;
-  box-sizing: border-box;
+<style scoped lang="scss">
+.dashboard-layout {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  background: linear-gradient(180deg, #f4efe5 0%, #f7faf8 100%);
 }
 
-.logo-area {
+.sidebar {
+  padding: 20px 16px;
+  border-right: 1px solid rgba(20, 51, 66, 0.08);
+  background:
+    radial-gradient(circle at top, rgba(41, 132, 103, 0.16), transparent 24%),
+    linear-gradient(180deg, #143142 0%, #163746 100%);
+}
+
+.sidebar-brand {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 12px 8px 18px;
-  margin-bottom: 6px;
-  border-radius: 10px;
-  background: #ffffff;
-  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.08);
+  gap: 12px;
+  margin-bottom: 22px;
+  padding: 14px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #f7fbfb;
+
+  strong,
+  span {
+    display: block;
+  }
+
+  span {
+    margin-top: 4px;
+    font-size: 12px;
+    opacity: 0.8;
+  }
 }
 
-.logo-left {
-  display: flex;
+.brand-icon {
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-}
-
-.logout-btn {
-  color: #d14343;
-}
-
-.logo-text {
-  font-size: 16px;
-  font-weight: 600;
-  color: #2b3a4a;
-  letter-spacing: 0.3px;
+  justify-content: center;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.14);
 }
 
 :deep(.sidebar-menu) {
   border-right: none;
   background: transparent;
-  padding-top: 4px;
 }
 
 :deep(.sidebar-menu .el-menu-item) {
-  height: 48px;
-  line-height: 48px;
-  font-size: 15px;
-  margin: 4px 6px;
-  border-radius: 10px;
-  padding-left: 16px;
-  padding-right: 12px;
-  color: #2b3a4a;
-  position: relative;
-  transition: background-color 0.2s ease, box-shadow 0.2s ease, color 0.2s ease;
-}
-
-:deep(.sidebar-menu .el-menu-item .el-icon) {
-  font-size: 19px;
-  margin-right: 10px;
-  color: #5b6b7a;
+  margin-bottom: 8px;
+  height: 46px;
+  line-height: 46px;
+  border-radius: 14px;
+  color: rgba(247, 251, 251, 0.8);
 }
 
 :deep(.sidebar-menu .el-menu-item:hover) {
-  background: #eef4ff;
+  background: rgba(255, 255, 255, 0.12);
 }
 
 :deep(.sidebar-menu .el-menu-item.is-active) {
-  background: #e6f0ff;
-  color: #1f5fbf;
-  box-shadow: 0 6px 14px rgba(31, 95, 191, 0.12);
+  background: #f5eee3;
+  color: #123142;
   font-weight: 600;
 }
 
-:deep(.sidebar-menu .el-menu-item.is-active .el-icon) {
-  color: #1f5fbf;
+.main-shell {
+  padding: 24px;
 }
 
-:deep(.sidebar-menu .el-menu-item.is-active::before) {
-  content: '';
-  position: absolute;
-  left: -6px;
-  top: 8px;
-  width: 4px;
-  height: 32px;
-  border-radius: 4px;
-  background: #1f5fbf;
+.topbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+  padding: 24px 26px;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 18px 48px rgba(18, 49, 66, 0.08);
+
+  h1 {
+    margin: 0 0 8px;
+    font-size: 30px;
+    color: #173242;
+  }
+
+  p {
+    margin: 0;
+    color: #5b7078;
+    line-height: 1.7;
+  }
 }
 
-.upload-box { border: 2px dashed #dcdfe6; padding: 40px 0; text-align: center; border-radius: 8px; cursor: pointer; transition: 0.3s; }
-.upload-box:hover { border-color: #409eff; background-color: #f5f7fa; }
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.identity-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: #f5f7f3;
+}
+
+.identity-name {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+
+  strong {
+    color: #193243;
+  }
+
+  span {
+    color: #60737b;
+    font-size: 13px;
+  }
+}
+
+.identity-tags {
+  display: flex;
+  gap: 8px;
+}
+
+.main-content {
+  min-width: 0;
+}
+
+.content-panel {
+  padding: 24px;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: 0 18px 48px rgba(18, 49, 66, 0.08);
+}
+
+.section-heading {
+  margin-bottom: 20px;
+
+  h2 {
+    margin: 0 0 8px;
+    font-size: 26px;
+    color: #173242;
+  }
+
+  p {
+    margin: 0;
+    color: #5c7078;
+    line-height: 1.7;
+  }
+}
+
+.section-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.upload-box {
+  border: 2px dashed #c6d4d2;
+  padding: 44px 0;
+  text-align: center;
+  border-radius: 18px;
+  cursor: pointer;
+  transition: 0.2s ease;
+}
+
+.upload-box:hover {
+  border-color: #2d7a67;
+  background-color: #f5faf8;
+}
 
 .pdf-preview-section {
-  text-align: center;
-  padding: 0 20px;
+  padding: 0 8px;
 }
 
 .pdf-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 30px;
-  margin-top: 25px;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 24px;
 }
 
 .pdf-page-card {
   cursor: pointer;
-  border: 1px solid #e4e7ed;
-  border-radius: 8px;
-  padding: 15px;
-  background: white;
-  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
-  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.05);
-  position: relative;
+  border: 1px solid #e6ece9;
+  border-radius: 16px;
+  padding: 14px;
+  background: #fff;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  box-shadow: 0 10px 24px rgba(18, 49, 66, 0.05);
 }
 
 .pdf-page-card:hover {
-  border-color: #409eff;
-  transform: translateY(-8px);
-  box-shadow: 0 10px 20px rgba(64, 158, 255, 0.15);
+  transform: translateY(-4px);
+  box-shadow: 0 16px 36px rgba(18, 49, 66, 0.12);
 }
 
 .pdf-thumb {
   width: 100%;
-  height: auto;
-  border-radius: 4px;
-  border: 1px solid #eee;
+  border-radius: 10px;
+  border: 1px solid #edf1f0;
 }
 
 .page-number {
-  margin-top: 12px;
-  font-size: 14px;
-  color: #606266;
+  margin-top: 10px;
+  text-align: center;
+  color: #5f7077;
   font-weight: 600;
-  letter-spacing: 1px;
 }
 
 .image-process-section {
-  text-align: center;
-  max-width: 1000px;
-  margin: 0 auto;
+  max-width: 1080px;
+}
+
+.process-options {
+  margin-bottom: 14px;
 }
 
 .preview-container {
-  background: #f5f7fa;
-  border: 1px solid #dcdfe6;
-  border-radius: 8px;
+  background: #f5f7f6;
+  border: 1px solid #dce5e1;
+  border-radius: 18px;
   padding: 20px;
-  margin-top: 10px;
-  box-shadow: inset 0 0 10px rgba(0,0,0,0.05);
 }
 
 .cropper-wrapper {
   width: 100%;
   height: 70vh;
-  min-height: 500px;
+  min-height: 480px;
   position: relative;
-  background-color: #333;
+  background-color: #233843;
+  border-radius: 16px;
+  overflow: hidden;
 }
 
 .confirm-btn {
   position: absolute;
-  bottom: 30px;
-  right: 30px;
-  z-index: 999;
-  padding: 12px 24px;
-  font-size: 16px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  right: 22px;
+  bottom: 22px;
+  z-index: 10;
+}
+
+.full-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
 }
 
 .full-preview img {
   max-width: 100%;
-  height: auto;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.1);
-  margin-bottom: 20px;
-  background: white;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 12px 28px rgba(18, 49, 66, 0.08);
+}
+
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.result-section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.reset-result-btn {
+  width: fit-content;
+}
+
+.result-alert {
+  margin-bottom: 4px;
+}
+
+@media (max-width: 1180px) {
+  .dashboard-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    padding-bottom: 8px;
+  }
+
+  .main-shell {
+    padding-top: 0;
+  }
+}
+
+@media (max-width: 900px) {
+  .topbar {
+    flex-direction: column;
+  }
+
+  .topbar-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .identity-card {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
+
+@media (max-width: 640px) {
+  .main-shell {
+    padding: 16px;
+  }
+
+  .content-panel,
+  .topbar {
+    padding: 18px;
+    border-radius: 20px;
+  }
+
+  .identity-card {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 }
 </style>
