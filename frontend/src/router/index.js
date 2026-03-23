@@ -1,14 +1,36 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import axios from 'axios'
 import { ElMessage } from 'element-plus'
 
 import Login from '../views/Login.vue'
+import Register from '../views/Register.vue'
 import Dashboard from '../views/Dashboard.vue'
-import { API_V1_BASE_URL } from '../config/api'
-import { clearAuthSession, hasAccessToken } from '../utils/auth'
+import ChangePassword from '../views/ChangePassword.vue'
+import {
+  ensureAuthenticated,
+  getCurrentUser,
+  needsPasswordChange,
+  resolvePublicSignupCapability
+} from '../utils/auth'
+
+const PUBLIC_SIGNUP_DISABLED_MESSAGE = '当前环境未开放公开注册，请联系管理员创建账号。'
+const PUBLIC_SIGNUP_CAPABILITY_UNAVAILABLE_MESSAGE = '暂时无法确认当前环境是否开放公开注册，前端会按关闭态处理，请稍后重试。'
 
 const routes = [
-  { path: '/login', component: Login },
+  {
+    path: '/login',
+    component: Login,
+    meta: { guestOnly: true }
+  },
+  {
+    path: '/register',
+    component: Register,
+    meta: { guestOnly: true }
+  },
+  {
+    path: '/change-password',
+    component: ChangePassword,
+    meta: { requiresAuth: true }
+  },
   {
     path: '/',
     component: Dashboard,
@@ -21,42 +43,53 @@ const router = createRouter({
   routes
 })
 
-const validateStoredSession = async ({ showMessage = false } = {}) => {
-  if (!hasAccessToken()) {
-    return false
-  }
-
-  try {
-    await axios.get(`${API_V1_BASE_URL}/auth/me`, { skipAuthRedirect: true })
-    return true
-  } catch (error) {
-    if (showMessage) {
-      const detail = error.response?.data?.detail
-      ElMessage.error(detail || '登录状态已失效，请重新登录')
-    }
-    clearAuthSession()
-    return false
-  }
-}
-
 router.beforeEach(async (to, from, next) => {
-  if (to.meta.requiresAuth && !hasAccessToken()) {
-    ElMessage.warning('请先登录')
-    next('/login')
+  if (to.meta.guestOnly) {
+    const authenticated = await ensureAuthenticated()
+    if (authenticated) {
+      const currentUser = getCurrentUser()
+      next(needsPasswordChange(currentUser) ? '/change-password' : '/')
+      return
+    }
+  }
+
+  if (to.path === '/register') {
+    const publicSignupCapability = await resolvePublicSignupCapability({ force: true })
+    if (!publicSignupCapability.enabled) {
+      ElMessage[publicSignupCapability.failed ? 'error' : 'warning'](
+        publicSignupCapability.failed
+          ? PUBLIC_SIGNUP_CAPABILITY_UNAVAILABLE_MESSAGE
+          : PUBLIC_SIGNUP_DISABLED_MESSAGE
+      )
+      next('/login')
+      return
+    }
+  }
+
+  if (to.meta.requiresAuth) {
+    const authenticated = await ensureAuthenticated()
+    if (!authenticated) {
+      next('/login')
+      return
+    }
+  }
+
+  const currentUser = getCurrentUser()
+  const requiresPasswordChange = needsPasswordChange(currentUser)
+
+  if (to.path === '/login' && currentUser) {
+    next(requiresPasswordChange ? '/change-password' : '/')
     return
   }
 
-  const isAuthenticated = await validateStoredSession({
-    showMessage: to.meta.requiresAuth && hasAccessToken()
-  })
-
-  if (to.path === '/login' && isAuthenticated) {
-    next('/')
+  if (requiresPasswordChange && to.path !== '/change-password') {
+    ElMessage.warning('当前账号需要先完成密码修改。')
+    next('/change-password')
     return
   }
 
-  if (to.meta.requiresAuth && !isAuthenticated) {
-    next('/login')
+  if (!to.meta.requiresAuth && from.path === '/change-password' && requiresPasswordChange) {
+    next('/change-password')
     return
   }
 

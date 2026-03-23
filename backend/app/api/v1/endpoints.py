@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.api.v1.auth import get_current_user
+from app.api.v1.auth import require_active_user
 from app.core.config import settings
 from app.core.constants import ALLOWED_ASSET_MIME_TYPES, MAX_ASSET_SIZE_BYTES
 from app.core.database import get_db
@@ -172,7 +172,7 @@ def _normalize_llm_tags(raw_tags: Any) -> list[dict[str, Any]]:
 @router.get("/tags", response_model=List[str])
 def get_all_tags(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_active_user),
 ):
     questions = db.query(Question).filter(Question.user_id == current_user.id).all()
 
@@ -189,7 +189,7 @@ def update_question(
     question_id: int,
     question_update: QuestionUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_active_user),
 ):
     question = db.query(Question).filter(Question.id == question_id).first()
     if not question:
@@ -208,7 +208,7 @@ def read_history(
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_active_user),
 ):
     questions = (
         db.query(Question)
@@ -239,7 +239,7 @@ def read_history(
 @router.post("/upload_pdf")
 def upload_pdf(
     file: UploadFile = File(...),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_active_user),
 ):
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail=PDF_ONLY_MESSAGE)
@@ -281,7 +281,7 @@ def upload_pdf(
 def upload_asset(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_active_user),
 ):
     if not file.filename:
         raise HTTPException(status_code=400, detail="Missing filename")
@@ -357,7 +357,7 @@ def upload_asset(
 def recognize_image(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_active_user),
 ):
     start_total = time.time()
 
@@ -497,7 +497,7 @@ def list_questions(
     limit: int = 50,
     q: Optional[str] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_active_user),
 ):
     query = db.query(Question).filter(Question.user_id == current_user.id)
     if q:
@@ -527,7 +527,7 @@ def list_questions(
 def get_question_detail(
     question_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_active_user),
 ):
     question = db.query(Question).filter(Question.id == question_id).first()
     if not question:

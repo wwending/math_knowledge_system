@@ -7,10 +7,11 @@ from app.core.config import settings
 from app.core.database import engine
 from app.db.base import Base
 from app.db.question_contract import ensure_legacy_question_columns
-from app.models import question, user  # noqa: F401
+from app.models import auth_audit_log, auth_session, login_rate_limit, question, user  # noqa: F401
 
 
 def create_app() -> FastAPI:
+    settings.validate_security_settings()
     app = FastAPI(title=settings.PROJECT_NAME)
     settings.ensure_runtime_dirs()
 
@@ -30,6 +31,8 @@ def create_app() -> FastAPI:
 
     if settings.AUTO_CREATE_TABLES:
         Base.metadata.create_all(bind=engine)
+
+    if settings.AUTO_APPLY_LEGACY_QUESTION_COMPAT:
         ensure_legacy_question_columns(engine)
 
     app.include_router(api_router, prefix=settings.API_V1_STR)

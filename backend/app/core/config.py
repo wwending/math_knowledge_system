@@ -11,6 +11,12 @@ APP_DIR = CONFIG_DIR.parent
 BACKEND_DIR = APP_DIR.parent
 REPO_ROOT_DIR = BACKEND_DIR.parent
 ENV_FILE_PATH = BACKEND_DIR / ".env"
+DEFAULT_DEV_CORS_ALLOW_ORIGINS = (
+    '["http://localhost:5173","http://127.0.0.1:5173",'
+    '"http://localhost:4173","http://127.0.0.1:4173",'
+    '"http://localhost:3000","http://127.0.0.1:3000"]'
+)
+ALLOWED_COOKIE_SAMESITE_VALUES = {"lax", "strict", "none"}
 
 
 def _resolve_path(value: str | Path, *, base_dir: Path) -> Path:
@@ -62,6 +68,7 @@ def _parse_cors_origins(value: str) -> list[str]:
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Math Knowledge System"
     API_V1_STR: str = "/api/v1"
+    APP_ENV: str = "development"
 
     STATIC_URL_PREFIX: str = "/static"
     STATIC_DIR: str = "static"
@@ -69,12 +76,25 @@ class Settings(BaseSettings):
     PDF_TEMP_DIR: str = "static/pdf_temp"
 
     DATABASE_URL: str = "sqlite:///./math_knowledge.db"
-    CORS_ALLOW_ORIGINS: str = "*"
+    CORS_ALLOW_ORIGINS: str = DEFAULT_DEV_CORS_ALLOW_ORIGINS
 
     SECRET_KEY: str = "CHANGE_THIS_TO_A_SECURE_RANDOM_KEY"
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8
-    AUTO_CREATE_TABLES: bool = True
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 14
+    REFRESH_TOKEN_COOKIE_NAME: str = "refresh_token"
+    REFRESH_TOKEN_COOKIE_PATH: str = "/"
+    REFRESH_TOKEN_COOKIE_SECURE: bool = False
+    REFRESH_TOKEN_COOKIE_SAMESITE: str = "lax"
+    AUTO_CREATE_TABLES: bool = False
+    AUTO_APPLY_LEGACY_QUESTION_COMPAT: bool = False
+    PUBLIC_SIGNUP_ENABLED: bool = False
+    SMS_CODE_LOGIN_ENABLED: bool = False
+    SMS_PASSWORD_RECOVERY_ENABLED: bool = False
+    PASSWORD_RECOVERY_MODE: str = "admin_contact"
+    LOGIN_RATE_LIMIT_WINDOW_SECONDS: int = 900
+    LOGIN_RATE_LIMIT_MAX_ATTEMPTS: int = 5
+    LOGIN_RATE_LIMIT_BLOCK_SECONDS: int = 1800
 
     BAIDU_API_KEY: str = ""
     BAIDU_SECRET_KEY: str = ""
@@ -119,6 +139,63 @@ class Settings(BaseSettings):
     @property
     def CORS_ALLOW_ORIGINS_LIST(self) -> list[str]:
         return _parse_cors_origins(self.CORS_ALLOW_ORIGINS)
+
+    @property
+    def APP_ENV_NORMALIZED(self) -> str:
+        return self.APP_ENV.strip().lower()
+
+    @property
+    def IS_PRODUCTION(self) -> bool:
+        return self.APP_ENV_NORMALIZED in {"prod", "production"}
+
+    @property
+    def REFRESH_TOKEN_COOKIE_NAME_NORMALIZED(self) -> str:
+        return self.REFRESH_TOKEN_COOKIE_NAME.strip()
+
+    @property
+    def REFRESH_TOKEN_COOKIE_PATH_NORMALIZED(self) -> str:
+        return self.REFRESH_TOKEN_COOKIE_PATH.strip()
+
+    @property
+    def REFRESH_TOKEN_COOKIE_SAMESITE_NORMALIZED(self) -> str:
+        return self.REFRESH_TOKEN_COOKIE_SAMESITE.strip().lower()
+
+    def validate_refresh_cookie_settings(self) -> None:
+        if not self.REFRESH_TOKEN_COOKIE_NAME_NORMALIZED:
+            raise RuntimeError("REFRESH_TOKEN_COOKIE_NAME cannot be empty")
+
+        if not self.REFRESH_TOKEN_COOKIE_PATH_NORMALIZED:
+            raise RuntimeError("REFRESH_TOKEN_COOKIE_PATH cannot be empty")
+
+        if not self.REFRESH_TOKEN_COOKIE_PATH_NORMALIZED.startswith("/"):
+            raise RuntimeError("REFRESH_TOKEN_COOKIE_PATH must start with '/'")
+
+        if self.REFRESH_TOKEN_COOKIE_SAMESITE_NORMALIZED not in ALLOWED_COOKIE_SAMESITE_VALUES:
+            raise RuntimeError("REFRESH_TOKEN_COOKIE_SAMESITE must be one of: lax, strict, none")
+
+        if not self.IS_PRODUCTION:
+            return
+
+        if not self.REFRESH_TOKEN_COOKIE_SECURE:
+            raise RuntimeError("REFRESH_TOKEN_COOKIE_SECURE must be true in production")
+
+        if self.REFRESH_TOKEN_COOKIE_SAMESITE_NORMALIZED == "none":
+            raise RuntimeError("REFRESH_TOKEN_COOKIE_SAMESITE cannot be 'none' in production")
+
+    def validate_security_settings(self) -> None:
+        self.validate_refresh_cookie_settings()
+
+        if not self.IS_PRODUCTION:
+            return
+
+        if self.SECRET_KEY == "CHANGE_THIS_TO_A_SECURE_RANDOM_KEY":
+            raise RuntimeError("SECRET_KEY must be overridden in production")
+
+        if len(self.SECRET_KEY.strip()) < 32:
+            raise RuntimeError("SECRET_KEY must be at least 32 characters in production")
+
+        if "*" in self.CORS_ALLOW_ORIGINS_LIST:
+            raise RuntimeError("CORS_ALLOW_ORIGINS cannot be '*' in production")
 
     def ensure_runtime_dirs(self) -> None:
         for path in (self.STATIC_DIR_PATH, self.UPLOAD_DIR_PATH, self.PDF_TEMP_DIR_PATH):

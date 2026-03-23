@@ -1,5 +1,13 @@
 # STATUS
 
+## 2026-03-24 Public Signup Capability Governance Status
+
+- 已将公开注册入口治理收口为“后端 capability 决定前端展示与 `/register` 可达性”。
+- capability=false 与 capability 获取失败在 UI 上都按安全关闭态处理。
+- capability 获取失败仍会在内部状态、路由提示和测试意图中保留可观测区分。
+- 公开注册当前只定义为 demo/staging 可开启能力，不是正式环境默认策略。
+- 正式开放公开注册所需的防刷、审计和身份验证能力仍未落地。
+
 日期：2026-03-19
 
 ## 当前结论

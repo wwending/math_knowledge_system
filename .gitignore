@@ -134,3 +134,4 @@ test_deepseek.py
 
 # 或者使用通配符忽略所有以 test_ 开头的 python 文件
 test_*.py
+!backend/tests/test_auth_public_signup.py
