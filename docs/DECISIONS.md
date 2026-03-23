@@ -1,5 +1,24 @@
 # DECISIONS
 
+## 决策 10：认证安全以“严格模式 + 部署声明”建模，而不是只靠 APP_ENV 文档约定
+
+结论：
+
+- `APP_ENV=production` 自动启用认证严格模式。
+- 非 production 环境可通过 `AUTH_STRICT_SECURITY=true` 显式启用同等级硬约束。
+- `SECURE_TRANSPORT_MODE` 明确声明部署安全传输前提，只允许 `direct_https`、`trusted_proxy_tls`、`insecure_http`。
+- 严格模式下默认不允许 `REFRESH_TOKEN_COOKIE_SAMESITE=none`。
+- 仅在显式声明 `ALLOW_CROSS_SITE_REFRESH_COOKIE=true` 时，严格模式才允许 `REFRESH_TOKEN_COOKIE_SAMESITE=none`。
+
+原因：
+
+- shared/staging/预发环境是否收紧认证安全，不应继续依赖环境名猜测。
+- “HTTPS 或可信 TLS 反代”属于部署事实声明，不是应用可以自动证明的事实。
+- 把跨站 refresh cookie 视为显式例外，比一刀切禁止更符合未来正式化场景。
+- 启动时直接拒绝非法值和不满足前提的组合，比文档约定更可靠。
+
+日期：2026-03-24
+
 ## 决策 9：公开注册 capability 以前端单一真相源驱动
 
 结论：

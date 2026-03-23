@@ -136,6 +136,9 @@
 新增关键配置：
 
 - `APP_ENV`
+- `AUTH_STRICT_SECURITY`
+- `SECURE_TRANSPORT_MODE`
+- `ALLOW_CROSS_SITE_REFRESH_COOKIE`
 - `LOGIN_RATE_LIMIT_WINDOW_SECONDS`
 - `LOGIN_RATE_LIMIT_MAX_ATTEMPTS`
 - `LOGIN_RATE_LIMIT_BLOCK_SECONDS`
@@ -143,7 +146,21 @@
 - `SMS_PASSWORD_RECOVERY_ENABLED`
 - `PASSWORD_RECOVERY_MODE`
 
-生产环境校验：
+严格模式触发条件：
+
+- `APP_ENV=production` 时自动启用
+- 非 production 环境可通过 `AUTH_STRICT_SECURITY=true` 显式启用
+- shared/staging/demo 不会因环境名自动进入严格模式
+
+安全传输部署声明：
+
+- `SECURE_TRANSPORT_MODE=direct_https`
+- `SECURE_TRANSPORT_MODE=trusted_proxy_tls`
+- `SECURE_TRANSPORT_MODE=insecure_http`
+- 上述值会在启动时做大小写归一化和合法值校验；拼写错误会直接拒绝启动
+- 这是部署声明，不是应用自动证明的事实
+
+严格模式校验：
 
 - `SECRET_KEY` 不能使用默认值
 - `SECRET_KEY` 长度至少 32 位
@@ -151,18 +168,25 @@
 - `REFRESH_TOKEN_COOKIE_NAME` 不能为空
 - `REFRESH_TOKEN_COOKIE_PATH` 必须以 `/` 开头
 - `REFRESH_TOKEN_COOKIE_SECURE` 必须为 `true`
-- `REFRESH_TOKEN_COOKIE_SAMESITE` 只允许 `lax` 或 `strict`
+- `SECURE_TRANSPORT_MODE` 不能为 `insecure_http`
+- `REFRESH_TOKEN_COOKIE_SAMESITE` 默认只允许 `lax` 或 `strict`
+- 若显式声明 `ALLOW_CROSS_SITE_REFRESH_COOKIE=true`，则可允许 `REFRESH_TOKEN_COOKIE_SAMESITE=none`
+- 允许 `SameSite=none` 时仍必须满足 `REFRESH_TOKEN_COOKIE_SECURE=true`
+- 允许 `SameSite=none` 时仍必须满足 `SECURE_TRANSPORT_MODE=direct_https` 或 `trusted_proxy_tls`
 
 开发 / 测试环境放宽口径：
 
+- 默认可保持 `AUTH_STRICT_SECURITY=false`
+- 默认可使用 `SECURE_TRANSPORT_MODE=insecure_http`
 - `REFRESH_TOKEN_COOKIE_SECURE=false` 可用于本地 HTTP 调试
 - `REFRESH_TOKEN_COOKIE_SAMESITE` 可暂时使用 `none` 以支持特殊联调，但仍必须是 `lax`、`strict`、`none` 之一
 
-生产环境认证 Cookie 基线：
+严格模式认证 Cookie 基线：
 
 - refresh token 始终通过 `HttpOnly Cookie` 传输
-- 生产环境要求 `Secure=true`
-- 生产环境要求 `SameSite` 显式为 `lax` 或 `strict`，不允许 `none`
+- 严格模式要求 `Secure=true`
+- 严格模式默认要求 `SameSite` 显式为 `lax` 或 `strict`
+- 只有显式声明跨站 refresh cookie 场景时才允许 `SameSite=none`
 - 上述约束在应用启动阶段校验，不满足时服务直接拒绝启动
 
 ## 迁移

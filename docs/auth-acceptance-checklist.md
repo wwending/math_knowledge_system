@@ -23,9 +23,11 @@
 
 - 已通过 `create_admin` 脚本创建或升级初始管理员
 - 初始管理员可使用手机号 + 密码登录
-- 生产环境 `SECRET_KEY` 已替换，`CORS_ALLOW_ORIGINS` 不是 `*`
-- 生产环境 `REFRESH_TOKEN_COOKIE_SECURE=true`
-- 生产环境 `REFRESH_TOKEN_COOKIE_SAMESITE` 为 `lax` 或 `strict`
+- 严格模式环境已确认 `SECRET_KEY` 已替换，`CORS_ALLOW_ORIGINS` 不是 `*`
+- 严格模式环境已确认 `REFRESH_TOKEN_COOKIE_SECURE=true`
+- 严格模式环境已确认 `SECURE_TRANSPORT_MODE` 为 `direct_https` 或 `trusted_proxy_tls`
+- 严格模式环境默认确认 `REFRESH_TOKEN_COOKIE_SAMESITE` 为 `lax` 或 `strict`
+- 若严格模式环境使用 `REFRESH_TOKEN_COOKIE_SAMESITE=none`，已确认 `ALLOW_CROSS_SITE_REFRESH_COOKIE=true`
 - `REFRESH_TOKEN_COOKIE_PATH` 以 `/` 开头且 `REFRESH_TOKEN_COOKIE_NAME` 非空
 
 ## 3. 管理员创建用户
@@ -77,8 +79,9 @@
 
 - 登录成功后浏览器获得 refresh cookie
 - refresh cookie 带 `HttpOnly`
-- 生产环境 refresh cookie 带 `Secure`
-- 生产环境 refresh cookie 的 `SameSite` 为 `lax` 或 `strict`
+- 严格模式环境 refresh cookie 带 `Secure`
+- 严格模式环境默认 refresh cookie 的 `SameSite` 为 `lax` 或 `strict`
+- 若严格模式环境显式允许跨站 refresh cookie，则 `SameSite=none` 也必须同时满足 `ALLOW_CROSS_SITE_REFRESH_COOKIE=true` 与安全传输模式非 `insecure_http`
 - access token 失效后，前端可通过 `/auth/refresh` 自动恢复会话
 - refresh 失败时会清理本地会话并跳回登录页
 
