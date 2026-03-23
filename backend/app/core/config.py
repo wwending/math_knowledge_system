@@ -17,6 +17,7 @@ DEFAULT_DEV_CORS_ALLOW_ORIGINS = (
     '"http://localhost:3000","http://127.0.0.1:3000"]'
 )
 ALLOWED_COOKIE_SAMESITE_VALUES = {"lax", "strict", "none"}
+ALLOWED_SECURE_TRANSPORT_MODES = {"direct_https", "trusted_proxy_tls", "insecure_http"}
 
 
 def _resolve_path(value: str | Path, *, base_dir: Path) -> Path:
@@ -86,6 +87,9 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_COOKIE_PATH: str = "/"
     REFRESH_TOKEN_COOKIE_SECURE: bool = False
     REFRESH_TOKEN_COOKIE_SAMESITE: str = "lax"
+    AUTH_STRICT_SECURITY: bool = False
+    SECURE_TRANSPORT_MODE: str = "insecure_http"
+    ALLOW_CROSS_SITE_REFRESH_COOKIE: bool = False
     AUTO_CREATE_TABLES: bool = False
     AUTO_APPLY_LEGACY_QUESTION_COMPAT: bool = False
     PUBLIC_SIGNUP_ENABLED: bool = False
@@ -149,6 +153,10 @@ class Settings(BaseSettings):
         return self.APP_ENV_NORMALIZED in {"prod", "production"}
 
     @property
+    def AUTH_STRICT_SECURITY_ENABLED(self) -> bool:
+        return self.IS_PRODUCTION or self.AUTH_STRICT_SECURITY
+
+    @property
     def REFRESH_TOKEN_COOKIE_NAME_NORMALIZED(self) -> str:
         return self.REFRESH_TOKEN_COOKIE_NAME.strip()
 
@@ -159,6 +167,10 @@ class Settings(BaseSettings):
     @property
     def REFRESH_TOKEN_COOKIE_SAMESITE_NORMALIZED(self) -> str:
         return self.REFRESH_TOKEN_COOKIE_SAMESITE.strip().lower()
+
+    @property
+    def SECURE_TRANSPORT_MODE_NORMALIZED(self) -> str:
+        return self.SECURE_TRANSPORT_MODE.strip().lower()
 
     def validate_refresh_cookie_settings(self) -> None:
         if not self.REFRESH_TOKEN_COOKIE_NAME_NORMALIZED:
@@ -173,29 +185,45 @@ class Settings(BaseSettings):
         if self.REFRESH_TOKEN_COOKIE_SAMESITE_NORMALIZED not in ALLOWED_COOKIE_SAMESITE_VALUES:
             raise RuntimeError("REFRESH_TOKEN_COOKIE_SAMESITE must be one of: lax, strict, none")
 
-        if not self.IS_PRODUCTION:
+        if self.SECURE_TRANSPORT_MODE_NORMALIZED not in ALLOWED_SECURE_TRANSPORT_MODES:
+            raise RuntimeError(
+                "SECURE_TRANSPORT_MODE must be one of: direct_https, trusted_proxy_tls, insecure_http"
+            )
+
+        if not self.AUTH_STRICT_SECURITY_ENABLED:
             return
 
         if not self.REFRESH_TOKEN_COOKIE_SECURE:
-            raise RuntimeError("REFRESH_TOKEN_COOKIE_SECURE must be true in production")
+            raise RuntimeError("REFRESH_TOKEN_COOKIE_SECURE must be true when strict auth security is enabled")
 
-        if self.REFRESH_TOKEN_COOKIE_SAMESITE_NORMALIZED == "none":
-            raise RuntimeError("REFRESH_TOKEN_COOKIE_SAMESITE cannot be 'none' in production")
+        if self.SECURE_TRANSPORT_MODE_NORMALIZED == "insecure_http":
+            raise RuntimeError(
+                "SECURE_TRANSPORT_MODE cannot be insecure_http when strict auth security is enabled"
+            )
+
+        if (
+            self.REFRESH_TOKEN_COOKIE_SAMESITE_NORMALIZED == "none"
+            and not self.ALLOW_CROSS_SITE_REFRESH_COOKIE
+        ):
+            raise RuntimeError(
+                "REFRESH_TOKEN_COOKIE_SAMESITE cannot be 'none' unless "
+                "ALLOW_CROSS_SITE_REFRESH_COOKIE=true when strict auth security is enabled"
+            )
 
     def validate_security_settings(self) -> None:
         self.validate_refresh_cookie_settings()
 
-        if not self.IS_PRODUCTION:
+        if not self.AUTH_STRICT_SECURITY_ENABLED:
             return
 
         if self.SECRET_KEY == "CHANGE_THIS_TO_A_SECURE_RANDOM_KEY":
-            raise RuntimeError("SECRET_KEY must be overridden in production")
+            raise RuntimeError("SECRET_KEY must be overridden when strict auth security is enabled")
 
         if len(self.SECRET_KEY.strip()) < 32:
-            raise RuntimeError("SECRET_KEY must be at least 32 characters in production")
+            raise RuntimeError("SECRET_KEY must be at least 32 characters when strict auth security is enabled")
 
         if "*" in self.CORS_ALLOW_ORIGINS_LIST:
-            raise RuntimeError("CORS_ALLOW_ORIGINS cannot be '*' in production")
+            raise RuntimeError("CORS_ALLOW_ORIGINS cannot be '*' when strict auth security is enabled")
 
     def ensure_runtime_dirs(self) -> None:
         for path in (self.STATIC_DIR_PATH, self.UPLOAD_DIR_PATH, self.PDF_TEMP_DIR_PATH):

@@ -1,5 +1,14 @@
 # STATUS
 
+## 2026-03-24 Auth Strict Security Guardrails Status
+
+- 已将认证安全要求从“生产环境文档约定”收紧为“启动时严格模式硬约束”。
+- `APP_ENV=production` 会自动启用严格模式；shared/staging/预发可通过 `AUTH_STRICT_SECURITY=true` 显式启用。
+- `SECURE_TRANSPORT_MODE` 已作为部署声明建模，启动时只接受 `direct_https`、`trusted_proxy_tls`、`insecure_http`。
+- 严格模式下拒绝 `SECURE_TRANSPORT_MODE=insecure_http`。
+- 严格模式下默认拒绝 `REFRESH_TOKEN_COOKIE_SAMESITE=none`；仅在显式声明 `ALLOW_CROSS_SITE_REFRESH_COOKIE=true` 时允许例外。
+- 允许 `SameSite=none` 的严格模式场景仍要求 `REFRESH_TOKEN_COOKIE_SECURE=true` 且安全传输模式不是 `insecure_http`。
+
 ## 2026-03-24 Public Signup Capability Governance Status
 
 - 已将公开注册入口治理收口为“后端 capability 决定前端展示与 `/register` 可达性”。

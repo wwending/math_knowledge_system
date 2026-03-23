@@ -42,9 +42,15 @@ ACCESS_TOKEN_EXPIRE_MINUTES=15
 REFRESH_TOKEN_EXPIRE_DAYS=14
 REFRESH_TOKEN_COOKIE_NAME=refresh_token
 REFRESH_TOKEN_COOKIE_PATH=/
-# 开发环境可为 false，生产环境必须为 true
+# production 自动启用严格模式；shared/staging/预发可显式打开严格模式
+AUTH_STRICT_SECURITY=false
+# direct_https / trusted_proxy_tls / insecure_http
+SECURE_TRANSPORT_MODE=insecure_http
+# 仅在必须支持跨站 refresh cookie 时显式打开
+ALLOW_CROSS_SITE_REFRESH_COOKIE=false
+# 非严格模式可为 false；严格模式必须为 true
 REFRESH_TOKEN_COOKIE_SECURE=false
-# 开发环境可用 lax/strict/none，生产环境只允许 lax 或 strict
+# 非严格模式可用 lax/strict/none；严格模式默认只允许 lax/strict
 REFRESH_TOKEN_COOKIE_SAMESITE=lax
 
 PUBLIC_SIGNUP_ENABLED=false
@@ -61,16 +67,29 @@ AUTO_CREATE_TABLES=false
 AUTO_APPLY_LEGACY_QUESTION_COMPAT=false
 ```
 
-生产环境要求：
+严格模式要求：
 
 - `APP_ENV=production`
+- 或显式设置 `AUTH_STRICT_SECURITY=true`
 - `SECRET_KEY` 不能使用默认值，且长度至少 32 位
 - `CORS_ALLOW_ORIGINS` 不能为 `*`
 - `REFRESH_TOKEN_COOKIE_NAME` 不能为空
 - `REFRESH_TOKEN_COOKIE_PATH` 必须以 `/` 开头
 - `REFRESH_TOKEN_COOKIE_SECURE=true`
-- `REFRESH_TOKEN_COOKIE_SAMESITE` 必须显式配置，且只允许 `lax` 或 `strict`
+- `SECURE_TRANSPORT_MODE` 必须为 `direct_https` 或 `trusted_proxy_tls`，不能为 `insecure_http`
+- `REFRESH_TOKEN_COOKIE_SAMESITE` 默认只允许 `lax` 或 `strict`
+- 若必须使用 `REFRESH_TOKEN_COOKIE_SAMESITE=none`，则必须同时配置：
+  - `ALLOW_CROSS_SITE_REFRESH_COOKIE=true`
+  - `REFRESH_TOKEN_COOKIE_SECURE=true`
+  - `SECURE_TRANSPORT_MODE=direct_https` 或 `trusted_proxy_tls`
 - 必须通过 Alembic 迁移建表，不依赖运行时自动补列
+
+非严格模式说明：
+
+- 默认开发环境可继续使用 `SECURE_TRANSPORT_MODE=insecure_http`
+- 本地 HTTP 联调时允许 `REFRESH_TOKEN_COOKIE_SECURE=false`
+- 特殊联调时允许 `REFRESH_TOKEN_COOKIE_SAMESITE=none`
+- `SECURE_TRANSPORT_MODE` 仍必须是合法值：`direct_https`、`trusted_proxy_tls`、`insecure_http`
 
 前端可选环境变量：
 
@@ -148,9 +167,11 @@ npm run dev
 1. 先备份数据库
 2. 在预发布环境执行 `alembic upgrade head`
 3. 校验管理员登录、创建用户、强制改密、refresh、登出和审计日志
-4. 确认生产环境 `SECRET_KEY`、`CORS_ALLOW_ORIGINS` 和 Cookie 配置正确
+4. 确认严格模式环境的 `SECRET_KEY`、`CORS_ALLOW_ORIGINS`、`SECURE_TRANSPORT_MODE` 和 Cookie 配置正确
    - 至少确认 `REFRESH_TOKEN_COOKIE_SECURE=true`
-   - 至少确认 `REFRESH_TOKEN_COOKIE_SAMESITE` 为 `lax` 或 `strict`
+   - 至少确认 `SECURE_TRANSPORT_MODE` 为 `direct_https` 或 `trusted_proxy_tls`
+   - 默认确认 `REFRESH_TOKEN_COOKIE_SAMESITE` 为 `lax` 或 `strict`
+   - 若显式使用 `REFRESH_TOKEN_COOKIE_SAMESITE=none`，同步确认 `ALLOW_CROSS_SITE_REFRESH_COOKIE=true`
 
 发布时：
 
