@@ -15,7 +15,7 @@
 - 当前管理员初始化依赖脚本 `backend/app/scripts/create_admin.py`。
 - 前端登录页位于 `frontend/src/views/Login.vue`，当前只接入登录，不存在正式的后台用户管理界面。
 - 前端 token 存储位于 `frontend/src/utils/auth.js`，当前直接写入 `localStorage`。
-- 启动逻辑位于 `backend/app/main.py`，当前仍依赖 `AUTO_CREATE_TABLES=True` 自动建表，并执行运行时兼容补列逻辑。
+- 启动逻辑位于 `backend/app/main.py`；当前已将正式 schema 演进路径收口为 Alembic，运行时建表与补列只保留为显式受限兼容模式。
 
 ### 2.2 与产品规则冲突的点
 
@@ -43,9 +43,9 @@
 
 #### AUTO_CREATE_TABLES 与运行时补列
 
-- 当前 `backend/app/main.py` 在 `AUTO_CREATE_TABLES=True` 时执行 `Base.metadata.create_all(...)`，并通过 `ensure_legacy_question_columns(...)` 做运行时兼容补列。
-- 这种方式会让数据库结构变更脱离版本化管理，不利于回滚、审计、环境一致性和发布管控。
-- 后续涉及用户、角色、会话、密码重置、短信验证预留等改造时，必须切换到正式迁移体系，不能继续依赖运行时自动补列。
+- 当前 `backend/app/main.py` 只有在非 production 且显式设置 `ALLOW_RUNTIME_SCHEMA_MUTATIONS=true` 时，才允许 `AUTO_CREATE_TABLES` 与 `ensure_legacy_question_columns(...)` 生效。
+- production 环境无条件禁止运行时 schema 变更。
+- 运行时建表与补列只作为本地开发或受限兼容窗口的兜底，不再作为正式迁移方案。
 
 ## 3. 阶段 1 的收口策略
 
@@ -205,7 +205,7 @@
 3. 新增 `roles`、`permissions`、`user_roles`、`role_permissions`。
 4. 新增 `auth_sessions`、`refresh_tokens`。
 5. 根据新模型改造服务层与 API。
-6. 逐步关闭 `AUTO_CREATE_TABLES` 在生产环境的使用。
+6. 生产环境禁止运行时 schema 变更，并将兼容路径收敛为显式受限模式。
 
 ### 8.3 发布要求
 

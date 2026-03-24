@@ -63,6 +63,7 @@ LOGIN_RATE_LIMIT_WINDOW_SECONDS=900
 LOGIN_RATE_LIMIT_MAX_ATTEMPTS=5
 LOGIN_RATE_LIMIT_BLOCK_SECONDS=1800
 
+ALLOW_RUNTIME_SCHEMA_MUTATIONS=false
 AUTO_CREATE_TABLES=false
 AUTO_APPLY_LEGACY_QUESTION_COMPAT=false
 ```
@@ -90,6 +91,8 @@ AUTO_APPLY_LEGACY_QUESTION_COMPAT=false
 - 本地 HTTP 联调时允许 `REFRESH_TOKEN_COOKIE_SECURE=false`
 - 特殊联调时允许 `REFRESH_TOKEN_COOKIE_SAMESITE=none`
 - `SECURE_TRANSPORT_MODE` 仍必须是合法值：`direct_https`、`trusted_proxy_tls`、`insecure_http`
+- `ALLOW_RUNTIME_SCHEMA_MUTATIONS` 默认应保持 `false`
+- 只有在非 production 且明确需要兼容旧库时，才允许显式设置 `ALLOW_RUNTIME_SCHEMA_MUTATIONS=true`
 
 前端可选环境变量：
 
@@ -155,6 +158,12 @@ npm run dev
 3. 本地执行 `alembic upgrade head`
 4. 运行测试和最小验收后再发布
 
+运行时兼容边界：
+
+- production 环境无条件禁止运行时 schema 变更
+- 非 production 环境只有在 `ALLOW_RUNTIME_SCHEMA_MUTATIONS=true` 时，`AUTO_CREATE_TABLES` / `AUTO_APPLY_LEGACY_QUESTION_COMPAT` 才允许生效
+- `AUTO_CREATE_TABLES` / `AUTO_APPLY_LEGACY_QUESTION_COMPAT` 只是本地开发或受限兼容窗口的兜底，不是正式部署路径
+
 本阶段新增的正式迁移：
 
 - `backend/alembic/versions/20260319_0001_auth_production_baseline.py`
@@ -193,6 +202,11 @@ npm run dev
 ```powershell
 .\.venv\Scripts\python.exe -m unittest backend.tests.test_auth_stage3 -v
 ```
+
+说明：
+
+- `backend.tests.test_auth_stage3` 现在会在隔离 fresh DB 上先执行 `upgrade_database(db_url)`，再跑最小 auth smoke
+- 这组验证证明的是 Alembic 迁移链可用，不再只是 ORM `create_all` 可用
 
 前端契约与构建：
 

@@ -90,6 +90,7 @@ class Settings(BaseSettings):
     AUTH_STRICT_SECURITY: bool = False
     SECURE_TRANSPORT_MODE: str = "insecure_http"
     ALLOW_CROSS_SITE_REFRESH_COOKIE: bool = False
+    ALLOW_RUNTIME_SCHEMA_MUTATIONS: bool = False
     AUTO_CREATE_TABLES: bool = False
     AUTO_APPLY_LEGACY_QUESTION_COMPAT: bool = False
     PUBLIC_SIGNUP_ENABLED: bool = False
@@ -155,6 +156,10 @@ class Settings(BaseSettings):
     @property
     def AUTH_STRICT_SECURITY_ENABLED(self) -> bool:
         return self.IS_PRODUCTION or self.AUTH_STRICT_SECURITY
+
+    @property
+    def RUNTIME_SCHEMA_MUTATIONS_REQUESTED(self) -> bool:
+        return self.AUTO_CREATE_TABLES or self.AUTO_APPLY_LEGACY_QUESTION_COMPAT
 
     @property
     def REFRESH_TOKEN_COOKIE_NAME_NORMALIZED(self) -> str:
@@ -224,6 +229,20 @@ class Settings(BaseSettings):
 
         if "*" in self.CORS_ALLOW_ORIGINS_LIST:
             raise RuntimeError("CORS_ALLOW_ORIGINS cannot be '*' when strict auth security is enabled")
+
+    def validate_runtime_schema_settings(self) -> None:
+        if not self.RUNTIME_SCHEMA_MUTATIONS_REQUESTED:
+            return
+
+        if self.IS_PRODUCTION:
+            raise RuntimeError(
+                "Runtime schema mutations are forbidden in production; run Alembic migrations before startup"
+            )
+
+        if not self.ALLOW_RUNTIME_SCHEMA_MUTATIONS:
+            raise RuntimeError(
+                "Runtime schema mutations require ALLOW_RUNTIME_SCHEMA_MUTATIONS=true outside production"
+            )
 
     def ensure_runtime_dirs(self) -> None:
         for path in (self.STATIC_DIR_PATH, self.UPLOAD_DIR_PATH, self.PDF_TEMP_DIR_PATH):

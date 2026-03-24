@@ -200,7 +200,9 @@
 
 - 新增表或列必须走 Alembic
 - 不再依赖运行时自动补列来完成新的鉴权改造
-- `AUTO_CREATE_TABLES` 与兼容补列开关仅作为开发期兼容手段，不应作为生产流程
+- production 环境无条件禁止运行时 schema 变更
+- 非 production 环境只有在 `ALLOW_RUNTIME_SCHEMA_MUTATIONS=true` 时，`AUTO_CREATE_TABLES` 与兼容补列开关才允许生效
+- `AUTO_CREATE_TABLES` 与兼容补列开关仅作为本地开发或受限兼容窗口手段，不应作为生产流程
 
 ## 公开注册与短信找回的后续增强项
 

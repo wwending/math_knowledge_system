@@ -15,6 +15,8 @@
 ## 1. 迁移执行
 
 - 已在目标环境执行 `alembic upgrade head`
+- production 环境未启用运行时 schema 变更
+- 非 production 环境若启用 `AUTO_CREATE_TABLES` 或 `AUTO_APPLY_LEGACY_QUESTION_COMPAT`，已显式确认 `ALLOW_RUNTIME_SCHEMA_MUTATIONS=true`，且该环境不作为正式部署验收依据
 - 数据库中存在 `auth_sessions`
 - 数据库中存在 `auth_audit_logs`
 - 数据库中存在 `login_rate_limits`

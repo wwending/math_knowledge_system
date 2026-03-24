@@ -14,6 +14,7 @@ LEGACY_QUESTION_COLUMNS: tuple[tuple[str, str], ...] = (
 
 
 def ensure_legacy_question_columns(engine: Engine) -> Sequence[str]:
+    """Best-effort legacy compat for local or explicitly approved upgrade windows."""
     inspector = inspect(engine)
     if "questions" not in inspector.get_table_names():
         return ()
