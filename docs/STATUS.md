@@ -1,5 +1,13 @@
 # STATUS
 
+## 2026-03-24 Database Migration Governance Status
+
+- 已将数据库 schema 正式演进路径收口为 Alembic 迁移链。
+- production 环境无条件禁止运行时 schema 变更。
+- 非 production 环境也默认禁止运行时 schema 变更；只有显式配置 `ALLOW_RUNTIME_SCHEMA_MUTATIONS=true` 时，`AUTO_CREATE_TABLES` 与 `AUTO_APPLY_LEGACY_QUESTION_COMPAT` 才允许生效。
+- `backend/tests/test_auth_stage3.py` 已切换为隔离 fresh DB + `upgrade_database(db_url)` 的验证路径，不再用 `Base.metadata.create_all()` 代替迁移验证。
+- `docs/DELIVERY_2026-03-19.md` 是 2026-03-19 的历史时点快照，不代表当前数据库迁移治理结论。
+
 ## 2026-03-24 Auth Strict Security Guardrails Status
 
 - 已将认证安全要求从“生产环境文档约定”收紧为“启动时严格模式硬约束”。
@@ -62,13 +70,13 @@
 
 - 真实第三方失败场景的在线烟雾测试未系统完成
 - 尚未对“错密钥 / 超时 / 断网 / 三方异常结构 / 三方限流”形成完整在线验收矩阵
-- 尚未建立正式数据库迁移体系
+- 已建立 Alembic 正式迁移体系，但运行时兼容路径仍需严格受限
 - 尚未做多部署环境的一致性验证
 
 ## 风险
 
 - 当前最大风险不是正向链路，而是未系统验证的真实第三方失败场景
-- `Question` 旧契约目前依赖运行时补列，适合兼容交付，不等于长期迁移方案
+- `Question` 旧契约仍保留受限运行时兼容路径，但正式 schema 演进唯一可信路径已切到 Alembic
 - 静态资源缺失时只做前端展示兜底，不会自动补回文件
 - 部署时如果 `STATIC_URL_PREFIX`、反向代理路径或 CORS 配置不一致，可能出现环境差异问题
 - 当前鉴权只有 access token，缺少 refresh token 与更细粒度会话治理

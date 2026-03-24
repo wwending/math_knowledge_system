@@ -1,5 +1,23 @@
 # DECISIONS
 
+## 决策 11：数据库 schema 正式演进以 Alembic 为唯一可信路径
+
+结论：
+
+- 正式 schema 演进只接受 Alembic 迁移链。
+- production 环境无条件禁止运行时 schema 变更。
+- 非 production 环境默认同样禁止运行时 schema 变更；只有显式设置 `ALLOW_RUNTIME_SCHEMA_MUTATIONS=true` 时，`AUTO_CREATE_TABLES` 与 `AUTO_APPLY_LEGACY_QUESTION_COMPAT` 才允许生效。
+- `AUTO_CREATE_TABLES` 与运行时补列只保留为本地开发或受限兼容窗口的兜底，不再作为正式部署方案。
+- `docs/DELIVERY_2026-03-19.md` 继续保留为历史时点快照，不作为当前数据库迁移治理判断依据。
+
+原因：
+
+- 把数据库治理边界继续耦合到认证严格模式会混淆职责。
+- 运行时建表和补列会让环境行为分叉，削弱版本化、回滚和验收可信度。
+- 用 fresh DB 执行 `upgrade_database(db_url)` 再跑最小 smoke，才能证明迁移链真实可用。
+
+日期：2026-03-24
+
 ## 决策 10：认证安全以“严格模式 + 部署声明”建模，而不是只靠 APP_ENV 文档约定
 
 结论：

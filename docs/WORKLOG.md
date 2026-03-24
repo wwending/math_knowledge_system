@@ -1,5 +1,23 @@
 # WORKLOG
 
+日期：2026-03-24  
+说明：数据库迁移治理收口修复
+
+## 9. 收紧数据库 schema 正式路径与兼容路径边界
+
+原因：
+
+- Alembic 已经引入，但应用启动和测试初始化仍保留 `create_all` 与运行时补列旁路。
+- 这会让“正式迁移成功”和“运行时兜底成功”同时成立，导致部署、验收和环境切换时行为分叉。
+
+结果：
+
+- 新增 `ALLOW_RUNTIME_SCHEMA_MUTATIONS` 作为数据库治理专用显式边界。
+- production 环境无条件禁止运行时 schema 变更。
+- 非 production 环境也只有在显式允许时，`AUTO_CREATE_TABLES` 与 `AUTO_APPLY_LEGACY_QUESTION_COMPAT` 才允许生效。
+- `backend/tests/test_auth_stage3.py` 改为 fresh DB + `upgrade_database(db_url)` 后再跑最小 auth smoke。
+- `docs/DELIVERY_2026-03-19.md` 继续保留为历史快照，不再代表当前数据库迁移治理结论。
+
 日期：2026-03-19  
 说明：未保留精确时分，以下按今天的处理顺序记录。
 
