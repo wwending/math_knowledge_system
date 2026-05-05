@@ -1,5 +1,35 @@
 # WORKLOG
 
+日期：2026-04-20  
+说明：测试与交付治理收口
+
+## 10. 固定最小回归测试集与发布门禁
+
+原因：
+
+- 现有仓库已经有前端契约测试、后端关键单测和人工验收清单，但入口分散，发布前依赖人工记忆。
+- README、STATUS、验收清单之间同时承担“当前真相源”职责，容易在交付口径上互相覆盖。
+
+结果：
+
+- 在 [README.md](/d:/math_knowledge_system/README.md) 固定了当前最小回归测试矩阵。
+- 在 [README.md](/d:/math_knowledge_system/README.md) 与 [docs/auth-acceptance-checklist.md](/d:/math_knowledge_system/docs/auth-acceptance-checklist.md) 固定了发布前命令顺序、人工 smoke 和失败即阻断条件。
+- 明确后端门禁依赖已安装 `backend/requirements.txt` 的 Python 环境，不再默认裸解释器可直接执行。
+
+## 11. 固定文档职责边界并清理过时交付结论
+
+原因：
+
+- 当前最容易误导后续维护的，不是测试不存在，而是历史快照和当前状态混写。
+- `access token + refresh session` 已经是当前事实，但部分文档仍保留“只有 access token”的旧结论。
+
+结果：
+
+- [docs/STATUS.md](/d:/math_knowledge_system/docs/STATUS.md) 改为只保留当前状态、当前门禁和当前未闭合边界。
+- [docs/KNOWN_ISSUES.md](/d:/math_knowledge_system/docs/KNOWN_ISSUES.md) 删除已失真的会话结论，保留真正仍未解决的风险。
+- [docs/DECISIONS.md](/d:/math_knowledge_system/docs/DECISIONS.md) 新增发布门禁与文档职责边界两条治理决策。
+- 历史快照与历史设计稿继续保留，但不再作为当前发布判断依据。
+
 日期：2026-03-24  
 说明：数据库迁移治理收口修复
 

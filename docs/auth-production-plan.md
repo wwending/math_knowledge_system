@@ -1,5 +1,11 @@
 # 鉴权生产化改造设计
 
+历史设计稿说明：
+
+- 本文档主要用于保留阶段 1 到阶段 3 之间的设计演进背景。
+- 其中部分“当前状态”描述已经被后续实现覆盖。
+- 当前状态、当前发布门禁和当前验收结论以 [README.md](/d:/math_knowledge_system/README.md)、[docs/STATUS.md](/d:/math_knowledge_system/docs/STATUS.md) 与 [docs/auth-acceptance-checklist.md](/d:/math_knowledge_system/docs/auth-acceptance-checklist.md) 为准。
+
 ## 1. 背景与阶段目标
 
 当前仓库的鉴权能力只覆盖了最小可交付链路：用户表、密码哈希、JWT access token、`/api/v1/auth/token` 登录、`/api/v1/auth/me` 会话校验，以及一个匿名开放的 `/api/v1/auth/register`。这套实现可以支撑本地演示和单管理员交付，但不满足“可长期生产使用”的账户治理要求。
