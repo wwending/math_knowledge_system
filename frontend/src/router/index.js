@@ -13,7 +13,7 @@ import {
 } from '../utils/auth'
 
 const PUBLIC_SIGNUP_DISABLED_MESSAGE = '当前环境未开放公开注册，请联系管理员创建账号。'
-const PUBLIC_SIGNUP_CAPABILITY_UNAVAILABLE_MESSAGE = '暂时无法确认当前环境是否开放公开注册，前端会按关闭态处理，请稍后重试。'
+const PUBLIC_SIGNUP_CAPABILITY_UNAVAILABLE_MESSAGE = '暂时无法确认当前环境是否开放公开注册，前端会按关闭状态处理，请稍后重试。'
 
 const routes = [
   {

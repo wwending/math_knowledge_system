@@ -106,7 +106,7 @@ const capabilityMessage = computed(() => {
     return '正在获取当前环境的注册能力信息。'
   }
   if (publicSignupCapability.value.failed) {
-    return '暂时无法确认当前环境是否开放公开注册，前端会按关闭态处理，请稍后重试或联系管理员。'
+    return '暂时无法确认当前环境是否开放公开注册，前端会按关闭状态处理，请稍后重试或联系管理员。'
   }
 
   return publicSignupCapability.value.enabled
