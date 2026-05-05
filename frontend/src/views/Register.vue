@@ -8,7 +8,7 @@
         <h1>Math Knowledge</h1>
         <p class="subtitle">公开注册是否可用由当前环境 capability 决定</p>
         <p class="desc">
-          在 capability 未确认前保持安全关闭态；确认开启后才展示可提交注册表单。
+          在 capability 未确认前保持安全关闭状态；确认开启后才展示可提交注册表单。
         </p>
       </div>
       <div class="bg-circle circle-1"></div>
@@ -151,7 +151,7 @@ const closedStateTitle = computed(() => (
 
 const closedStateTip = computed(() => (
   publicSignupCapability.value.failed
-    ? '能力获取失败时前端会按安全关闭态处理，请稍后重试或联系管理员。'
+    ? '能力获取失败时前端会按安全关闭状态处理，请稍后重试或联系管理员。'
     : '请联系管理员创建账号，或返回登录页继续使用已有账号。'
 ))
 

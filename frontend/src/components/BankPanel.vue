@@ -182,7 +182,7 @@ const openDetail = async (item) => {
     currentItem.value = res.data
   } catch (error) {
     console.error(error)
-    ElMessage.error('鑾峰彇棰樼洰璇︽儏澶辫触')
+    ElMessage.error('获取题目详情失败')
   } finally {
     detailLoading.value = false
   }
