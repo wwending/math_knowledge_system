@@ -68,10 +68,20 @@ LOGIN_RATE_LIMIT_WINDOW_SECONDS=900
 LOGIN_RATE_LIMIT_MAX_ATTEMPTS=5
 LOGIN_RATE_LIMIT_BLOCK_SECONDS=1800
 
+BAIDU_API_KEY=
+BAIDU_SECRET_KEY=
+DEEPSEEK_API_KEY=
+
 ALLOW_RUNTIME_SCHEMA_MUTATIONS=false
 AUTO_CREATE_TABLES=false
 AUTO_APPLY_LEGACY_QUESTION_COMPAT=false
 ```
+
+第三方密钥用途：
+
+- `BAIDU_API_KEY` / `BAIDU_SECRET_KEY`：供后端 OCR 服务调用百度 OCR 接口使用。
+- `DEEPSEEK_API_KEY`：供后端 LLM/NLP 服务调用 DeepSeek 兼容 OpenAI SDK 的接口使用。
+- 未配置这些密钥时，鉴权、管理员、前端契约测试仍可运行；真实 OCR/LLM 在线调用不可用。
 
 严格模式要求：
 
@@ -100,7 +110,9 @@ VITE_STATIC_URL_PREFIX=/static
 
 ## 初始化管理员
 
-1. 安装依赖
+以下命令必须先在仓库根目录创建并激活虚拟环境，然后进入 `backend` 目录执行后端命令。
+
+1. 安装后端依赖
 
 ```powershell
 python -m venv .venv
@@ -108,18 +120,19 @@ python -m venv .venv
 pip install -r backend\requirements.txt
 ```
 
-2. 执行数据库迁移
+2. 进入后端目录并执行数据库迁移
+
+`alembic upgrade head` 是启动后端和初始化管理员之前的硬前置；不要用运行时 `create_all` 替代正式迁移链。
 
 ```powershell
 cd backend
-..\.\venv\Scripts\python.exe -m alembic upgrade head
-cd ..
+..\.venv\Scripts\python.exe -m alembic upgrade head
 ```
 
 3. 初始化管理员
 
 ```powershell
-.\.venv\Scripts\python.exe -m backend.app.scripts.create_admin --phone 13800000000 --password "AdminPass123!" --display-name "Super Admin"
+..\.venv\Scripts\python.exe -m app.scripts.create_admin --phone 13800000000 --password "AdminPass123!" --display-name "Super Admin"
 ```
 
 说明：
@@ -131,10 +144,12 @@ cd ..
 
 ## 启动方式
 
-后端：
+后端必须先进入 `backend` 目录，并且必须先执行过 `alembic upgrade head`：
 
 ```powershell
-uvicorn --app-dir backend app.main:app --reload
+cd backend
+..\.venv\Scripts\python.exe -m alembic upgrade head
+..\.venv\Scripts\python.exe -m uvicorn app.main:app --reload
 ```
 
 前端：
@@ -197,17 +212,16 @@ npm run build
 2. 在已安装后端依赖的 Python 环境执行：
 
 ```powershell
-python -m unittest backend.tests.test_auth_stage3 -v
-python -m unittest backend.tests.test_auth_system -v
-python -m unittest backend.tests.test_failure_paths -v
+cd backend
+..\.venv\Scripts\python.exe -m compileall app
+..\.venv\Scripts\python.exe -m unittest discover tests
 ```
 
 3. 在目标预发布环境执行 Alembic：
 
 ```powershell
 cd backend
-..\.\venv\Scripts\python.exe -m alembic upgrade head
-cd ..
+..\.venv\Scripts\python.exe -m alembic upgrade head
 ```
 
 4. 按 [docs/auth-acceptance-checklist.md](/d:/math_knowledge_system/docs/auth-acceptance-checklist.md) 完成最小人工 smoke：
@@ -240,4 +254,5 @@ cd ..
 - 公开注册仍不是正式默认策略，只是 demo/staging 可开启能力
 - 正式开放公开注册仍缺少防刷、审计和身份验证能力
 - 真实第三方失败场景在线烟雾测试尚未系统完成
+- `/upload_pdf`、`/assets` 与 draft 流水线当前保留在后端能力边界内，尚未接入主前端流程
 - 当前发布门禁是“当前 demo 阶段最小可执行门禁”，不是企业级 CI 流水线
