@@ -17,13 +17,25 @@ from sqlalchemy.orm import Session
 
 from app.api.v1.auth import require_active_user
 from app.core.config import settings
-from app.core.constants import ALLOWED_ASSET_MIME_TYPES, MAX_ASSET_SIZE_BYTES
+from app.core.constants import (
+    ALLOWED_ASSET_MIME_TYPES,
+    MAX_ASSET_SIZE_BYTES,
+    DraftEventType,
+    DraftStatus,
+)
 from app.core.database import get_db
+from app.models.draft import Draft
+from app.models.draft_event import DraftEvent
+from app.models.llm_run import LLMRun
+from app.models.ocr_run import OCRRun
 from app.models.question import Question
+from app.models.question_revision import QuestionRevision
 from app.models.source_asset import SourceAsset
 from app.models.user import User
+from app.schemas.draft import DraftCreate, DraftDetail, DraftRecognizeResponse, DraftSaveToBankResponse
 from app.schemas.ocr import OCRResponse
 from app.schemas.question import KnowledgeTag, QuestionDetail, QuestionListItem, QuestionUpdate
+from app.services.draft_state import transition_draft_status
 from app.services.llm import nlp_service
 from app.services.ocr_engine import ocr_service
 
@@ -37,6 +49,7 @@ PDF_ONLY_MESSAGE = "\u8bf7\u4e0a\u4f20 PDF \u6587\u4ef6"
 PDF_PARSE_FAILED_MESSAGE = "\u672a\u80fd\u89e3\u6790 PDF \u6587\u4ef6"
 UPLOAD_SAVE_FAILED_MESSAGE = "\u4e0a\u4f20\u6587\u4ef6\u4fdd\u5b58\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5"
 QUESTION_SAVE_FAILED_MESSAGE = "\u9898\u76ee\u4fdd\u5b58\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5"
+DRAFT_READY_REQUIRED_MESSAGE = "\u53ea\u6709\u5df2\u8bc6\u522b\u5b8c\u6210\u7684 Draft \u53ef\u4ee5\u4fdd\u5b58\u5165\u9898\u5e93"
 
 
 class SourceAssetResponse(BaseModel):
@@ -167,6 +180,61 @@ def _normalize_llm_tags(raw_tags: Any) -> list[dict[str, Any]]:
         if label:
             knowledge_tags.append({"label": label, "score": 1.0})
     return knowledge_tags
+
+
+def _content_text(current_content: Any) -> str:
+    if isinstance(current_content, dict):
+        return str(current_content.get("text") or current_content.get("content") or "")
+    if isinstance(current_content, str):
+        return current_content
+    return ""
+
+
+def _content_tags(current_content: Any) -> list[KnowledgeTag]:
+    if not isinstance(current_content, dict):
+        return []
+    return normalize_tags(current_content.get("knowledge_tags") or current_content.get("knowledge"))
+
+
+def _build_draft_detail(draft: Draft) -> DraftDetail:
+    return DraftDetail(
+        id=draft.id,
+        source_asset_id=draft.source_asset_id,
+        crop_bbox=draft.crop_bbox,
+        status=draft.status,
+        current_content=draft.current_content,
+        content=_content_text(draft.current_content),
+        knowledge_tags=_content_tags(draft.current_content),
+        last_ocr_run_id=draft.last_ocr_run_id,
+        last_llm_run_id=draft.last_llm_run_id,
+        created_at=draft.created_at,
+        updated_at=draft.updated_at,
+    )
+
+
+def _asset_file_path(asset: SourceAsset) -> str:
+    stored_path = asset.normalized_path or asset.original_path
+    if os.path.isabs(stored_path):
+        return stored_path
+    return str(settings.UPLOAD_DIR_PATH / stored_path)
+
+
+def _ensure_owned_asset(db: Session, asset_id: int, user_id: int) -> SourceAsset:
+    asset = db.query(SourceAsset).filter(SourceAsset.id == asset_id).first()
+    if not asset:
+        raise HTTPException(status_code=404, detail=NOT_FOUND_MESSAGE)
+    if asset.user_id != user_id:
+        raise HTTPException(status_code=403, detail=FORBIDDEN_MESSAGE)
+    return asset
+
+
+def _ensure_owned_draft(db: Session, draft_id: int, user_id: int) -> Draft:
+    draft = db.query(Draft).filter(Draft.id == draft_id).first()
+    if not draft:
+        raise HTTPException(status_code=404, detail=NOT_FOUND_MESSAGE)
+    if draft.user_id != user_id:
+        raise HTTPException(status_code=403, detail=FORBIDDEN_MESSAGE)
+    return draft
 
 
 @router.get("/tags", response_model=List[str])
@@ -350,6 +418,258 @@ def upload_asset(
         width=asset.width,
         height=asset.height,
         sha256=asset.sha256,
+    )
+
+
+@router.post("/drafts", response_model=DraftDetail)
+def create_draft(
+    payload: DraftCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_active_user),
+):
+    _ensure_owned_asset(db, payload.source_asset_id, current_user.id)
+
+    draft = Draft(
+        user_id=current_user.id,
+        source_asset_id=payload.source_asset_id,
+        crop_bbox=payload.crop_bbox if payload.crop_bbox is not None else {},
+        status=DraftStatus.DRAFT_CREATED,
+        current_content={"text": "", "knowledge_tags": []},
+    )
+    db.add(draft)
+    db.flush()
+    db.add(
+        DraftEvent(
+            draft_id=draft.id,
+            from_status=None,
+            to_status=DraftStatus.DRAFT_CREATED,
+            event_type=DraftEventType.CREATE,
+            metadata_={"source_asset_id": payload.source_asset_id},
+        )
+    )
+    db.commit()
+    db.refresh(draft)
+
+    return _build_draft_detail(draft)
+
+
+@router.get("/drafts/{draft_id}", response_model=DraftDetail)
+def get_draft(
+    draft_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_active_user),
+):
+    draft = _ensure_owned_draft(db, draft_id, current_user.id)
+    return _build_draft_detail(draft)
+
+
+@router.post("/drafts/{draft_id}/recognize", response_model=DraftRecognizeResponse)
+def recognize_draft(
+    draft_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_active_user),
+):
+    draft = _ensure_owned_draft(db, draft_id, current_user.id)
+    asset = _ensure_owned_asset(db, draft.source_asset_id, current_user.id)
+    if not asset.mime.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Draft recognition currently supports image assets only")
+
+    transition_draft_status(
+        db,
+        draft,
+        DraftStatus.RECOGNIZING,
+        DraftEventType.START_RECOGNIZE,
+        metadata={"source_asset_id": asset.id},
+        commit=True,
+    )
+
+    file_path = _asset_file_path(asset)
+    try:
+        ocr_result = ocr_service.recognize(file_path)
+    except Exception:
+        logger.exception("Unexpected Draft OCR crash draft_id={} user_id={}", draft.id, current_user.id)
+        ocr_result = {
+            "success": False,
+            "content": "",
+            "cost_seconds": 0.0,
+            "error_type": "service_error",
+            "error": "\u6587\u5b57\u8bc6\u522b\u670d\u52a1\u8c03\u7528\u5931\u8d25",
+            "detail": "ocr_unexpected_error",
+        }
+
+    raw_content = (ocr_result.get("content") or "").strip()
+    ocr_run = OCRRun(
+        draft_id=draft.id,
+        provider="baidu",
+        endpoint=getattr(ocr_service, "ocr_url", None),
+        request_params_redacted={"source_asset_id": asset.id, "crop_bbox": draft.crop_bbox},
+        response_raw_json=ocr_result,
+        parsed_blocks=[{"text": raw_content}] if raw_content else [],
+        latency_ms=int(float(ocr_result.get("cost_seconds") or 0) * 1000),
+        error_code=None if ocr_result.get("success") else ocr_result.get("error_type"),
+        error_message=None if ocr_result.get("success") else (ocr_result.get("detail") or ocr_result.get("error")),
+        text_len_estimate=len(raw_content),
+    )
+    db.add(ocr_run)
+    db.flush()
+    draft.last_ocr_run_id = ocr_run.id
+
+    if not ocr_result.get("success"):
+        draft.current_content = {
+            "text": "",
+            "ocr_text": raw_content,
+            "knowledge_tags": [],
+            "error": ocr_result.get("error"),
+            "error_type": ocr_result.get("error_type"),
+        }
+        transition_draft_status(
+            db,
+            draft,
+            DraftStatus.FAILED,
+            DraftEventType.RECOGNIZE_FAIL,
+            metadata={"ocr_run_id": ocr_run.id, "error_type": ocr_result.get("error_type")},
+            commit=True,
+        )
+        detail = _build_draft_detail(draft)
+        return DraftRecognizeResponse(
+            **detail.model_dump(),
+            success=False,
+            error=ocr_result.get("error"),
+            error_type=ocr_result.get("error_type"),
+        )
+
+    final_content = raw_content
+    knowledge_tags: list[dict[str, Any]] = []
+    warning = None
+    partial_success = False
+
+    try:
+        llm_result = nlp_service.analyze(raw_content)
+    except Exception:
+        logger.exception("Unexpected Draft LLM crash draft_id={} user_id={}", draft.id, current_user.id)
+        llm_result = {
+            "success": False,
+            "error_type": "service_error",
+            "error": "\u667a\u80fd\u6574\u7406\u670d\u52a1\u8c03\u7528\u5931\u8d25",
+            "detail": "llm_unexpected_error",
+            "corrected_text": raw_content,
+            "tags": [],
+            "cost_seconds": 0.0,
+        }
+
+    if llm_result.get("success"):
+        final_content = llm_result.get("corrected_text", raw_content) or raw_content
+        knowledge_tags = _normalize_llm_tags(llm_result.get("tags", []))
+    else:
+        partial_success = True
+        warning = llm_result.get("error") or "\u667a\u80fd\u6574\u7406\u5931\u8d25\uff0c\u5df2\u4fdd\u7559\u539f\u59cb\u8bc6\u522b\u7ed3\u679c"
+        final_content = llm_result.get("corrected_text", raw_content) or raw_content
+        knowledge_tags = _normalize_llm_tags(llm_result.get("tags", []))
+
+    llm_run = LLMRun(
+        draft_id=draft.id,
+        provider="deepseek",
+        model=settings.DEEPSEEK_MODEL,
+        prompt_version="v1",
+        input_text=raw_content,
+        raw_output=json.dumps(llm_result, ensure_ascii=False),
+        parsed_output=llm_result,
+        json_valid=bool(llm_result.get("success")),
+        schema_valid=bool(llm_result.get("success")),
+        fallback_used=partial_success,
+        latency_ms=int(float(llm_result.get("cost_seconds") or 0) * 1000),
+        error_code=None if llm_result.get("success") else llm_result.get("error_type"),
+        error_message=None if llm_result.get("success") else (llm_result.get("detail") or llm_result.get("error")),
+    )
+    db.add(llm_run)
+    db.flush()
+
+    draft.last_llm_run_id = llm_run.id
+    draft.current_content = {
+        "text": final_content,
+        "ocr_text": raw_content,
+        "knowledge_tags": knowledge_tags,
+        "partial_success": partial_success,
+        "warning": warning,
+    }
+    transition_draft_status(
+        db,
+        draft,
+        DraftStatus.DRAFT_READY,
+        DraftEventType.RECOGNIZE_SUCCESS,
+        metadata={
+            "ocr_run_id": ocr_run.id,
+            "llm_run_id": llm_run.id,
+            "partial_success": partial_success,
+        },
+        commit=True,
+    )
+
+    detail = _build_draft_detail(draft)
+    return DraftRecognizeResponse(
+        **detail.model_dump(),
+        success=True,
+        partial_success=partial_success,
+        warning=warning,
+        error_type="llm_failed" if partial_success else None,
+    )
+
+
+@router.post("/drafts/{draft_id}/save-to-bank", response_model=DraftSaveToBankResponse)
+def save_draft_to_bank(
+    draft_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_active_user),
+):
+    draft = _ensure_owned_draft(db, draft_id, current_user.id)
+    if draft.status != DraftStatus.DRAFT_READY:
+        raise HTTPException(status_code=409, detail=DRAFT_READY_REQUIRED_MESSAGE)
+
+    content_text = _content_text(draft.current_content).strip()
+    knowledge_tags = [tag.model_dump() for tag in _content_tags(draft.current_content)]
+
+    question = Question(
+        user_id=current_user.id,
+        content=content_text,
+        knowledge_tags=knowledge_tags,
+        origin_image=(draft.source_asset.normalized_path or draft.source_asset.original_path)
+        if draft.source_asset
+        else None,
+    )
+    db.add(question)
+    db.flush()
+
+    revision = QuestionRevision(
+        question_id=question.id,
+        rev_no=1,
+        content=draft.current_content or {"text": content_text, "knowledge_tags": knowledge_tags},
+        crop_bbox=draft.crop_bbox,
+        source_asset_id=draft.source_asset_id,
+        ocr_run_id=draft.last_ocr_run_id,
+        llm_run_id=draft.last_llm_run_id,
+        change_reason="draft_save_to_bank",
+    )
+    db.add(revision)
+    db.flush()
+
+    transition_draft_status(
+        db,
+        draft,
+        DraftStatus.SAVED_TO_BANK,
+        DraftEventType.SAVE_TO_BANK,
+        metadata={"question_id": question.id, "question_revision_id": revision.id, "rev_no": revision.rev_no},
+        commit=True,
+    )
+    db.refresh(question)
+    db.refresh(revision)
+    db.refresh(draft)
+
+    detail = _build_draft_detail(draft)
+    return DraftSaveToBankResponse(
+        **detail.model_dump(),
+        question_id=question.id,
+        question_revision_id=revision.id,
+        rev_no=revision.rev_no,
     )
 
 
