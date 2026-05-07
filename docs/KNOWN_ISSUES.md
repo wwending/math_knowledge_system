@@ -9,14 +9,18 @@
 - 影响人工验收和后续维护判断。
 - 可能掩盖真实交互文案问题。
 
-## 2. 主链路决策尚未完成
+## 2. 正式流水线最小后端竖切尚未实现
 
-当前主链路仍是 `POST /api/v1/recognize`。`assets/drafts/ocr_runs/llm_runs` 已经建模，但目前是正式流水线预留，尚未接入主前端闭环。
+主链路已决策采用渐进式迁移：短期继续 `POST /api/v1/recognize`，长期逐步迁移到 `assets/drafts/ocr_runs/llm_runs` 正式流水线。
+
+当前 `/recognize -> questions -> history/bank` 已经跑通，是现有可用 MVP 主链路。`assets/drafts/ocr_runs/llm_runs` 已有模型和迁移，但缺少主接口、schema、前端闭环和测试。
 
 影响：
 
 - `/upload_pdf`、`/assets`、draft 流水线不能被表述为主前端已接入能力。
-- 下一阶段需要明确继续保留 `/api/v1/recognize` 主链路，还是切换到 draft 流水线。
+- 下一阶段应新增最小正式流水线后端竖切，不影响现有前端。
+- 不删除 `/recognize`，不现在硬切 `Dashboard.vue`。
+- 不做 OCR/LLM provider 抽象、异步队列、批量 PDF、多页 draft 管理。
 
 ## 3. mock/legacy 文件需要清理
 

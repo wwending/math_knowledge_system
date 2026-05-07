@@ -1,5 +1,27 @@
 # DECISIONS
 
+## 决策 15：主链路采用渐进式迁移
+
+结论：
+
+- 选择 C：短期继续使用 `POST /api/v1/recognize`，长期逐步迁移到 `assets/drafts/ocr_runs/llm_runs` 正式流水线。
+- 当前主链路仍是 `/api/v1/recognize`。
+- `/upload_pdf`、`/assets`、drafts 当前不是主前端闭环。
+- 下一阶段目标是新增最小正式流水线后端竖切，不影响现有前端。
+- 不要删除 `/recognize`。
+- 不要现在硬切 `Dashboard.vue`。
+- 不要做 OCR/LLM provider 抽象、异步队列、批量 PDF、多页 draft 管理。
+
+原因：
+
+- 当前 `/recognize -> questions -> history/bank` 已经跑通，是现有可用 MVP 主链路。
+- `assets/drafts/ocr_runs/llm_runs` 已有模型和迁移，但缺少主接口、schema、前端闭环和测试。
+- 现在硬切正式流水线风险过大。
+- 继续只维护 `/recognize` 又会让正式流水线长期架空。
+- 因此采用渐进式迁移：先新增后端正式流水线竖切，不影响现有前端；验证通过后再切 Dashboard。
+
+日期：2026-05-07
+
 ## 决策 14：第三轮只做文档和示例配置收口
 
 结论：
