@@ -9,17 +9,18 @@
 - 影响人工验收和后续维护判断。
 - 可能掩盖真实交互文案问题。
 
-## 2. 正式流水线最小后端竖切尚未实现
+## 2. Draft 流水线尚未接入主前端
 
 主链路已决策采用渐进式迁移：短期继续 `POST /api/v1/recognize`，长期逐步迁移到 `assets/drafts/ocr_runs/llm_runs` 正式流水线。
 
-当前 `/recognize -> questions -> history/bank` 已经跑通，是现有可用 MVP 主链路。`assets/drafts/ocr_runs/llm_runs` 已有模型和迁移，但缺少主接口、schema、前端闭环和测试。
+当前 `/recognize -> questions -> history/bank` 已经跑通，是现有可用 MVP 主链路。第七轮已新增 Draft 后端旁路正式流水线最小竖切，但它目前仍是后端旁路能力。
 
 影响：
 
 - `/upload_pdf`、`/assets`、draft 流水线不能被表述为主前端已接入能力。
-- 下一阶段应新增最小正式流水线后端竖切，不影响现有前端。
-- 不删除 `/recognize`，不现在硬切 `Dashboard.vue`。
+- `Dashboard.vue` 尚未切换到 Draft 流水线。
+- `/api/v1/recognize` 未删除、未重构，仍是当前 MVP 主入口。
+- 下一阶段可以做 API smoke 文档或前端接入方案评估，但不要立即硬切前端。
 - 不做 OCR/LLM provider 抽象、异步队列、批量 PDF、多页 draft 管理。
 
 ## 3. mock/legacy 文件需要清理
@@ -33,10 +34,10 @@
 
 ## 4. 后端测试稳定性仍需持续关注
 
-第二轮后端验证已通过：
+第七轮后端验证已通过：
 
 - `python -m compileall app` 通过。
-- `python -m unittest discover tests` 通过，`Ran 36 tests OK`。
+- `python -m unittest discover tests` 通过，`Ran 38 tests OK`。
 
 但当前测试仍依赖已正确安装 `backend/requirements.txt` 的 Python 环境，后续仍需关注环境一致性和测试隔离。
 

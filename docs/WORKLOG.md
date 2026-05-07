@@ -1,5 +1,55 @@
 # WORKLOG
 
+## 2026-05-07 第七轮：后端旁路正式流水线最小竖切
+
+目标：
+
+- 新增 Draft 后端旁路正式流水线最小竖切。
+- 保持当前前端主链路仍使用 `/api/v1/recognize`。
+- 不立即硬切 `Dashboard.vue`。
+
+新增后端旁路接口：
+
+- `POST /api/v1/drafts`
+- `GET /api/v1/drafts/{draft_id}`
+- `POST /api/v1/drafts/{draft_id}/recognize`
+- `POST /api/v1/drafts/{draft_id}/save-to-bank`
+
+状态流转：
+
+- `draft_created`
+- `recognizing`
+- `draft_ready`
+- `failed`
+- `saved_to_bank`
+
+落库行为：
+
+- `DraftEvent`：创建、开始识别、识别成功/失败、保存入题库都会写入。
+- `OCRRun`：Draft 识别后写入，失败也记录错误。
+- `LLMRun`：OCR 成功后写入，LLM 失败记录错误并允许 `partial_success`。
+- `QuestionRevision`：保存入题库时创建 v1，并关联 `source_asset_id`、`ocr_run_id`、`llm_run_id`。
+
+验证结果：
+
+- `cd backend && python -m compileall app` 通过。
+- `cd backend && python -m unittest discover tests` 通过，`Ran 38 tests OK`。
+
+边界：
+
+- Draft 流水线目前是后端旁路能力。
+- 当前前端主链路仍然是 `/api/v1/recognize`。
+- `Dashboard.vue` 尚未切换到 Draft 流水线。
+- `/api/v1/recognize` 未删除、未重构，仍是当前 MVP 主入口。
+- 不写成生产可用。
+- 不写成完整多页 PDF 或批量 draft 已完成。
+
+下一步：
+
+- 可以做 API smoke 文档。
+- 可以做前端接入方案评估。
+- 不要立即硬切前端。
+
 ## 2026-05-07 第六轮：记录主链路决策
 
 目标：

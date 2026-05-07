@@ -1,5 +1,28 @@
 # DECISIONS
 
+## 决策 16：Draft 流水线先作为后端旁路能力
+
+结论：
+
+- 第七轮新增 Draft 后端旁路正式流水线最小竖切。
+- 新增接口为 `POST /api/v1/drafts`、`GET /api/v1/drafts/{draft_id}`、`POST /api/v1/drafts/{draft_id}/recognize`、`POST /api/v1/drafts/{draft_id}/save-to-bank`。
+- Draft 状态流转为 `draft_created`、`recognizing`、`draft_ready`、`failed`、`saved_to_bank`。
+- `DraftEvent` 会记录创建、开始识别、识别成功/失败、保存入题库。
+- `OCRRun` 在 Draft 识别后写入，失败也记录错误。
+- `LLMRun` 在 OCR 成功后写入，LLM 失败记录错误并允许 `partial_success`。
+- `QuestionRevision` 在保存入题库时创建 v1，并关联 `source_asset_id`、`ocr_run_id`、`llm_run_id`。
+- 当前前端主链路仍然是 `/api/v1/recognize`。
+- `Dashboard.vue` 尚未切换到 Draft 流水线。
+- `/api/v1/recognize` 未删除、未重构，仍是当前 MVP 主入口。
+
+原因：
+
+- 先让正式流水线具备可验证的后端旁路能力，可以降低直接切换主前端的风险。
+- 当前 MVP 主入口仍可用，立即硬切前端会扩大验证面。
+- 下一阶段更适合先补 API smoke 文档或做前端接入方案评估。
+
+日期：2026-05-07
+
 ## 决策 15：主链路采用渐进式迁移
 
 结论：
