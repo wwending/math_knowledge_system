@@ -1,5 +1,27 @@
 # WORKLOG
 
+## 2026-05-07 第六轮：记录主链路决策
+
+目标：
+
+- 只更新文档。
+- 记录主链路选择 C：短期继续 `/api/v1/recognize`，长期逐步迁移到 `assets/drafts/ocr_runs/llm_runs` 正式流水线。
+- 明确下一阶段只做最小正式流水线后端竖切，不硬切现有前端。
+
+结果：
+
+- [docs/DECISIONS.md](/d:/math_knowledge_system/docs/DECISIONS.md) 已新增主链路渐进式迁移决策。
+- [docs/STATUS.md](/d:/math_knowledge_system/docs/STATUS.md) 已更新当前结论、未闭合边界和下一阶段口径。
+- [docs/KNOWN_ISSUES.md](/d:/math_knowledge_system/docs/KNOWN_ISSUES.md) 已将“主链路决策尚未完成”更新为“正式流水线最小后端竖切尚未实现”。
+
+边界：
+
+- 当前主链路仍是 `/api/v1/recognize`。
+- `/upload_pdf`、`/assets`、drafts 当前不是主前端闭环。
+- 不删除 `/recognize`。
+- 不现在硬切 `Dashboard.vue`。
+- 不做 OCR/LLM provider 抽象、异步队列、批量 PDF、多页 draft 管理。
+
 ## 2026-05-05 第三轮：项目文档收口
 
 目标：
