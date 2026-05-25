@@ -97,7 +97,5 @@ config_local.py
 secrets.json
 check_gpu.py
 reset_admin.py
-test_OCR.py
-test_deepseek.py
-test_*.py
-!backend/tests/test_auth_public_signup.py
+
+

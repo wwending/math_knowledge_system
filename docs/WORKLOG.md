@@ -1,5 +1,30 @@
 # WORKLOG
 
+## 2026-05-25 第九轮：LLM analyze 成功路径 LaTeX 归一化集成测试
+
+目标：
+
+- 补充 mock 级集成测试，证明 `NLPService.analyze()` 成功路径返回的 `corrected_text` 会经过 `normalize_latex_delimiters`。
+- 不请求真实 DeepSeek API。
+- 不修改生产代码、前端、Draft 流水线或 API schema。
+
+结果：
+
+- 在 `backend/tests/test_llm.py` 新增 fake LLM client 响应。
+- 测试覆盖 LLM 返回纯 JSON、`corrected_text` 含 `\(...\)` 和 `\[...\]` 时，`analyze()` 返回结果会归一化为 `$...$` 和 `$$...$$`。
+- 同时断言 tags 正常返回，旧分隔符不再出现在成功结果中。
+
+验证结果：
+
+- `cd backend && python -m pytest tests/test_llm.py` 通过，`8 passed`。
+- `cd backend && python -m compileall app` 通过。
+- `cd backend && python -m unittest discover tests` 通过，`Ran 46 tests OK`。
+
+边界：
+
+- 未修改 `backend/app/services/llm.py`。
+- 未修改前端、Draft pipeline、API schema 或数据库模型。
+
 ## 2026-05-25 第八轮：LLM LaTeX 分隔符程序级归一化
 
 目标：

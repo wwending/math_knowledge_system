@@ -100,6 +100,26 @@ If `tests/` directory or specific test files do not exist on the current branch,
 4. 当前已知风险
 5. 你本轮执行任务前需要我提供什么
 
+## Documentation Update Policy
+
+After every non-trivial task, especially implementation, fix, refactor, test, or documentation work, check whether project docs need updating. Do not update every doc every time — only when relevant.
+
+| Doc | When to update |
+| --- | --- |
+| `docs/WORKLOG.md` | After any non-trivial task (not pure Q&A). Append a round record. |
+| `docs/STATUS.md` | Only when stage status, verification results, API status, or main pipeline state changes. |
+| `docs/DECISIONS.md` | Only when a new architecture, API, data model, or process decision is made. |
+| `docs/KNOWN_ISSUES.md` | Only when a new bug, risk, tech debt, unresolved issue, or workaround is discovered. |
+| `README.md` | Only when install, startup, usage, project intro, or external-facing description changes. |
+| `AGENTS.md` | Only when agent working rules, test conventions, red lines, or project snapshot changes. |
+
+Rules:
+
+- For non-trivial tasks, `docs/WORKLOG.md` should usually be updated. If it is not updated, explain why in the Completion Report.
+- Do not write filler to "look like" docs were updated.
+- Do not duplicate the same content across multiple docs.
+- If only docs were changed, no code tests are needed — but the Completion Report must state this.
+
 ## Completion Report Format
 
 After every task, report in this format:
@@ -110,4 +130,6 @@ After every task, report in this format:
 - **Tests Not Run and Why** — if any test scope was skipped, state why.
 - **Behavior Changes** — what a user or downstream system would notice differently.
 - **Compatibility Notes** — any risk of breaking existing flows, migrations, or API contracts.
+- **Docs Updated** — list documentation files updated and why; for non-trivial tasks, usually include `docs/WORKLOG.md`.
+- **Docs Not Updated and Why** — explain why other project memory files were not changed.
 - **Next Suggested Step** — what to do next (optional, one line).
