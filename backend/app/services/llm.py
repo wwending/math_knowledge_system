@@ -1,4 +1,5 @@
 import json
+import re
 import time
 from typing import Any
 
@@ -9,6 +10,14 @@ from app.core.config import settings
 
 
 LLM_TIMEOUT_SECONDS = 30
+
+
+def normalize_latex_delimiters(text: str) -> str:
+    if not text:
+        return text
+
+    text = re.sub(r"\\\[(.*?)\\\]", r"$$\1$$", text, flags=re.DOTALL)
+    return re.sub(r"\\\((.*?)\\\)", r"$\1$", text, flags=re.DOTALL)
 
 
 def _build_failure(
@@ -73,16 +82,31 @@ class NLPService:
 
         started_at = time.time()
         prompt = f"""
-You are a high-school math assistant.
-Clean OCR mistakes, normalize Markdown and LaTeX, and extract 1-3 knowledge tags.
-Return JSON only with the shape:
-{{
-  "corrected_text": "...",
-  "tags": ["...", "..."]
-}}
+你是一个高中数学助教。请对以下 OCR 识别出的数学题目文本进行整理。
 
-OCR text:
+任务要求：
+1. 修正明显 OCR 错误，例如：
+   - 将 '1n' 修正为 'ln'
+   - 将错误识别的指数、根号、分式、三角函数符号修正为正确数学表达
+   - 修正常见的数学符号识别错误
+2. 将数学公式转换为标准 LaTeX 格式。
+3. 行内公式必须使用 $...$ 包裹。
+4. 块级公式、复杂方程组、联立公式、分段函数必须使用 $$...$$ 包裹。
+5. 不要使用 \\(...\\) 作为行内公式分隔符。
+6. 不要使用 \\[...\\] 作为块级公式分隔符。
+7. 保持题目原意不变，不要自行补充题目没有给出的条件、答案或解析。
+8. 中文题目保持中文表达。
+9. 提取 3-5 个高中数学知识点标签。
+
+原始 OCR 文本：
 {text}
+
+请务必只返回纯 JSON，不要包含 ```json 或 ``` 代码块标记。
+返回格式如下：
+{{
+  "corrected_text": "修复后的完整题目文本，包含使用 $...$ 或 $$...$$ 包裹的 LaTeX 公式",
+  "tags": ["标签1", "标签2", "标签3"]
+}}
 """
 
         try:
@@ -91,7 +115,7 @@ OCR text:
                 messages=[
                     {
                         "role": "system",
-                        "content": "Return strict JSON only. Do not wrap the result in markdown fences.",
+                        "content": "你是一个专业的高中数学助教，擅长修正 OCR 数学题文本和规范 LaTeX。你必须严格返回 JSON。所有行内公式必须使用 $...$，所有块级公式必须使用 $$...$$，不要使用 \\(...\\) 或 \\[...\\]。",
                     },
                     {"role": "user", "content": prompt},
                 ],
@@ -193,6 +217,8 @@ OCR text:
                 corrected_text=text,
                 cost_seconds=time.time() - started_at,
             )
+
+        corrected_text = normalize_latex_delimiters(corrected_text)
 
         if not isinstance(raw_tags, list):
             logger.warning("DeepSeek tags has invalid type: {}", result)
