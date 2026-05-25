@@ -1,5 +1,32 @@
 # WORKLOG
 
+## 2026-05-25 第八轮：LLM LaTeX 分隔符程序级归一化
+
+目标：
+
+- 在 LLM 输出后增加确定性的 LaTeX 分隔符归一化。
+- 将 `\(...\)` 归一化为 `$...$`。
+- 将 `\[...\]` 归一化为 `$$...$$`。
+- 保持 `/api/v1/recognize` 返回结构不变，不改前端，不改 Draft 流水线。
+
+结果：
+
+- 在 `backend/app/services/llm.py` 新增 `normalize_latex_delimiters` 纯函数。
+- 在 `corrected_text` 类型校验通过后、成功返回前调用归一化函数。
+- 新增 `backend/tests/test_llm.py` 覆盖行内公式、块级公式、既有 dollar 分隔符、普通中文文本和空字符串。
+
+验证结果：
+
+- `cd backend && python -m compileall app` 通过。
+- `cd backend && python -m unittest discover tests` 通过，`Ran 45 tests OK`。
+- `cd backend && python -m pytest tests/test_llm.py` 通过，`7 passed`。
+
+边界：
+
+- 不修改 raw OCR text。
+- 不修改 timeout、异常处理、JSON 解析、字段校验、tag normalization。
+- 不新增依赖。
+
 ## 2026-05-07 第七轮：后端旁路正式流水线最小竖切
 
 目标：
