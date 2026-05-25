@@ -122,25 +122,44 @@
                   :high="true"
                   mode="contain"
                 />
-                <el-button type="primary" class="confirm-btn" :loading="ocrLoading" @click="confirmCropAndUpload">
+                <el-button
+                  type="primary"
+                  class="confirm-btn"
+                  :loading="ocrLoading"
+                  :disabled="isDraftBusy"
+                  @click="confirmCropAndUpload"
+                >
                   确认裁剪并上传
                 </el-button>
               </div>
 
               <div v-else class="full-preview">
                 <img :src="currentImageUrl" />
-                <el-button type="primary" :loading="ocrLoading" @click="uploadFullImage">确认整页上传</el-button>
+                <el-button type="primary" :loading="ocrLoading" :disabled="isDraftBusy" @click="uploadFullImage">
+                  确认整页上传
+                </el-button>
               </div>
             </div>
           </div>
 
           <div v-if="ocrLoading && step === 'uploading'" class="loading-state">
             <el-skeleton :rows="5" animated />
-            <p>正在请求 OCR / AI 服务处理图片，请稍候...</p>
+            <p>{{ draftStatusText || '正在请求 OCR / AI 服务处理图片，请稍候...' }}</p>
           </div>
 
-          <div v-if="ocrResult && step === 'result'" class="result-section">
+          <div
+            v-if="step === 'result' && (ocrResult || draftError || draftStatus === 'saved_to_bank')"
+            class="result-section"
+          >
             <el-button class="reset-result-btn" @click="resetUpload">继续录入下一题</el-button>
+            <el-alert
+              v-if="draftStatusText"
+              :title="draftStatusText"
+              :type="draftStatusAlertType"
+              show-icon
+              :closable="false"
+              class="result-alert"
+            />
             <el-alert
               v-if="recognizeWarning"
               :title="recognizeWarning"
@@ -149,9 +168,18 @@
               :closable="false"
               class="result-alert"
             />
-            <el-card shadow="hover">
+            <el-card v-if="ocrResult" shadow="hover">
               <div class="markdown-body" v-html="renderedContent"></div>
             </el-card>
+            <div v-if="draftStatus === 'draft_ready'" class="result-actions">
+              <el-button type="primary" :loading="saveLoading" :disabled="!canSaveDraft" @click="saveDraftToBank">
+                保存入题库
+              </el-button>
+            </div>
+            <div v-if="draftStatus === 'saved_to_bank'" class="result-actions">
+              <el-button type="primary" plain @click="resetUpload">继续录入</el-button>
+              <el-button type="success" @click="activeMenu = 'bank'">切换到题库</el-button>
+            </div>
           </div>
         </section>
 
@@ -213,6 +241,12 @@ const ocrLoading = ref(false)
 const ocrResult = ref('')
 const recognizeWarning = ref('')
 const cropperRef = ref(null)
+const draftStatus = ref('')
+const draftId = ref(null)
+const sourceAssetId = ref(null)
+const draftError = ref('')
+const saveLoading = ref(false)
+const saveResult = ref(null)
 
 const currentUser = computed(() => authState.currentUser)
 const adminMode = computed(() => isAdminUser(currentUser.value))
@@ -280,16 +314,80 @@ const getRecognizeErrorMessage = (payload) => {
   if (typeof payload === 'string') {
     return payload
   }
-  return payload.warning || payload.error || '识别失败，请稍后重试。'
+  const errorText = payload.error || payload.warning || ''
+  if (payload.error_type && errorText) {
+    return `${payload.error_type}: ${errorText}`
+  }
+  return errorText || '识别失败，请稍后重试。'
 }
 
 const getRequestErrorMessage = (error) => {
-  const detail = error.response?.data?.detail
+  const data = error.response?.data || {}
+  const detail = data.detail
   if (detail && typeof detail === 'string') {
     return detail
   }
+  if (data.error_type || data.error) {
+    return getRecognizeErrorMessage(data)
+  }
   return '请求失败，请稍后重试。'
 }
+
+const resetDraftState = () => {
+  draftStatus.value = ''
+  draftId.value = null
+  sourceAssetId.value = null
+  draftError.value = ''
+  saveLoading.value = false
+  saveResult.value = null
+}
+
+const extractId = (payload, fields) => {
+  for (const field of fields) {
+    if (payload?.[field] !== undefined && payload[field] !== null) {
+      return payload[field]
+    }
+  }
+  return null
+}
+
+const getDraftContent = (payload) => payload?.content || payload?.current_content?.text || ''
+
+const isDraftBusy = computed(() => ocrLoading.value || draftStatus.value === 'recognizing')
+const canSaveDraft = computed(
+  () => draftStatus.value === 'draft_ready' && Boolean(draftId.value) && !ocrLoading.value && !saveLoading.value
+)
+
+const draftStatusText = computed(() => {
+  if (draftStatus.value === 'draft_created') {
+    return '草稿已创建，准备识别'
+  }
+  if (draftStatus.value === 'recognizing') {
+    return '正在识别'
+  }
+  if (draftStatus.value === 'draft_ready') {
+    return '识别结果已就绪'
+  }
+  if (draftStatus.value === 'failed') {
+    return draftError.value || '识别失败，请重新上传。'
+  }
+  if (draftStatus.value === 'saved_to_bank') {
+    const questionId = saveResult.value?.question_id || '-'
+    const revisionId = saveResult.value?.question_revision_id || '-'
+    return `保存成功，question_id: ${questionId}，question_revision_id: ${revisionId}`
+  }
+  return ''
+})
+
+const draftStatusAlertType = computed(() => {
+  if (draftStatus.value === 'failed') {
+    return 'error'
+  }
+  if (draftStatus.value === 'saved_to_bank') {
+    return 'success'
+  }
+  return 'info'
+})
 
 const handleMenuSelect = (index) => {
   if (index === 'users' && !adminMode.value) {
@@ -379,6 +477,75 @@ const runRecognition = async (file) => {
   ocrLoading.value = true
   ocrResult.value = ''
   recognizeWarning.value = ''
+  resetDraftState()
+
+  try {
+    const assetFormData = new FormData()
+    assetFormData.append('file', file)
+    const assetResponse = await axios.post(`${API_V1_BASE_URL}/assets`, assetFormData)
+    const uploadedAssetId = extractId(assetResponse.data, ['source_asset_id', 'asset_id', 'id'])
+
+    if (!uploadedAssetId) {
+      throw new Error('素材上传成功，但响应中缺少 source_asset_id。')
+    }
+
+    sourceAssetId.value = uploadedAssetId
+    const draftResponse = await axios.post(`${API_V1_BASE_URL}/drafts`, {
+      source_asset_id: uploadedAssetId
+    })
+    const createdDraftId = extractId(draftResponse.data, ['draft_id', 'id'])
+
+    if (!createdDraftId) {
+      throw new Error('草稿创建成功，但响应中缺少 draft_id。')
+    }
+
+    draftId.value = createdDraftId
+    draftStatus.value = draftResponse.data?.status || 'draft_created'
+    await Promise.resolve()
+    draftStatus.value = 'recognizing'
+
+    const recognizeResponse = await axios.post(`${API_V1_BASE_URL}/drafts/${createdDraftId}/recognize`)
+    const payload = recognizeResponse.data || {}
+    draftStatus.value = payload.status || (payload.success ? 'draft_ready' : 'failed')
+
+    if (draftStatus.value === 'draft_ready' && payload.success !== false) {
+      ocrResult.value = getDraftContent(payload)
+      step.value = 'result'
+      if (payload.partial_success) {
+        recognizeWarning.value = 'OCR 已完成，但 AI 整理部分失败，当前展示降级结果，请核对后再保存'
+        ElMessage.warning(recognizeWarning.value)
+      } else {
+        ElMessage.success('识别完成。')
+      }
+      return
+    }
+
+    draftStatus.value = 'failed'
+    draftError.value = getRecognizeErrorMessage(payload)
+    ElMessage.error(draftError.value)
+    step.value = 'result'
+  } catch (error) {
+    console.error(error)
+    draftStatus.value = 'failed'
+    draftError.value = error.message || getRequestErrorMessage(error)
+    if (error.response?.status === 409 && error.response?.data?.detail === 'Asset already exists') {
+      draftError.value = '素材上传失败：Asset already exists，请更换图片或重新裁剪后再试。'
+    } else if (error.response) {
+      draftError.value = getRequestErrorMessage(error)
+    }
+    ElMessage.error(draftError.value)
+    step.value = 'result'
+  } finally {
+    ocrLoading.value = false
+  }
+}
+
+const runLegacyRecognition = async (file) => {
+  step.value = 'uploading'
+  ocrLoading.value = true
+  ocrResult.value = ''
+  recognizeWarning.value = ''
+  resetDraftState()
 
   const formData = new FormData()
   formData.append('file', file)
@@ -410,12 +577,35 @@ const runRecognition = async (file) => {
   }
 }
 
+const saveDraftToBank = async () => {
+  if (!canSaveDraft.value) {
+    return
+  }
+
+  saveLoading.value = true
+  try {
+    const response = await axios.post(`${API_V1_BASE_URL}/drafts/${draftId.value}/save-to-bank`)
+    saveResult.value = {
+      question_id: response.data?.question_id,
+      question_revision_id: response.data?.question_revision_id
+    }
+    draftStatus.value = response.data?.status || 'saved_to_bank'
+    ElMessage.success(draftStatusText.value)
+  } catch (error) {
+    console.error(error)
+    ElMessage.error(getRequestErrorMessage(error))
+  } finally {
+    saveLoading.value = false
+  }
+}
+
 const resetUpload = () => {
   step.value = 'select-file'
   currentImageUrl.value = ''
   pdfPages.value = []
   ocrResult.value = ''
   recognizeWarning.value = ''
+  resetDraftState()
 }
 
 const renderedContent = computed(() => (ocrResult.value ? md.render(ocrResult.value) : ''))
@@ -725,6 +915,12 @@ onMounted(async () => {
 
 .result-alert {
   margin-bottom: 4px;
+}
+
+.result-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 @media (max-width: 1180px) {
