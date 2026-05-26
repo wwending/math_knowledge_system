@@ -1,5 +1,31 @@
 # WORKLOG
 
+## 2026-05-26 第十轮：前端 Markdown / LaTeX 渲染工具抽取
+
+目标：
+
+- 抽取前端共享 Markdown / LaTeX 渲染工具，统一 `Dashboard.vue`、`BankPanel.vue`、`HistoryPanel.vue` 的渲染配置。
+- 统一使用 `html: true`、`breaks: true`、`linkify: true` 和 `markdown-it-mathjax3`。
+- 仅在展示前归一化 LaTeX 分隔符，不修改题目原始数据。
+
+结果：
+
+- 新增 `frontend/src/utils/renderMarkdown.ts`，集中初始化 `markdown-it` 和 `markdown-it-mathjax3`。
+- 新增前端展示层 `normalizeLatexDelimiters()`，将 `\(...\)` 转为 `$...$`、`\[...\]` 转为 `$$...$$`。
+- 三个组件改为导入共享 `renderMarkdown`，删除各自重复的 MarkdownIt 初始化。
+- 为满足 `@/utils/renderMarkdown` 导入，`frontend/vite.config.js` 增加 `@ -> src` alias。
+
+验证结果：
+
+- `cd frontend && npm run build` 通过。
+- `cd frontend && node --input-type=module -e '...'` 样例渲染检查通过，覆盖 `\(\triangle ABC\)`、`\(\frac{a}{b}\)`、`\[x^2 + y^2 = z^2\]`、`$x$`、`$$x^2$$`。
+- `frontend/package.json` 未定义 `type-check` 或 `lint` 脚本，未运行对应命令。
+
+边界：
+
+- 未修改后端、API、Draft pipeline、数据库模型或前端 UI 布局。
+- 未新增依赖，未删除 `katex`，未处理 `markdown-body` 样式。
+
 ## 2026-05-25 第九轮：LLM analyze 成功路径 LaTeX 归一化集成测试
 
 目标：

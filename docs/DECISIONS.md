@@ -1,5 +1,27 @@
 # DECISIONS
 
+## 决策 17：前端 Markdown/LaTeX 渲染逻辑统一收敛到共享工具
+
+结论：
+
+- 将 `Dashboard.vue`、`BankPanel.vue`、`HistoryPanel.vue` 中重复的 `markdown-it + markdown-it-mathjax3` 渲染逻辑抽取到 `frontend/src/utils/renderMarkdown.ts`。
+
+原因：
+
+- 避免多个组件各自维护 Markdown/LaTeX 渲染规则。
+- 确保识别结果、题库详情、历史详情使用一致的渲染行为。
+- 为历史数据或异常数据中的 `\(...\)` / `\[...\]` 提供展示层兜底。
+- 后续如果需要调整 Markdown 配置、LaTeX 兼容规则或渲染安全策略，只需要修改一个入口。
+
+边界：
+
+- 不改变后端返回结构。
+- 不改变原始题目内容。
+- 只在展示前做格式归一化。
+- 本轮不处理 `katex` 冗余依赖和 `markdown-body` 样式问题。
+
+日期：2026-05-26
+
 ## 决策 16：Draft 流水线先作为后端旁路能力
 
 结论：
