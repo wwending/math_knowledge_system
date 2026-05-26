@@ -144,11 +144,9 @@ import { ref, computed, onMounted } from 'vue'
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 import { Refresh, Search, Picture as IconPicture } from '@element-plus/icons-vue'
-import MarkdownIt from 'markdown-it'
-import markdownItMathjax3 from 'markdown-it-mathjax3'
 import { API_V1_BASE_URL, resolveQuestionImageUrl } from '../config/api'
+import { renderMarkdown } from '@/utils/renderMarkdown'
 
-const md = new MarkdownIt({ html: true }).use(markdownItMathjax3)
 const API_BASE = API_V1_BASE_URL
 
 const loading = ref(false)
@@ -209,7 +207,7 @@ const getTags = (item) => {
   })
 }
 
-const renderTex = (text) => text ? md.render(text) : '<span style="color:#999">暂无内容</span>'
+const renderTex = (text) => text ? renderMarkdown(text) : '<span style="color:#999">暂无内容</span>'
 
 const getPreviewText = (text) => {
   if (!text) return '暂无识别内容'

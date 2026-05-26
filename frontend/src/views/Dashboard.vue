@@ -205,12 +205,11 @@ import axios from 'axios'
 import { ElMessage } from 'element-plus'
 import { Clock, Collection, DataAnalysis, UploadFilled, UserFilled } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
-import MarkdownIt from 'markdown-it'
-import markdownItMathjax3 from 'markdown-it-mathjax3'
 import 'vue-cropper/dist/index.css'
 import { VueCropper } from 'vue-cropper'
 
 import { API_V1_BASE_URL } from '../config/api'
+import { renderMarkdown } from '@/utils/renderMarkdown'
 import {
   authState,
   fetchCurrentUser,
@@ -227,8 +226,6 @@ import pdfWorker from 'pdfjs-dist/build/pdf.worker.mjs?url'
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker
 
 const router = useRouter()
-const md = new MarkdownIt({ html: true, breaks: true, linkify: true })
-md.use(markdownItMathjax3)
 
 const activeMenu = ref('upload')
 const step = ref('select-file')
@@ -608,7 +605,7 @@ const resetUpload = () => {
   resetDraftState()
 }
 
-const renderedContent = computed(() => (ocrResult.value ? md.render(ocrResult.value) : ''))
+const renderedContent = computed(() => (ocrResult.value ? renderMarkdown(ocrResult.value) : ''))
 
 const handleLogout = async () => {
   await logout()
