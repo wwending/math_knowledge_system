@@ -1,5 +1,40 @@
 # WORKLOG
 
+## 2026-05-27 第十五轮：legacy recognize 引用审计与清理计划
+
+目标：
+
+- 审计 `runLegacyRecognition()`、`POST /api/v1/recognize`、Draft recognize 和 `save-to-bank` 相关引用。
+- 确认 Dashboard 主上传流程仍走 Draft 主路径。
+- 仅做 legacy 兼容注释和文档旧口径同步，不删除 legacy 入口。
+
+结果：
+
+- `confirmCropAndUpload()` 和 `uploadFullImage()` 仍调用 `runRecognition(file)`。
+- `runRecognition(file)` 仍按 `POST /api/v1/assets`、`POST /api/v1/drafts`、`POST /api/v1/drafts/{draft_id}/recognize` 走 Draft 主路径。
+- `runLegacyRecognition()` 仍存在并调用 `POST /api/v1/recognize`，但当前上传按钮和主上传流程不引用它；已增加 legacy 兼容注释。
+- 后端 `POST /api/v1/recognize` 仍存在，未修改业务行为；已增加 legacy 兼容注释。
+- `backend/tests/test_draft_pipeline.py` 覆盖 Draft 主路径和异常契约。
+- `backend/tests/test_failure_paths.py` 仍覆盖 legacy `/api/v1/recognize` 失败路径。
+- 已修正 `docs/API.md` 和 `docs/API_SMOKE_DRAFT_PIPELINE.md` 中旧的主路径口径。
+- 已在 `docs/DECISIONS.md` 记录 legacy recognize 先审计标注、后续小步退场的策略。
+
+验证结果：
+
+- `cd frontend && npm run test:auth-contract` 通过。
+- `cd frontend && npm run test:stage3-contract` 通过。
+- `cd frontend && npm run build` 通过，仅有 Vite chunk size warning。
+- `cd backend && python -m compileall app` 通过。
+- `cd backend && python -m unittest discover tests` 通过，`Ran 53 tests OK`。
+
+边界：
+
+- 未删除 `runLegacyRecognition()`。
+- 未删除 `/api/v1/recognize`。
+- 未修改前端主流程。
+- 未修改后端业务行为。
+- 未修改数据库模型或迁移文件。
+
 ## 2026-05-27 第十四轮：Dashboard UI 状态收口
 
 目标：

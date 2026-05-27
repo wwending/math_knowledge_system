@@ -1,6 +1,6 @@
 # Draft Pipeline API Smoke
 
-This smoke script verifies the backend-only Draft pipeline added as a bypass path. It does not verify frontend integration.
+This smoke script verifies the Draft pipeline APIs used by the current Dashboard upload main flow.
 
 ## Preconditions
 
@@ -102,6 +102,6 @@ The script fails fast when:
 
 ## Current Boundary
 
-- The frontend is still not wired to the Draft pipeline.
-- `POST /api/v1/recognize` is still the current main frontend entry.
-- This script validates only the backend bypass Draft pipeline.
+- `Dashboard.vue` upload now uses the Draft pipeline as the main flow.
+- `POST /api/v1/recognize` is still kept as a legacy / compatibility entry.
+- This script validates the Draft API sequence; it does not remove or replace the legacy endpoint.

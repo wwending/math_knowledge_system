@@ -627,6 +627,7 @@ const runRecognition = async (file) => {
   }
 }
 
+// Legacy compatibility path. Do not use for Dashboard main Draft flow.
 const runLegacyRecognition = async (file) => {
   step.value = 'uploading'
   ocrLoading.value = true
