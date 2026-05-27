@@ -1,23 +1,26 @@
 # API
 
-## 当前主入口
+## 当前 Dashboard 主路径
 
-当前前端主链路仍然是：
+当前 `Dashboard.vue` 上传主路径已接入 Draft 流水线：
 
-- `POST /api/v1/recognize`
+- `POST /api/v1/assets`
+- `POST /api/v1/drafts`
+- `POST /api/v1/drafts/{draft_id}/recognize`
+- `POST /api/v1/drafts/{draft_id}/save-to-bank`
 
-`Dashboard.vue` 尚未切换到 Draft 流水线。`/api/v1/recognize` 未删除、未重构，仍是当前 MVP 主入口。
+`POST /api/v1/recognize` 未删除、未重构，保留为 legacy / 兼容入口。
 
-## Draft 后端旁路流水线
+## Draft 流水线
 
-第七轮新增后端旁路正式流水线接口：
+Draft 当前作为 Dashboard 上传主路径的开发基线，相关接口为：
 
 - `POST /api/v1/drafts`
 - `GET /api/v1/drafts/{draft_id}`
 - `POST /api/v1/drafts/{draft_id}/recognize`
 - `POST /api/v1/drafts/{draft_id}/save-to-bank`
 
-这些接口目前表示后端旁路能力，不表示正式流水线已经接入主前端，也不表示生产可用。
+这些接口已接入当前 Dashboard 主上传流程，但当前项目仍不表示生产可用。
 
 ## Draft 状态
 
@@ -36,9 +39,8 @@
 
 ## 当前边界
 
-- Draft 流水线目前是后端旁路能力。
-- 当前前端主链路仍然是 `/api/v1/recognize`。
-- `Dashboard.vue` 尚未切换到 Draft 流水线。
-- `/api/v1/recognize` 未删除、未重构，仍是当前 MVP 主入口。
+- Draft 流水线是当前 Dashboard 上传主路径。
+- `/api/v1/recognize` 未删除、未重构，保留为 legacy / 兼容入口。
+- `runLegacyRecognition()` 仍保留在 `Dashboard.vue` 中，但当前上传按钮和主上传流程不引用它。
 - 当前不表述为生产可用。
 - 当前不表述为完整多页 PDF 或批量 draft 能力已完成。

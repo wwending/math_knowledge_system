@@ -1,5 +1,28 @@
 # DECISIONS
 
+## 决策 20：legacy recognize 先审计标注，后续小步退场
+
+结论：
+
+- 当前 Dashboard 上传主路径继续以 Draft 流水线为基线。
+- `POST /api/v1/recognize` 和 `runLegacyRecognition()` 本轮不删除、不重构，作为 legacy / 兼容入口保留。
+- 后续清理顺序应先补足引用审计和测试保护，再评估是否隐藏、废弃或移除 legacy 入口。
+
+原因：
+
+- Dashboard 主流程已经不调用 `runLegacyRecognition()`，直接删除 legacy 入口会扩大兼容风险。
+- 后端仍有 `/api/v1/recognize` 失败路径测试覆盖，说明该入口仍有明确兼容价值。
+- 本轮目标是降低误用风险，而不是改变业务行为。
+
+边界：
+
+- 不把 legacy recognize 描述成当前 Dashboard 主路径。
+- 不删除 `/api/v1/recognize`。
+- 不删除 `runLegacyRecognition()`。
+- 不修改 OCR / LLM service 或数据库模型。
+
+日期：2026-05-27
+
 ## 决策 19：Draft 重复保存当前返回 409 而不是幂等结果
 
 结论：

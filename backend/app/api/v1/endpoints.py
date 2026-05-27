@@ -681,6 +681,7 @@ def save_draft_to_bank(
     )
 
 
+# Legacy compatibility endpoint. Keep behavior unchanged while Dashboard uses the Draft flow.
 @router.post("/recognize", response_model=OCRResponse)
 def recognize_image(
     file: UploadFile = File(...),
