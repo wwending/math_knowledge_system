@@ -1,5 +1,32 @@
 # DECISIONS
 
+## 决策 18：接受 Dashboard Draft 初步接入为新的前端主路径基线
+
+结论：
+
+- 第十一轮补充确认，当前 `Dashboard.vue` 上传主路径已初步接入 Draft 流水线。
+- 上传按钮链路为：图片/PDF 单页确认后调用 `runRecognition()`，依次请求 `POST /api/v1/assets`、`POST /api/v1/drafts`、`POST /api/v1/drafts/{draft_id}/recognize`。
+- 保存入题库调用 `POST /api/v1/drafts/{draft_id}/save-to-bank`。
+- `runLegacyRecognition()` 仍保留，并继续调用 `POST /api/v1/recognize`，但当前上传按钮和主上传流程不引用它。
+- 接受该状态作为新的前端主路径基线。
+- `POST /api/v1/recognize` 不删除、不重构，定义为 legacy / 兼容入口。
+
+原因：
+
+- 代码事实已经显示 Dashboard 上传主流程走 Draft 接口，继续保留“尚未接入主前端”的口径会误导后续开发。
+- Draft 前端接入符合既定渐进式迁移方向，可作为路线推进接受。
+- 当前接入仍不是完整生产级完成，仍需补 API smoke 文档、异常场景、UI 状态和 legacy 清理。
+- 当前项目仍只表述为“可启动、可验证、可继续开发”，不表述为生产可用。
+
+边界：
+
+- 不删除 `/api/v1/recognize`。
+- 不删除 `runLegacyRecognition()`。
+- 不做异步队列、批量 PDF、多页 draft 或 OCR/LLM provider 抽象。
+- 不声称 Draft 已完整生产可用。
+
+日期：2026-05-27
+
 ## 决策 17：前端 Markdown/LaTeX 渲染逻辑统一收敛到共享工具
 
 结论：

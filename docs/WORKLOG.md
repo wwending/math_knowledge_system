@@ -1,5 +1,102 @@
 # WORKLOG
 
+## 2026-05-27 第十二轮：Draft API smoke 验证文档补充
+
+目标：
+
+- 只新增 Draft 主路径 API smoke 验证文档。
+- 在 README.md 增加 smoke 文档入口。
+- 同步 STATUS 中当前基线与 smoke 文档状态。
+- 不修改后端业务代码、前端业务代码、数据库模型、迁移文件或 API schema。
+
+结果：
+
+- 新增 `docs/API_SMOKE_DRAFT_FLOW.md`，说明 Dashboard Draft 主路径、legacy `/api/v1/recognize` 边界、前置条件、推荐验证命令、手动 smoke API 流程、非目标、常见失败原因和验收标准。
+- README.md 已增加 Draft API smoke 文档链接，并同步第十二轮文档补充状态。
+- docs/STATUS.md 已补充：Draft 主路径已接受为当前基线，已补充 API smoke 验证文档；当前仍是可启动、可验证、可继续开发，不是生产可用。
+- 未修改业务代码。
+- 未删除 legacy `POST /api/v1/recognize`。
+
+验证结果：
+
+- `cd backend && python -m compileall app` 通过。
+- `cd backend && python -m unittest discover tests` 通过，`Ran 46 tests OK`。
+- `cd frontend && npm run test:auth-contract` 通过。
+- `cd frontend && npm run test:stage3-contract` 通过。
+- `cd frontend && npm run build` 通过，仅有 Vite chunk size warning。
+
+边界：
+
+- 未执行手动真实接口 smoke；本轮补充的是验证文档，并运行项目最小验证命令。
+- 未修改后端业务代码、前端业务代码、数据库模型、Alembic 迁移或 API schema。
+- 未删除 `/api/v1/recognize`。
+
+## 2026-05-27 第十一轮补充：Dashboard Draft 接入基线确认
+
+目标：
+
+- 核查 `Dashboard.vue` 当前上传入口事实。
+- 复跑后端和前端最小验证命令。
+- 判断当前 Dashboard Draft 接入是否接受为新的前端主路径基线。
+- 不修改后端业务代码、前端业务代码，不删除 `/api/v1/recognize` 或 `runLegacyRecognition()`。
+
+结果：
+
+- `Dashboard.vue` 当前上传按钮链路为：`confirmCropAndUpload()` / `uploadFullImage()` -> `runRecognition()` -> `POST /api/v1/assets` -> `POST /api/v1/drafts` -> `POST /api/v1/drafts/{draft_id}/recognize`。
+- 保存入题库调用 `POST /api/v1/drafts/{draft_id}/save-to-bank`。
+- `runLegacyRecognition()` 仍存在，仍调用 `POST /api/v1/recognize`，但当前上传按钮和主上传流程不引用它。
+- 接受当前 Dashboard Draft 初步接入作为新的前端主路径基线。
+- `/api/v1/recognize` 定义为 legacy / 兼容入口，继续保留。
+- Draft 前端接入仍不是完整生产级完成，后续仍需 smoke 文档、异常场景、UI 状态和 legacy 清理。
+
+验证结果：
+
+- `cd backend && python -m compileall app` 通过。
+- `cd backend && python -m unittest discover tests` 通过，`Ran 46 tests OK`。
+- `cd backend && python -m pytest tests/test_llm.py` 通过，`8 passed`。
+- `cd frontend && npm run test:auth-contract` 通过。
+- `cd frontend && npm run test:stage3-contract` 通过。
+- `cd frontend && npm run build` 通过，仅有 Vite chunk size warning。
+
+边界：
+
+- 未修改后端业务代码、前端业务代码、数据库模型、Alembic 迁移或 API schema。
+- 未删除 `/api/v1/recognize`。
+- 未删除 `runLegacyRecognition()`。
+- 未做异步队列、批量 PDF、多页 draft 或 provider 抽象。
+
+## 2026-05-27 第十一轮：阶段评估与下一阶段路线确认
+
+目标：
+
+- 只做项目阶段评估。
+- 执行 git 状态确认和后端、前端最小验证命令。
+- 检查 README、STATUS、WORKLOG、KNOWN_ISSUES、DECISIONS 与实际代码状态是否一致。
+- 不开发新功能，不重构业务代码，不切换主链路。
+
+结果：
+
+- 当前分支确认为 `release-hardening-1`。
+- 后端最小验证全部通过。
+- 前端契约测试和构建全部通过，构建仍有 Vite chunk size warning。
+- 发现文档状态与当前 `Dashboard.vue` 实际行为不一致：当前上传按钮已调用 Draft 相关接口，`runLegacyRecognition()` 中的 `/api/v1/recognize` 调用仍保留但未被上传按钮引用。
+- 已更新 docs/STATUS.md 和 docs/KNOWN_ISSUES.md，记录上述状态漂移和下一阶段确认要求。
+
+验证结果：
+
+- `cd backend && python -m compileall app` 通过。
+- `cd backend && python -m unittest discover tests` 通过，`Ran 46 tests OK`。
+- `cd backend && python -m pytest tests/test_llm.py` 通过，`8 passed`。
+- `cd frontend && npm run test:auth-contract` 通过。
+- `cd frontend && npm run test:stage3-contract` 通过。
+- `cd frontend && npm run build` 通过，仅有 Vite chunk size warning。
+
+边界：
+
+- 未修改后端业务代码、前端业务代码、数据库模型、Alembic 迁移或 API schema。
+- 未修改 README.md，因为本轮用户允许更新范围只列出 docs 下项目记忆文件；README 仍需后续同步。
+- 未修改 docs/DECISIONS.md，因为本轮没有新的架构决策，只记录阶段评估发现。
+
 ## 2026-05-27 第十一轮：README / STATUS 最新验证口径同步
 
 目标：
