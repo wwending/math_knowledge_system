@@ -93,25 +93,61 @@ class DraftPipelineTests(unittest.TestCase):
         settings.PDF_TEMP_DIR = self._old_pdf_temp_dir
         self.temp_dir.cleanup()
 
-    def _create_source_asset(self) -> int:
-        stored_name = "asset.png"
+    def _create_source_asset(
+        self,
+        *,
+        stored_name: str = "asset.png",
+        kind: str = "image",
+        mime: str = "image/png",
+        width: int | None = 100,
+        height: int | None = 80,
+    ) -> int:
         (self.upload_dir / stored_name).write_bytes(b"fake-image-bytes")
         with self.SessionLocal() as db:
             asset = SourceAsset(
                 user_id=self.user_id,
-                kind="image",
+                kind=kind,
                 original_path=stored_name,
                 normalized_path=None,
-                mime="image/png",
+                mime=mime,
                 size_bytes=16,
-                width=100,
-                height=80,
-                sha256="draft-pipeline-test-sha",
+                width=width,
+                height=height,
+                sha256=f"{stored_name}-{mime}-draft-pipeline-test-sha",
             )
             db.add(asset)
             db.commit()
             db.refresh(asset)
             return asset.id
+
+    def _create_draft(self, asset_id: int) -> int:
+        response = self.client.post(
+            "/api/v1/drafts",
+            headers=self.auth_headers,
+            json={"source_asset_id": asset_id},
+        )
+        self.assertEqual(response.status_code, 200)
+        return response.json()["id"]
+
+    def _recognize_draft_successfully(self, draft_id: int):
+        with patch.object(
+            endpoints.ocr_service,
+            "recognize",
+            return_value={"success": True, "content": "raw math text", "cost_seconds": 0.1},
+        ), patch.object(
+            endpoints.nlp_service,
+            "analyze",
+            return_value={
+                "success": True,
+                "corrected_text": "clean math text",
+                "tags": ["函数"],
+                "cost_seconds": 0.2,
+            },
+        ):
+            response = self.client.post(f"/api/v1/drafts/{draft_id}/recognize", headers=self.auth_headers)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], DraftStatus.DRAFT_READY)
+        return response
 
     def test_draft_pipeline_recognize_and_save_to_bank(self):
         asset_id = self._create_source_asset()
@@ -223,6 +259,88 @@ class DraftPipelineTests(unittest.TestCase):
             llm_run = db.query(LLMRun).filter(LLMRun.draft_id == draft_id).one()
             self.assertEqual(llm_run.error_code, "timeout")
             self.assertTrue(llm_run.fallback_used)
+
+    def test_create_draft_returns_404_when_source_asset_missing(self):
+        response = self.client.post(
+            "/api/v1/drafts",
+            headers=self.auth_headers,
+            json={"source_asset_id": 999999},
+        )
+
+        self.assertEqual(response.status_code, 404)
+        self.assertIn("资源不存在", response.json()["detail"])
+
+    def test_recognize_returns_404_when_draft_missing(self):
+        response = self.client.post("/api/v1/drafts/999999/recognize", headers=self.auth_headers)
+
+        self.assertEqual(response.status_code, 404)
+        self.assertIn("资源不存在", response.json()["detail"])
+
+    def test_save_to_bank_returns_404_when_draft_missing(self):
+        response = self.client.post("/api/v1/drafts/999999/save-to-bank", headers=self.auth_headers)
+
+        self.assertEqual(response.status_code, 404)
+        self.assertIn("资源不存在", response.json()["detail"])
+
+    def test_recognize_returns_400_for_non_image_asset(self):
+        asset_id = self._create_source_asset(
+            stored_name="asset.pdf",
+            kind="pdf",
+            mime="application/pdf",
+            width=None,
+            height=None,
+        )
+        draft_id = self._create_draft(asset_id)
+
+        response = self.client.post(f"/api/v1/drafts/{draft_id}/recognize", headers=self.auth_headers)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("image assets only", response.json()["detail"])
+
+    def test_save_to_bank_returns_409_when_draft_not_ready(self):
+        asset_id = self._create_source_asset()
+        draft_id = self._create_draft(asset_id)
+
+        response = self.client.post(f"/api/v1/drafts/{draft_id}/save-to-bank", headers=self.auth_headers)
+
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("已识别完成", response.json()["detail"])
+
+    def test_repeated_save_to_bank_returns_409_without_duplicate_question_or_revision(self):
+        asset_id = self._create_source_asset()
+        draft_id = self._create_draft(asset_id)
+        self._recognize_draft_successfully(draft_id)
+
+        first_response = self.client.post(f"/api/v1/drafts/{draft_id}/save-to-bank", headers=self.auth_headers)
+        self.assertEqual(first_response.status_code, 200)
+        second_response = self.client.post(f"/api/v1/drafts/{draft_id}/save-to-bank", headers=self.auth_headers)
+
+        self.assertEqual(second_response.status_code, 409)
+        self.assertIn("不能重复保存", second_response.json()["detail"])
+        with self.SessionLocal() as db:
+            self.assertEqual(db.query(Question).count(), 1)
+            self.assertEqual(db.query(QuestionRevision).count(), 1)
+            self.assertEqual(
+                db.query(DraftEvent).filter(DraftEvent.event_type == DraftEventType.SAVE_TO_BANK).count(),
+                1,
+            )
+
+    def test_saved_to_bank_draft_cannot_be_recognized_again(self):
+        asset_id = self._create_source_asset()
+        draft_id = self._create_draft(asset_id)
+        self._recognize_draft_successfully(draft_id)
+        save_response = self.client.post(f"/api/v1/drafts/{draft_id}/save-to-bank", headers=self.auth_headers)
+        self.assertEqual(save_response.status_code, 200)
+
+        response = self.client.post(f"/api/v1/drafts/{draft_id}/recognize", headers=self.auth_headers)
+
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("不能再次识别", response.json()["detail"])
+        with self.SessionLocal() as db:
+            draft = db.query(Draft).filter(Draft.id == draft_id).one()
+            self.assertEqual(draft.status, DraftStatus.SAVED_TO_BANK)
+            self.assertEqual(db.query(OCRRun).filter(OCRRun.draft_id == draft_id).count(), 1)
+            self.assertEqual(db.query(LLMRun).filter(LLMRun.draft_id == draft_id).count(), 1)
 
 
 if __name__ == "__main__":

@@ -193,6 +193,20 @@ Draft 相关返回至少应帮助确认：
 - revision 身份：`question_revision_id`、`rev_no`。
 - 保存后的 Draft 状态：`saved_to_bank`。
 
+## 异常场景期望
+
+当前 Draft 主路径异常契约已开始收口。以下场景应返回可解释的 4xx，不应直接变成未解释的 500。
+
+| 场景 | 预期 HTTP 状态 | 预期原因 |
+| --- | --- | --- |
+| 使用不存在的 `source_asset_id` 创建 Draft | `404` | 素材资源不存在 |
+| 对不存在的 `draft_id` 调用 recognize | `404` | Draft 资源不存在 |
+| 对不存在的 `draft_id` 调用 save-to-bank | `404` | Draft 资源不存在 |
+| 对 PDF 或其他非图片 asset 调用 Draft recognize | `400` | 当前 Draft recognize 仅支持图片素材 |
+| `draft_created` 等未 ready 状态直接 save-to-bank | `409` | Draft 尚未识别完成，不能保存入题库 |
+| `saved_to_bank` 状态再次 save-to-bank | `409` | 当前不做幂等返回，且不能重复创建 Question 或 QuestionRevision |
+| `saved_to_bank` 状态再次 recognize | `409` | 已保存入题库的 Draft 不能再次识别 |
+
 ## 非目标
 
 - 不验证批量 PDF。

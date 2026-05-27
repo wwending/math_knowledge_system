@@ -1,5 +1,40 @@
 # WORKLOG
 
+## 2026-05-27 第十三轮：Draft 异常场景收口
+
+目标：
+
+- 只收口 Draft 主路径后端异常契约和测试。
+- 不修改前端 UI，不修改 `Dashboard.vue`，不重构 legacy `POST /api/v1/recognize`。
+- 不修改数据库模型或迁移文件。
+
+结果：
+
+- `POST /api/v1/drafts` 对不存在的 `source_asset_id` 返回 `404`。
+- `POST /api/v1/drafts/{draft_id}/recognize` 对不存在的 Draft 返回 `404`，对非图片 asset 返回 `400`。
+- `POST /api/v1/drafts/{draft_id}/save-to-bank` 对不存在的 Draft 返回 `404`，对未 ready Draft 返回 `409`。
+- `saved_to_bank` 状态再次 recognize 返回 `409`。
+- `saved_to_bank` 状态再次 save-to-bank 返回 `409`，并验证不会重复创建 Question 或 QuestionRevision。
+- `docs/API_SMOKE_DRAFT_FLOW.md` 已补充异常场景期望。
+- `docs/STATUS.md` 和 `docs/KNOWN_ISSUES.md` 已同步当前异常契约和重复保存边界。
+
+验证结果：
+
+- `cd backend && python -m compileall app` 通过。
+- `cd backend && python -m unittest discover tests` 通过，`Ran 53 tests OK`。
+- `cd backend && python -m pytest tests/test_draft_pipeline.py` 通过，`9 passed`。
+- `cd backend && python -m pytest tests/test_llm.py` 通过，`8 passed`。
+- `cd frontend && npm run test:auth-contract` 通过。
+- `cd frontend && npm run test:stage3-contract` 通过。
+- `cd frontend && npm run build` 通过，仅有 Vite chunk size warning。
+
+边界：
+
+- 未修改前端代码。
+- 未修改数据库模型或 Alembic 迁移。
+- 未删除、未重构 legacy `POST /api/v1/recognize`。
+- 重复 save-to-bank 当前返回 `409`，未实现幂等返回既有保存结果。
+
 ## 2026-05-27 第十二轮：Draft API smoke 验证文档补充
 
 目标：

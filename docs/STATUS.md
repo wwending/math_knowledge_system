@@ -1,6 +1,6 @@
 # STATUS
 
-## 2026-05-27 第十二轮后当前状态
+## 2026-05-27 第十三轮后当前状态
 
 当前项目进入“可启动、可验证、可继续开发”的状态。该结论不等于生产可用，也不表示所有正式流水线已经闭环。
 
@@ -16,7 +16,9 @@
 - `Dashboard.vue` 中仍保留 `runLegacyRecognition()` 对 `POST /api/v1/recognize` 的调用，但当前上传按钮未引用该函数。
 - 本轮接受当前 Dashboard Draft 初步接入作为新基线；这属于渐进式迁移的路线推进，不再按疑似误改处理。
 - Draft 主路径已接受为当前基线，已补充 API smoke 验证文档；当前仍是可启动、可验证、可继续开发，不是生产可用。
-- Draft 前端接入不是完整生产级完成，仍需补异常场景、UI 状态和 legacy 清理。
+- 第十三轮已开始收口 Draft 后端异常契约：缺失 asset/draft、非图片 recognize、未 ready 保存、重复保存、已保存后再次识别均返回可解释的 4xx。
+- Draft 前端接入不是完整生产级完成，仍需补 UI 状态和 legacy 清理。
+- `saved_to_bank` 状态重复 save-to-bank 当前返回 `409`，本轮不改为幂等返回，且已测试不会重复创建 Question 或 QuestionRevision。
 - 后端启动和管理员初始化前必须先执行 `alembic upgrade head`。
 - `backend/.env` 是本地文件，不应提交；示例配置使用 `backend/.env.example`。
 
@@ -52,12 +54,13 @@
 | frontend | `npm run test:auth-contract` | 通过 |
 | frontend | `npm run test:stage3-contract` | 通过 |
 | backend | `python -m compileall app` | 通过 |
-| backend | `python -m unittest discover tests` | 通过，`Ran 46 tests OK` |
+| backend | `python -m unittest discover tests` | 通过，`Ran 53 tests OK` |
+| backend | `python -m pytest tests/test_draft_pipeline.py` | 通过，`9 passed` |
 | backend | `python -m pytest tests/test_llm.py` | 通过，`8 passed` |
 
 说明：
 
-- 第十二轮已重新实测上述最小验证命令。
+- 第十三轮已重新实测上述验证命令。
 - `npm run build` 仍有 Vite chunk size warning，但构建成功。
 
 ## 第二轮验证结果
@@ -80,7 +83,8 @@
 ## 当前未闭合边界
 
 - 前端中文乱码仍需优先处理。
-- Dashboard Draft 接入已接受为新基线，已补充 API smoke 验证文档，但尚未补齐异常场景、UI 状态和 legacy 清理。
+- Dashboard Draft 接入已接受为新基线，已补充 API smoke 验证文档，并开始收口后端异常契约；仍需补 UI 状态和 legacy 清理。
+- Draft 重复保存当前以 `409` 拒绝，不返回既有保存结果；如后续需要幂等返回，应另行设计保存结果追踪方式。
 - mock/legacy 文件需要清理，但不应在下一阶段做大重构。
 - 后端测试已通过本轮验证，但稳定性仍需持续关注。
 - 真实第三方失败场景仍缺少系统化在线验证矩阵。
