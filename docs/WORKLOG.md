@@ -1,5 +1,40 @@
 # WORKLOG
 
+## 2026-05-27 第十四轮：Dashboard UI 状态收口
+
+目标：
+
+- 只收口 `Dashboard.vue` 中 Draft 主路径的前端 UI 状态。
+- 保留当前上传主路径 `runRecognition(file)` 调用 Draft API。
+- 保留 `runLegacyRecognition()` 和 legacy `POST /api/v1/recognize` 兼容逻辑。
+- 不修改后端、数据库模型、API schema，不做大重构。
+
+结果：
+
+- Dashboard 上传、创建 Draft、识别、保存入题库阶段从单一模糊 loading 收敛为阶段化提示。
+- 上传确认按钮在识别流程中禁用，保存按钮在保存流程中禁用；重复保存 409 后阻止继续重复点击保存。
+- `partial_success` 作为 warning 展示，保留识别结果，不再按完全失败处理。
+- 前端对 `400`、`404`、`409`、`401`、`403`、`500` 和网络错误补充可理解提示。
+- 409 重复保存提示为“当前草稿已保存或状态不允许重复保存”。
+- 非图片 Draft recognize 提示为“当前 Draft recognize 仅支持图片素材”。
+- token 失效或权限异常提示指向重新登录。
+
+验证结果：
+
+- `cd frontend && npm run test:auth-contract` 通过。
+- `cd frontend && npm run test:stage3-contract` 通过。
+- `cd frontend && npm run build` 通过，仅有 Vite chunk size warning。
+- `cd backend && python -m compileall app` 通过。
+- `cd backend && python -m unittest discover tests` 通过，`Ran 53 tests OK`。
+
+边界：
+
+- 未修改后端代码。
+- 未删除、未重构 legacy `POST /api/v1/recognize`。
+- 未删除 `runLegacyRecognition()`。
+- 未引入大型状态管理库。
+- 未处理批量 PDF、多页 Draft 或 legacy 清理。
+
 ## 2026-05-27 第十三轮：Draft 异常场景收口
 
 目标：

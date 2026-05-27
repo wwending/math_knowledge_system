@@ -9,7 +9,7 @@
 - 影响人工验收和后续维护判断。
 - 可能掩盖真实交互文案问题。
 
-## 2. Dashboard Draft 接入已确认但仍需收口
+## 2. Dashboard Draft 接入已确认但仍非生产完成态
 
 主链路已决策采用渐进式迁移。第十一轮补充确认，当前 `Dashboard.vue` 上传主路径已初步接入 Draft 流水线，并接受为新的前端主路径基线。
 
@@ -25,7 +25,7 @@
 影响：
 
 - Draft 前端接入尚未达到完整生产级完成。
-- API smoke 文档已补充，Draft 后端异常契约已开始收口；仍需补 UI 状态和 legacy 清理。
+- API smoke 文档已补充，Draft 后端异常契约和 Dashboard UI 状态已完成阶段性收口；仍需后续 legacy 清理。
 - `saved_to_bank` 状态重复保存当前返回 `409`，尚未做成返回既有保存结果的幂等接口。
 - `/api/v1/recognize` 仍需作为 legacy / 兼容入口保留。
 - 不做 OCR/LLM provider 抽象、异步队列、批量 PDF、多页 draft 管理。
