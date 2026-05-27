@@ -1,12 +1,12 @@
 # Math Knowledge System
 
-当前项目已完成第七轮后端旁路正式流水线最小竖切，状态定位为：可启动、可验证、可继续开发。不要把当前状态表述为生产可用。
+当前项目已完成第十轮前端 Markdown / LaTeX 渲染工具抽取，状态定位为：可启动、可验证、可继续开发。不要把当前状态表述为生产可用。
 
 当前主链路仍是 `POST /api/v1/recognize`。Draft 流水线已经具备后端旁路接口，但 `Dashboard.vue` 尚未切换到 Draft 流水线；`/api/v1/recognize` 未删除、未重构，仍是当前 MVP 主入口。
 
 ## 当前验证结果
 
-第七轮后端旁路正式流水线最小竖切后的本地验证结果：
+第八、第九、第十轮后的最新已记录验证结果：
 
 | 范围 | 命令 | 结果 |
 | --- | --- | --- |
@@ -14,7 +14,14 @@
 | frontend | `npm run test:auth-contract` | 通过 |
 | frontend | `npm run test:stage3-contract` | 通过 |
 | backend | `python -m compileall app` | 通过 |
-| backend | `python -m unittest discover tests` | 通过，`Ran 38 tests OK` |
+| backend | `python -m unittest discover tests` | 通过，`Ran 46 tests OK` |
+| backend | `python -m pytest tests/test_llm.py` | 通过，`8 passed` |
+
+## 最新已完成工作
+
+- 第八轮：后端 LLM LaTeX 分隔符程序级归一化。
+- 第九轮：LLM analyze 成功路径 LaTeX 归一化集成测试。
+- 第十轮：前端 Markdown / LaTeX 渲染工具抽取。
 
 ## 后端旁路 Draft 流水线
 

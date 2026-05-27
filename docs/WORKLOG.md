@@ -1,5 +1,28 @@
 # WORKLOG
 
+## 2026-05-27 第十一轮：README / STATUS 最新验证口径同步
+
+目标：
+
+- 只做文档同步。
+- 将 README.md 和 docs/STATUS.md 对齐第八、第九、第十轮后的最新状态。
+- 保留 `/api/v1/recognize` 仍是当前 MVP 主入口、Draft 流水线仍是后端旁路能力、当前不是生产可用的边界。
+
+结果：
+
+- README.md 已同步最新验证结果和第八、第九、第十轮已完成工作。
+- docs/STATUS.md 已从第七轮后端旁路 Draft 流水线状态推进到第十轮前端 Markdown / LaTeX 渲染收敛后。
+- 未修改任何后端代码、前端代码、测试代码或配置代码。
+
+验证结果：
+
+- 文档修改，未运行代码测试。
+
+边界：
+
+- 未修改 docs/DECISIONS.md，因为本轮没有新的架构、API、数据模型或流程决策。
+- 未修改 docs/KNOWN_ISSUES.md，因为当前风险仍然成立，未发现与当前事实冲突。
+
 ## 2026-05-26 第十轮：前端 Markdown / LaTeX 渲染工具抽取
 
 目标：
