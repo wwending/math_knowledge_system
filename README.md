@@ -1,12 +1,14 @@
 # Math Knowledge System
 
-当前项目已完成第十轮前端 Markdown / LaTeX 渲染工具抽取，状态定位为：可启动、可验证、可继续开发。不要把当前状态表述为生产可用。
+当前项目已完成第十二轮：Draft API smoke 验证文档补充，状态定位为：可启动、可验证、可继续开发。不要把当前状态表述为生产可用。
 
-当前主链路仍是 `POST /api/v1/recognize`。Draft 流水线已经具备后端旁路接口，但 `Dashboard.vue` 尚未切换到 Draft 流水线；`/api/v1/recognize` 未删除、未重构，仍是当前 MVP 主入口。
+当前 `Dashboard.vue` 上传主路径已初步接入 Draft 流水线：先上传素材到 `POST /api/v1/assets`，再创建 Draft，调用 `POST /api/v1/drafts/{draft_id}/recognize`，保存时调用 `POST /api/v1/drafts/{draft_id}/save-to-bank`。`POST /api/v1/recognize` 未删除、未重构，保留为 legacy / 兼容入口。
+
+Draft 主路径 API smoke 验证见 [docs/API_SMOKE_DRAFT_FLOW.md](/d:/math_knowledge_system/docs/API_SMOKE_DRAFT_FLOW.md)。
 
 ## 当前验证结果
 
-第八、第九、第十轮后的最新已记录验证结果：
+第十二轮后的最新已记录验证结果：
 
 | 范围 | 命令 | 结果 |
 | --- | --- | --- |
@@ -22,8 +24,10 @@
 - 第八轮：后端 LLM LaTeX 分隔符程序级归一化。
 - 第九轮：LLM analyze 成功路径 LaTeX 归一化集成测试。
 - 第十轮：前端 Markdown / LaTeX 渲染工具抽取。
+- 第十一轮补充：确认 `Dashboard.vue` 当前上传主路径已初步接入 Draft 流水线，并接受为新的前端主路径基线。
+- 第十二轮：新增 Draft 主路径 API smoke 验证文档，未修改业务代码。
 
-## 后端旁路 Draft 流水线
+## Draft 流水线
 
 第七轮新增后端旁路正式流水线接口：
 
@@ -49,10 +53,10 @@
 
 边界：
 
-- Draft 流水线目前是后端旁路能力。
-- 当前前端主链路仍然是 `/api/v1/recognize`。
-- `Dashboard.vue` 尚未切换到 Draft 流水线。
-- `/api/v1/recognize` 未删除、未重构，仍是当前 MVP 主入口。
+- `Dashboard.vue` 当前上传主路径已初步接入 Draft 流水线。
+- `/api/v1/recognize` 未删除、未重构，保留为 legacy / 兼容入口。
+- `runLegacyRecognition()` 仍保留在 `Dashboard.vue` 中，但当前上传按钮和主上传流程不引用它。
+- Draft 前端接入不是完整生产级完成，已补充 API smoke 验证文档，仍需异常场景、UI 状态和 legacy 清理。
 - 当前不表述为生产可用，也不表述为完整多页 PDF 或批量 draft 能力已完成。
 
 依赖与配置收口：
@@ -142,9 +146,9 @@ cd backend
 
 ## 当前能力边界
 
-- 当前主链路是 `/api/v1/recognize`。
-- Draft 流水线已有后端旁路最小竖切，但尚未接入主前端。
-- `/upload_pdf`、`/assets`、draft 流水线目前不是主前端闭环。
+- 当前 `Dashboard.vue` 上传主路径已初步接入 Draft 流水线。
+- `/api/v1/recognize` 保留为 legacy / 兼容入口，不应删除。
+- Draft 前端接入尚未完成生产级收口，已补充 API smoke 验证文档，仍需异常场景、UI 状态和 legacy 清理。
 - 真实第三方失败场景尚未形成系统化在线验证矩阵。
 - 当前验证证明项目可启动、可验证、可继续开发，不代表生产可用。
 
@@ -153,6 +157,6 @@ cd backend
 下一阶段不要做大重构，优先处理：
 
 - 前端中文乱码。
-- API smoke 文档或前端接入方案评估。
+- Draft 异常场景和 UI 状态收口。
 - mock/legacy 文件清理。
 - 后端测试稳定性。

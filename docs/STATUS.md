@@ -1,22 +1,22 @@
 # STATUS
 
-## 2026-05-27 第十轮后当前状态
+## 2026-05-27 第十二轮后当前状态
 
 当前项目进入“可启动、可验证、可继续开发”的状态。该结论不等于生产可用，也不表示所有正式流水线已经闭环。
 
 ## 当前结论
 
-- 当前主链路仍是 `POST /api/v1/recognize`。
+- `Dashboard.vue` 当前上传主路径已初步接入 Draft 流水线，并接受为新的前端主路径基线。
+- `POST /api/v1/recognize` 仍存在，后端未删除、未重构，定义为 legacy / 兼容入口。
 - 第七轮已新增 Draft 后端旁路正式流水线最小竖切。
 - 第八轮已完成后端 LLM LaTeX 分隔符程序级归一化。
 - 第九轮已补充 LLM analyze 成功路径 LaTeX 归一化集成测试。
 - 第十轮已完成前端 Markdown / LaTeX 渲染工具抽取。
-- Draft 流水线目前是后端旁路能力，尚未接入主前端。
-- `Dashboard.vue` 尚未切换到 Draft 流水线。
-- `/api/v1/recognize` 未删除、未重构，仍是当前 MVP 主入口。
-- `/upload_pdf`、`/assets`、draft 流水线目前不是主前端闭环。
-- 主链路迁移采用渐进式方案：短期继续 `/api/v1/recognize`，长期逐步迁移到 `assets/drafts/ocr_runs/llm_runs` 正式流水线。
-- 下一阶段可以做 API smoke 文档或前端接入方案评估，但不要立即硬切前端。
+- 第十一轮补充确认：当前 `Dashboard.vue` 上传按钮实际调用 `POST /api/v1/assets`、`POST /api/v1/drafts`、`POST /api/v1/drafts/{draft_id}/recognize`，保存调用 `POST /api/v1/drafts/{draft_id}/save-to-bank`。
+- `Dashboard.vue` 中仍保留 `runLegacyRecognition()` 对 `POST /api/v1/recognize` 的调用，但当前上传按钮未引用该函数。
+- 本轮接受当前 Dashboard Draft 初步接入作为新基线；这属于渐进式迁移的路线推进，不再按疑似误改处理。
+- Draft 主路径已接受为当前基线，已补充 API smoke 验证文档；当前仍是可启动、可验证、可继续开发，不是生产可用。
+- Draft 前端接入不是完整生产级完成，仍需补异常场景、UI 状态和 legacy 清理。
 - 后端启动和管理员初始化前必须先执行 `alembic upgrade head`。
 - `backend/.env` 是本地文件，不应提交；示例配置使用 `backend/.env.example`。
 
@@ -57,8 +57,8 @@
 
 说明：
 
-- frontend 验证结果沿用已记录通过基线。
-- backend 验证结果同步到第九轮后已记录基线。
+- 第十二轮已重新实测上述最小验证命令。
+- `npm run build` 仍有 Vite chunk size warning，但构建成功。
 
 ## 第二轮验证结果
 
@@ -80,7 +80,7 @@
 ## 当前未闭合边界
 
 - 前端中文乱码仍需优先处理。
-- Draft 流水线已具备后端旁路最小竖切，但尚未形成主前端闭环。
+- Dashboard Draft 接入已接受为新基线，已补充 API smoke 验证文档，但尚未补齐异常场景、UI 状态和 legacy 清理。
 - mock/legacy 文件需要清理，但不应在下一阶段做大重构。
 - 后端测试已通过本轮验证，但稳定性仍需持续关注。
 - 真实第三方失败场景仍缺少系统化在线验证矩阵。
@@ -89,12 +89,12 @@
 
 ## 下一阶段口径
 
-下一阶段以收敛和稳定为主，不新增规划之外的大模块，不做大重构。优先级为：前端中文乱码、API smoke 文档或前端接入方案评估、mock/legacy 文件清理、后端测试稳定性。
+下一阶段以收敛和稳定为主，不新增规划之外的大模块，不做大重构。优先级为：前端中文乱码、Draft 异常场景和 UI 状态、mock/legacy 文件清理、后端测试稳定性。
 
 明确不做：
 
 - 不删除 `/recognize`。
-- 不现在硬切 `Dashboard.vue`。
+- 不把 Draft 前端接入写成完整生产级完成。
 - 不做 OCR/LLM provider 抽象。
 - 不做异步队列。
 - 不做批量 PDF。

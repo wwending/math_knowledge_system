@@ -9,18 +9,24 @@
 - 影响人工验收和后续维护判断。
 - 可能掩盖真实交互文案问题。
 
-## 2. Draft 流水线尚未接入主前端
+## 2. Dashboard Draft 接入已确认但仍需收口
 
-主链路已决策采用渐进式迁移：短期继续 `POST /api/v1/recognize`，长期逐步迁移到 `assets/drafts/ocr_runs/llm_runs` 正式流水线。
+主链路已决策采用渐进式迁移。第十一轮补充确认，当前 `Dashboard.vue` 上传主路径已初步接入 Draft 流水线，并接受为新的前端主路径基线。
 
-当前 `/recognize -> questions -> history/bank` 已经跑通，是现有可用 MVP 主链路。第七轮已新增 Draft 后端旁路正式流水线最小竖切，但它目前仍是后端旁路能力。
+当前 `Dashboard.vue` 上传按钮实际调用 Draft 相关接口：
+
+- `POST /api/v1/assets`
+- `POST /api/v1/drafts`
+- `POST /api/v1/drafts/{draft_id}/recognize`
+- `POST /api/v1/drafts/{draft_id}/save-to-bank`
+
+同时，`Dashboard.vue` 中仍保留 `runLegacyRecognition()` 对 `POST /api/v1/recognize` 的调用，但当前上传按钮未引用该函数。`POST /api/v1/recognize` 不删除、不重构，保留为 legacy / 兼容入口。
 
 影响：
 
-- `/upload_pdf`、`/assets`、draft 流水线不能被表述为主前端已接入能力。
-- `Dashboard.vue` 尚未切换到 Draft 流水线。
-- `/api/v1/recognize` 未删除、未重构，仍是当前 MVP 主入口。
-- 下一阶段可以做 API smoke 文档或前端接入方案评估，但不要立即硬切前端。
+- Draft 前端接入尚未达到完整生产级完成。
+- 仍需补 API smoke 文档、异常场景、UI 状态和 legacy 清理。
+- `/api/v1/recognize` 仍需作为 legacy / 兼容入口保留。
 - 不做 OCR/LLM provider 抽象、异步队列、批量 PDF、多页 draft 管理。
 
 ## 3. mock/legacy 文件需要清理
