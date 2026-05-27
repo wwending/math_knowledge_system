@@ -1,6 +1,6 @@
 # STATUS
 
-## 2026-05-05 项目文档收口状态
+## 2026-05-27 第十轮后当前状态
 
 当前项目进入“可启动、可验证、可继续开发”的状态。该结论不等于生产可用，也不表示所有正式流水线已经闭环。
 
@@ -8,6 +8,9 @@
 
 - 当前主链路仍是 `POST /api/v1/recognize`。
 - 第七轮已新增 Draft 后端旁路正式流水线最小竖切。
+- 第八轮已完成后端 LLM LaTeX 分隔符程序级归一化。
+- 第九轮已补充 LLM analyze 成功路径 LaTeX 归一化集成测试。
+- 第十轮已完成前端 Markdown / LaTeX 渲染工具抽取。
 - Draft 流水线目前是后端旁路能力，尚未接入主前端。
 - `Dashboard.vue` 尚未切换到 Draft 流水线。
 - `/api/v1/recognize` 未删除、未重构，仍是当前 MVP 主入口。
@@ -41,12 +44,21 @@
 - `LLMRun`：OCR 成功后写入，LLM 失败记录错误并允许 `partial_success`。
 - `QuestionRevision`：保存入题库时创建 v1，并关联 `source_asset_id`、`ocr_run_id`、`llm_run_id`。
 
-## 第七轮验证结果
+## 最新验证结果
 
 | 范围 | 命令 | 状态 |
 | --- | --- | --- |
+| frontend | `npm run build` | 通过，仅有 Vite chunk size warning |
+| frontend | `npm run test:auth-contract` | 通过 |
+| frontend | `npm run test:stage3-contract` | 通过 |
 | backend | `python -m compileall app` | 通过 |
-| backend | `python -m unittest discover tests` | 通过，`Ran 38 tests OK` |
+| backend | `python -m unittest discover tests` | 通过，`Ran 46 tests OK` |
+| backend | `python -m pytest tests/test_llm.py` | 通过，`8 passed` |
+
+说明：
+
+- frontend 验证结果沿用已记录通过基线。
+- backend 验证结果同步到第九轮后已记录基线。
 
 ## 第二轮验证结果
 
@@ -73,6 +85,7 @@
 - 后端测试已通过本轮验证，但稳定性仍需持续关注。
 - 真实第三方失败场景仍缺少系统化在线验证矩阵。
 - 完整多页 PDF 和批量 draft 能力未完成，不应在当前状态中夸大。
+- 当前状态不是生产可用。
 
 ## 下一阶段口径
 
