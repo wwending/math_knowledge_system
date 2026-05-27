@@ -1,5 +1,25 @@
 # DECISIONS
 
+## 决策 19：Draft 重复保存当前返回 409 而不是幂等结果
+
+结论：
+
+- 当前 Draft 流程中，Draft 已达到 `saved_to_bank` 状态后，再次调用 `POST /api/v1/drafts/{draft_id}/save-to-bank` 返回 `409 Conflict`。
+- 当前不重建并返回已有的保存结果。
+
+原因：
+
+- 防止重复创建 `Question` / `QuestionRevision`。
+- 保持当前实现小而明确。
+- 在保存结果模型完全稳定前，避免提前引入幂等响应重建逻辑。
+
+影响：
+
+- 前端应将该行为视为可恢复的状态冲突。
+- 后续可升级为幂等返回既有 `question_id` / `question_revision_id` / `rev_no`。
+
+日期：2026-05-27
+
 ## 决策 18：接受 Dashboard Draft 初步接入为新的前端主路径基线
 
 结论：

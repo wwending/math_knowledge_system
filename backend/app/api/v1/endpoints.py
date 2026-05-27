@@ -50,6 +50,8 @@ PDF_PARSE_FAILED_MESSAGE = "\u672a\u80fd\u89e3\u6790 PDF \u6587\u4ef6"
 UPLOAD_SAVE_FAILED_MESSAGE = "\u4e0a\u4f20\u6587\u4ef6\u4fdd\u5b58\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5"
 QUESTION_SAVE_FAILED_MESSAGE = "\u9898\u76ee\u4fdd\u5b58\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5"
 DRAFT_READY_REQUIRED_MESSAGE = "\u53ea\u6709\u5df2\u8bc6\u522b\u5b8c\u6210\u7684 Draft \u53ef\u4ee5\u4fdd\u5b58\u5165\u9898\u5e93"
+DRAFT_ALREADY_SAVED_MESSAGE = "\u5df2\u4fdd\u5b58\u5165\u9898\u5e93\u7684 Draft \u4e0d\u80fd\u91cd\u590d\u4fdd\u5b58"
+DRAFT_ALREADY_SAVED_RECOGNIZE_MESSAGE = "\u5df2\u4fdd\u5b58\u5165\u9898\u5e93\u7684 Draft \u4e0d\u80fd\u518d\u6b21\u8bc6\u522b"
 
 
 class SourceAssetResponse(BaseModel):
@@ -470,6 +472,9 @@ def recognize_draft(
     current_user: User = Depends(require_active_user),
 ):
     draft = _ensure_owned_draft(db, draft_id, current_user.id)
+    if draft.status == DraftStatus.SAVED_TO_BANK:
+        raise HTTPException(status_code=409, detail=DRAFT_ALREADY_SAVED_RECOGNIZE_MESSAGE)
+
     asset = _ensure_owned_asset(db, draft.source_asset_id, current_user.id)
     if not asset.mime.startswith("image/"):
         raise HTTPException(status_code=400, detail="Draft recognition currently supports image assets only")
@@ -622,6 +627,9 @@ def save_draft_to_bank(
     current_user: User = Depends(require_active_user),
 ):
     draft = _ensure_owned_draft(db, draft_id, current_user.id)
+    if draft.status == DraftStatus.SAVED_TO_BANK:
+        raise HTTPException(status_code=409, detail=DRAFT_ALREADY_SAVED_MESSAGE)
+
     if draft.status != DraftStatus.DRAFT_READY:
         raise HTTPException(status_code=409, detail=DRAFT_READY_REQUIRED_MESSAGE)
 

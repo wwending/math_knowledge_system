@@ -25,7 +25,8 @@
 影响：
 
 - Draft 前端接入尚未达到完整生产级完成。
-- 仍需补 API smoke 文档、异常场景、UI 状态和 legacy 清理。
+- API smoke 文档已补充，Draft 后端异常契约已开始收口；仍需补 UI 状态和 legacy 清理。
+- `saved_to_bank` 状态重复保存当前返回 `409`，尚未做成返回既有保存结果的幂等接口。
 - `/api/v1/recognize` 仍需作为 legacy / 兼容入口保留。
 - 不做 OCR/LLM provider 抽象、异步队列、批量 PDF、多页 draft 管理。
 
