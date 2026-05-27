@@ -144,7 +144,7 @@
 
           <div v-if="ocrLoading && step === 'uploading'" class="loading-state">
             <el-skeleton :rows="5" animated />
-            <p>{{ draftStatusText || '正在请求 OCR / AI 服务处理图片，请稍候...' }}</p>
+            <p>{{ draftOperationText }}</p>
           </div>
 
           <div
@@ -168,12 +168,20 @@
               :closable="false"
               class="result-alert"
             />
+            <el-alert
+              v-if="draftError && draftStatus !== 'failed'"
+              :title="draftError"
+              type="error"
+              show-icon
+              :closable="false"
+              class="result-alert"
+            />
             <el-card v-if="ocrResult" shadow="hover">
               <div class="markdown-body" v-html="renderedContent"></div>
             </el-card>
             <div v-if="draftStatus === 'draft_ready'" class="result-actions">
               <el-button type="primary" :loading="saveLoading" :disabled="!canSaveDraft" @click="saveDraftToBank">
-                保存入题库
+                {{ saveLoading ? '正在保存...' : '保存入题库' }}
               </el-button>
             </div>
             <div v-if="draftStatus === 'saved_to_bank'" class="result-actions">
@@ -239,10 +247,12 @@ const ocrResult = ref('')
 const recognizeWarning = ref('')
 const cropperRef = ref(null)
 const draftStatus = ref('')
+const draftStage = ref('idle')
 const draftId = ref(null)
 const sourceAssetId = ref(null)
 const draftError = ref('')
 const saveLoading = ref(false)
+const saveBlocked = ref(false)
 const saveResult = ref(null)
 
 const currentUser = computed(() => authState.currentUser)
@@ -318,25 +328,75 @@ const getRecognizeErrorMessage = (payload) => {
   return errorText || '识别失败，请稍后重试。'
 }
 
-const getRequestErrorMessage = (error) => {
-  const data = error.response?.data || {}
-  const detail = data.detail
-  if (detail && typeof detail === 'string') {
+const getDetailText = (detail) => {
+  if (!detail) {
+    return ''
+  }
+  if (typeof detail === 'string') {
     return detail
+  }
+  if (Array.isArray(detail)) {
+    return detail.map((item) => item?.msg || item?.message || String(item)).join('；')
+  }
+  return detail.message || detail.error || JSON.stringify(detail)
+}
+
+const getRequestErrorMessage = (error) => {
+  if (!error.response) {
+    return '网络请求失败，请检查后端服务或网络连接后重试。'
+  }
+
+  const status = error.response.status
+  const data = error.response?.data || {}
+  const detail = getDetailText(data.detail)
+  const combinedText = `${detail} ${data.error || ''} ${data.warning || ''}`.toLowerCase()
+
+  if (status === 400) {
+    if (combinedText.includes('non-image') || combinedText.includes('image') || combinedText.includes('图片')) {
+      return '当前 Draft recognize 仅支持图片素材。'
+    }
+    return detail || '请求参数不正确，请检查上传素材后重试。'
+  }
+  if (status === 401) {
+    return '登录状态已失效，请重新登录。'
+  }
+  if (status === 403) {
+    return '当前账号无权限或登录状态异常，请重新登录。'
+  }
+  if (status === 404) {
+    if (combinedText.includes('asset') || combinedText.includes('素材')) {
+      return '素材不存在，请重新上传后再试。'
+    }
+    if (combinedText.includes('draft') || combinedText.includes('草稿')) {
+      return '草稿不存在，请重新上传后再试。'
+    }
+    return '请求的素材或草稿不存在，请重新上传后再试。'
+  }
+  if (status === 409) {
+    return '当前草稿已保存或状态不允许重复保存。'
+  }
+  if (status >= 500) {
+    return '服务端处理失败，请稍后重试或联系管理员。'
   }
   if (data.error_type || data.error) {
     return getRecognizeErrorMessage(data)
   }
-  return '请求失败，请稍后重试。'
+  return detail || '请求失败，请稍后重试。'
 }
 
 const resetDraftState = () => {
   draftStatus.value = ''
+  draftStage.value = 'idle'
   draftId.value = null
   sourceAssetId.value = null
   draftError.value = ''
   saveLoading.value = false
+  saveBlocked.value = false
   saveResult.value = null
+}
+
+const setStageMessage = (stage) => {
+  draftStage.value = stage
 }
 
 const extractId = (payload, fields) => {
@@ -352,8 +412,29 @@ const getDraftContent = (payload) => payload?.content || payload?.current_conten
 
 const isDraftBusy = computed(() => ocrLoading.value || draftStatus.value === 'recognizing')
 const canSaveDraft = computed(
-  () => draftStatus.value === 'draft_ready' && Boolean(draftId.value) && !ocrLoading.value && !saveLoading.value
+  () =>
+    draftStatus.value === 'draft_ready' &&
+    Boolean(draftId.value) &&
+    !ocrLoading.value &&
+    !saveLoading.value &&
+    !saveBlocked.value
 )
+
+const draftOperationText = computed(() => {
+  if (draftStage.value === 'uploading_asset') {
+    return '正在上传素材...'
+  }
+  if (draftStage.value === 'creating_draft') {
+    return '正在创建草稿...'
+  }
+  if (draftStage.value === 'recognizing') {
+    return '正在识别题目，请稍候...'
+  }
+  if (draftStage.value === 'saving_to_bank') {
+    return '正在保存入题库...'
+  }
+  return '正在处理，请稍候...'
+})
 
 const draftStatusText = computed(() => {
   if (draftStatus.value === 'draft_created') {
@@ -446,7 +527,7 @@ const selectPdfPage = (base64Img) => {
 }
 
 const confirmCropAndUpload = () => {
-  if (!cropperRef.value) {
+  if (!cropperRef.value || isDraftBusy.value) {
     return
   }
 
@@ -457,6 +538,10 @@ const confirmCropAndUpload = () => {
 }
 
 const uploadFullImage = async () => {
+  if (isDraftBusy.value) {
+    return
+  }
+
   try {
     const response = await fetch(currentImageUrl.value)
     const blob = await response.blob()
@@ -477,6 +562,7 @@ const runRecognition = async (file) => {
   resetDraftState()
 
   try {
+    setStageMessage('uploading_asset')
     const assetFormData = new FormData()
     assetFormData.append('file', file)
     const assetResponse = await axios.post(`${API_V1_BASE_URL}/assets`, assetFormData)
@@ -487,6 +573,7 @@ const runRecognition = async (file) => {
     }
 
     sourceAssetId.value = uploadedAssetId
+    setStageMessage('creating_draft')
     const draftResponse = await axios.post(`${API_V1_BASE_URL}/drafts`, {
       source_asset_id: uploadedAssetId
     })
@@ -499,6 +586,7 @@ const runRecognition = async (file) => {
     draftId.value = createdDraftId
     draftStatus.value = draftResponse.data?.status || 'draft_created'
     await Promise.resolve()
+    setStageMessage('recognizing')
     draftStatus.value = 'recognizing'
 
     const recognizeResponse = await axios.post(`${API_V1_BASE_URL}/drafts/${createdDraftId}/recognize`)
@@ -509,7 +597,8 @@ const runRecognition = async (file) => {
       ocrResult.value = getDraftContent(payload)
       step.value = 'result'
       if (payload.partial_success) {
-        recognizeWarning.value = 'OCR 已完成，但 AI 整理部分失败，当前展示降级结果，请核对后再保存'
+        recognizeWarning.value =
+          payload.warning || 'OCR 已完成，但 AI 整理部分失败，当前展示降级结果，请核对后再保存。'
         ElMessage.warning(recognizeWarning.value)
       } else {
         ElMessage.success('识别完成。')
@@ -524,16 +613,17 @@ const runRecognition = async (file) => {
   } catch (error) {
     console.error(error)
     draftStatus.value = 'failed'
-    draftError.value = error.message || getRequestErrorMessage(error)
+    draftError.value = getRequestErrorMessage(error)
     if (error.response?.status === 409 && error.response?.data?.detail === 'Asset already exists') {
       draftError.value = '素材上传失败：Asset already exists，请更换图片或重新裁剪后再试。'
-    } else if (error.response) {
-      draftError.value = getRequestErrorMessage(error)
+    } else if (!error.response && !error.isAxiosError && error.message) {
+      draftError.value = error.message
     }
     ElMessage.error(draftError.value)
     step.value = 'result'
   } finally {
     ocrLoading.value = false
+    setStageMessage('idle')
   }
 }
 
@@ -580,6 +670,8 @@ const saveDraftToBank = async () => {
   }
 
   saveLoading.value = true
+  draftError.value = ''
+  setStageMessage('saving_to_bank')
   try {
     const response = await axios.post(`${API_V1_BASE_URL}/drafts/${draftId.value}/save-to-bank`)
     saveResult.value = {
@@ -590,9 +682,14 @@ const saveDraftToBank = async () => {
     ElMessage.success(draftStatusText.value)
   } catch (error) {
     console.error(error)
-    ElMessage.error(getRequestErrorMessage(error))
+    draftError.value = getRequestErrorMessage(error)
+    if (error.response?.status === 409) {
+      saveBlocked.value = true
+    }
+    ElMessage.error(draftError.value)
   } finally {
     saveLoading.value = false
+    setStageMessage('idle')
   }
 }
 
