@@ -1,5 +1,9 @@
 # Draft API Smoke 验证文档
 
+> 当前推荐文档：本文档是 Dashboard Draft 主路径的人工/API smoke 验证入口，负责说明当前主链路、异常契约、legacy 边界和验收标准。
+>
+> 相关补充：[API_SMOKE_DRAFT_PIPELINE.md](./API_SMOKE_DRAFT_PIPELINE.md) 负责说明 `scripts/smoke_draft_pipeline.ps1` 的脚本化验证方式。两个文档暂不合并：本文档面向维护者理解与手动核查，脚本文档面向自动/半自动 smoke 执行。
+
 ## 文档目的
 
 本文档用于验证当前 `Dashboard.vue` Draft 主路径是否能跑通，帮助新维护者快速理解现阶段 Dashboard 上传、识别、保存入题库的主链路。
@@ -195,7 +199,7 @@ Draft 相关返回至少应帮助确认：
 
 ## 异常场景期望
 
-当前 Draft 主路径异常契约已开始收口。以下场景应返回可解释的 4xx，不应直接变成未解释的 500。
+当前 Draft 主路径异常契约已阶段性收口。以下场景应返回可解释的 4xx，不应直接变成未解释的 500。
 
 | 场景 | 预期 HTTP 状态 | 预期原因 |
 | --- | --- | --- |

@@ -1,5 +1,29 @@
 # DECISIONS
 
+说明：本文件按时间倒序记录决策。较早决策中的“当前主链路”等表述保留为当时历史事实；如与顶部较新决策冲突，以较新决策和 `docs/STATUS.md` 当前 checkpoint 为准。
+
+## 决策 21：保留两个 Draft smoke 文档并明确主次
+
+结论：
+
+- 保留 `docs/API_SMOKE_DRAFT_FLOW.md` 和 `docs/API_SMOKE_DRAFT_PIPELINE.md`，本轮不合并、不删除。
+- `docs/API_SMOKE_DRAFT_FLOW.md` 作为当前推荐 smoke 文档，负责 Dashboard Draft 主路径、异常契约、legacy 边界和人工/API 验收标准。
+- `docs/API_SMOKE_DRAFT_PIPELINE.md` 作为脚本化 smoke 补充文档，负责 `scripts/smoke_draft_pipeline.ps1` 的执行方式、参数和脚本断言说明。
+
+原因：
+
+- 两个文档存在部分 API 顺序重复，但受众不同：一个用于理解和人工核查，一个用于脚本执行。
+- 合并会让主路径验收口径和脚本参数说明互相干扰，后续维护成本不一定更低。
+- 明确主次和互链可以降低维护者误读风险，同时保持现有链接不失效。
+
+边界：
+
+- 不删除任何 smoke 文档。
+- 不改变 Draft API 或业务行为。
+- 后续修改 Draft 主链路或 smoke 脚本时，应同步检查两个 smoke 文档。
+
+日期：2026-05-27
+
 ## 决策 20：legacy recognize 先审计标注，后续小步退场
 
 结论：

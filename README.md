@@ -1,14 +1,14 @@
 # Math Knowledge System
 
-当前项目已完成第十五轮：legacy recognize 引用审计与清理计划，状态定位为：可启动、可验证、可继续开发。不要把当前状态表述为生产可用。
+当前项目已完成第十六轮：阶段性收口、文档去重与 release checkpoint，状态定位为：可启动、可验证、可继续开发。不要把当前状态表述为生产可用。
 
 当前 `Dashboard.vue` 上传主路径已初步接入 Draft 流水线：先上传素材到 `POST /api/v1/assets`，再创建 Draft，调用 `POST /api/v1/drafts/{draft_id}/recognize`，保存时调用 `POST /api/v1/drafts/{draft_id}/save-to-bank`。`POST /api/v1/recognize` 未删除、未重构，保留为 legacy / 兼容入口。
 
-Draft 主路径 API smoke 验证见 [docs/API_SMOKE_DRAFT_FLOW.md](/d:/math_knowledge_system/docs/API_SMOKE_DRAFT_FLOW.md)。
+Draft 主路径推荐 API smoke 验证文档见 [docs/API_SMOKE_DRAFT_FLOW.md](/d:/math_knowledge_system/docs/API_SMOKE_DRAFT_FLOW.md)。脚本化 smoke 补充说明见 [docs/API_SMOKE_DRAFT_PIPELINE.md](/d:/math_knowledge_system/docs/API_SMOKE_DRAFT_PIPELINE.md)。
 
 ## 当前验证结果
 
-第十五轮后的最新已记录验证结果：
+第十六轮后的最新已记录验证结果：
 
 | 范围 | 命令 | 结果 |
 | --- | --- | --- |
@@ -17,7 +17,6 @@ Draft 主路径 API smoke 验证见 [docs/API_SMOKE_DRAFT_FLOW.md](/d:/math_know
 | frontend | `npm run test:stage3-contract` | 通过 |
 | backend | `python -m compileall app` | 通过 |
 | backend | `python -m unittest discover tests` | 通过，`Ran 53 tests OK` |
-| backend | `python -m pytest tests/test_llm.py` | 通过，`8 passed` |
 
 ## 最新已完成工作
 
@@ -29,6 +28,7 @@ Draft 主路径 API smoke 验证见 [docs/API_SMOKE_DRAFT_FLOW.md](/d:/math_know
 - 第十三轮：收口 Draft 后端异常契约。
 - 第十四轮：收口 Dashboard Draft 主路径 UI 状态。
 - 第十五轮：完成 legacy recognize 引用审计与最小兼容标注。
+- 第十六轮：统一文档当前口径，明确两个 Draft smoke 文档主次关系，并形成 release checkpoint。
 
 ## Draft 流水线
 

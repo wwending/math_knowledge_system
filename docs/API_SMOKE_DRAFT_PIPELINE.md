@@ -1,5 +1,9 @@
 # Draft Pipeline API Smoke
 
+> 补充文档：本文档说明 `scripts/smoke_draft_pipeline.ps1` 的脚本化 smoke 用法，适合在后端已启动、账号和图片样例已准备好时执行自动/半自动检查。
+>
+> 当前推荐入口：[API_SMOKE_DRAFT_FLOW.md](./API_SMOKE_DRAFT_FLOW.md) 负责说明 Dashboard Draft 主路径、异常契约、legacy 边界和人工/API smoke 验收标准。两个文档暂不合并，避免把脚本参数说明和主路径验收口径混在一起。
+
 This smoke script verifies the Draft pipeline APIs used by the current Dashboard upload main flow.
 
 ## Preconditions
@@ -93,8 +97,10 @@ The script fails fast when:
 ## Common Failures
 
 - `401`: token is missing, expired, invalid, or login credentials are wrong.
+- `400`: Draft recognize was called for a non-image asset; current Draft recognize only supports image assets.
 - `404`: asset or draft does not exist, or the id belongs to another user.
 - `409`: draft status does not allow `save-to-bank`; only `draft_ready` is valid.
+- `409`: a draft already saved to bank cannot be recognized or saved again; the current contract rejects duplicates and does not recreate Question or QuestionRevision.
 - OCR key not configured: check `BAIDU_API_KEY` and `BAIDU_SECRET_KEY` in the backend runtime environment.
 - DeepSeek key not configured: check `DEEPSEEK_API_KEY` in the backend runtime environment.
 - File path error: `ImagePath` does not exist or points to a non-file path.
@@ -105,3 +111,4 @@ The script fails fast when:
 - `Dashboard.vue` upload now uses the Draft pipeline as the main flow.
 - `POST /api/v1/recognize` is still kept as a legacy / compatibility entry.
 - This script validates the Draft API sequence; it does not remove or replace the legacy endpoint.
+- The project is startable, verifiable, and ready for continued development, but this smoke script does not prove production readiness.

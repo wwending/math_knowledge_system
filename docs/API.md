@@ -11,6 +11,8 @@
 
 `POST /api/v1/recognize` 未删除、未重构，保留为 legacy / 兼容入口。
 
+当前推荐 smoke 文档为 `docs/API_SMOKE_DRAFT_FLOW.md`；`docs/API_SMOKE_DRAFT_PIPELINE.md` 是脚本化 smoke 补充文档。
+
 ## Draft 流水线
 
 Draft 当前作为 Dashboard 上传主路径的开发基线，相关接口为：
@@ -42,5 +44,6 @@ Draft 当前作为 Dashboard 上传主路径的开发基线，相关接口为：
 - Draft 流水线是当前 Dashboard 上传主路径。
 - `/api/v1/recognize` 未删除、未重构，保留为 legacy / 兼容入口。
 - `runLegacyRecognition()` 仍保留在 `Dashboard.vue` 中，但当前上传按钮和主上传流程不引用它。
+- Draft 后端异常契约已阶段性收口：缺失 asset/draft 返回 `404`，非图片 asset recognize 返回 `400`，状态冲突和重复保存返回 `409`。
 - 当前不表述为生产可用。
 - 当前不表述为完整多页 PDF 或批量 draft 能力已完成。

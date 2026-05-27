@@ -1,6 +1,6 @@
 # STATUS
 
-## 2026-05-27 第十五轮后当前状态
+## 2026-05-27 第十六轮 release checkpoint
 
 当前项目进入“可启动、可验证、可继续开发”的状态。该结论不等于生产可用，也不表示所有正式流水线已经闭环。
 
@@ -16,10 +16,12 @@
 - `Dashboard.vue` 中仍保留 `runLegacyRecognition()` 对 `POST /api/v1/recognize` 的调用，但当前上传按钮未引用该函数。
 - 本轮接受当前 Dashboard Draft 初步接入作为新基线；这属于渐进式迁移的路线推进，不再按疑似误改处理。
 - Draft 主路径已接受为当前基线，已补充 API smoke 验证文档；当前仍是可启动、可验证、可继续开发，不是生产可用。
-- 第十三轮已开始收口 Draft 后端异常契约：缺失 asset/draft、非图片 recognize、未 ready 保存、重复保存、已保存后再次识别均返回可解释的 4xx。
+- 第十三轮已阶段性收口 Draft 后端异常契约：缺失 asset/draft、非图片 recognize、未 ready 保存、重复保存、已保存后再次识别均返回可解释的 4xx。
 - 第十四轮已收口 Dashboard Draft 主路径 UI 状态：上传素材、创建草稿、识别、保存入题库有阶段化提示；识别中和保存中按钮分别禁用；`partial_success` 作为 warning 展示；常见错误码有前端可理解提示。
 - 第十五轮已完成 legacy recognize 引用审计与最小标注：Dashboard 主路径确认继续走 Draft，`runLegacyRecognition()` 和 `POST /api/v1/recognize` 均保留为 legacy / 兼容入口。
+- 第十六轮已完成阶段性文档去重和 release checkpoint：README、API、smoke 文档、STATUS、DECISIONS、KNOWN_ISSUES、WORKLOG 的当前口径已统一。
 - Draft 前端接入不是完整生产级完成，legacy recognize 已完成引用审计和误用风险标注，仍需后续退场策略执行。
+- 当前推荐 smoke 文档为 `docs/API_SMOKE_DRAFT_FLOW.md`；`docs/API_SMOKE_DRAFT_PIPELINE.md` 保留为脚本化 smoke 补充文档。
 - `saved_to_bank` 状态重复 save-to-bank 当前返回 `409`，本轮不改为幂等返回，且已测试不会重复创建 Question 或 QuestionRevision。
 - 后端启动和管理员初始化前必须先执行 `alembic upgrade head`。
 - `backend/.env` 是本地文件，不应提交；示例配置使用 `backend/.env.example`。
@@ -57,12 +59,9 @@
 | frontend | `npm run build` | 通过，仅有 Vite chunk size warning |
 | backend | `python -m compileall app` | 通过 |
 | backend | `python -m unittest discover tests` | 通过，`Ran 53 tests OK` |
-| backend | `python -m pytest tests/test_draft_pipeline.py` | 通过，`9 passed` |
-| backend | `python -m pytest tests/test_llm.py` | 通过，`8 passed` |
-
 说明：
 
-- 第十五轮已重新实测 `npm run test:auth-contract`、`npm run test:stage3-contract`、`npm run build`、`python -m compileall app`、`python -m unittest discover tests`。
+- 第十六轮已重新实测 `npm run test:auth-contract`、`npm run test:stage3-contract`、`npm run build`、`python -m compileall app`、`python -m unittest discover tests`。
 - `python -m pytest tests/test_draft_pipeline.py` 和 `python -m pytest tests/test_llm.py` 为第十三轮专项验证结果，本轮未重复执行。
 - `npm run build` 仍有 Vite chunk size warning，但构建成功。
 
@@ -92,6 +91,7 @@
 - 后端测试已通过本轮验证，但稳定性仍需持续关注。
 - 真实第三方失败场景仍缺少系统化在线验证矩阵。
 - 完整多页 PDF 和批量 draft 能力未完成，不应在当前状态中夸大。
+- legacy recognize 最终退场未完成，当前仍保留为兼容入口。
 - 当前状态不是生产可用。
 
 ## 下一阶段口径
@@ -106,3 +106,4 @@
 - 不做异步队列。
 - 不做批量 PDF。
 - 不做多页 draft 管理。
+- 不把 legacy recognize 写成 Dashboard 当前主路径。

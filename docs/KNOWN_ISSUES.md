@@ -9,7 +9,7 @@
 - 影响人工验收和后续维护判断。
 - 可能掩盖真实交互文案问题。
 
-## 2. Dashboard Draft 接入已确认但仍非生产完成态
+## 2. Dashboard Draft 接入已阶段性收口但仍非生产完成态
 
 主链路已决策采用渐进式迁移。第十一轮补充确认，当前 `Dashboard.vue` 上传主路径已初步接入 Draft 流水线，并接受为新的前端主路径基线。
 
@@ -22,12 +22,20 @@
 
 同时，`Dashboard.vue` 中仍保留 `runLegacyRecognition()` 对 `POST /api/v1/recognize` 的调用，但当前上传按钮未引用该函数。`POST /api/v1/recognize` 不删除、不重构，保留为 legacy / 兼容入口。
 
-影响：
+已阶段性收口：
+
+- API smoke 文档已补充。
+- Draft 后端异常契约已阶段性收口：缺失 asset/draft 返回 `404`，非图片 asset recognize 返回 `400`，状态冲突和重复保存返回 `409`。
+- Dashboard UI 状态已阶段性收口：上传、创建草稿、识别、保存有阶段提示，`partial_success` 以 warning 展示，常见错误码有可理解提示。
+- legacy recognize 引用审计已完成，当前 Dashboard 主上传流程不调用 legacy 入口。
+- 两个 smoke 文档已明确主次：`API_SMOKE_DRAFT_FLOW.md` 是当前推荐入口，`API_SMOKE_DRAFT_PIPELINE.md` 是脚本化 smoke 补充文档。
+
+仍保留风险：
 
 - Draft 前端接入尚未达到完整生产级完成。
-- API smoke 文档已补充，Draft 后端异常契约和 Dashboard UI 状态已完成阶段性收口；仍需后续 legacy 清理。
 - `saved_to_bank` 状态重复保存当前返回 `409`，尚未做成返回既有保存结果的幂等接口。
 - `/api/v1/recognize` 仍需作为 legacy / 兼容入口保留。
+- 两个 smoke 文档仍并存，后续修改 Draft 主链路或脚本参数时需要同步检查主文档和脚本文档，避免再次漂移。
 - 不做 OCR/LLM provider 抽象、异步队列、批量 PDF、多页 draft 管理。
 
 ## 3. legacy recognize 仍需后续退场

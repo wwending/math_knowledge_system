@@ -1,5 +1,45 @@
 # WORKLOG
 
+说明：本文件按时间倒序记录每轮工作。较早轮次中的“当前主链路”等表述保留为当时历史事实；当前状态以 `docs/STATUS.md` 最新 checkpoint 和较新的 DECISIONS 为准。
+
+## 2026-05-27 第十六轮：阶段性收口、文档去重与 release checkpoint
+
+目标：
+
+- 只做文档去重、状态口径统一和 release checkpoint。
+- 检查 README、API、两个 Draft smoke 文档、STATUS、DECISIONS、KNOWN_ISSUES、WORKLOG 是否存在过期或矛盾口径。
+- 明确 `docs/API_SMOKE_DRAFT_FLOW.md` 和 `docs/API_SMOKE_DRAFT_PIPELINE.md` 的关系。
+- 不修改业务代码，不删除 legacy recognize，不做前端/后端重构。
+
+结果：
+
+- README 和 STATUS 已更新到第十六轮 release checkpoint：当前项目可启动、可验证、可继续开发，但不是生产可用。
+- 当前主路径统一为 Dashboard Draft flow：`POST /api/v1/assets`、`POST /api/v1/drafts`、`POST /api/v1/drafts/{draft_id}/recognize`、`POST /api/v1/drafts/{draft_id}/save-to-bank`。
+- `POST /api/v1/recognize` 和 `runLegacyRecognition()` 继续保留为 legacy / 兼容入口，不作为 Dashboard 当前主路径。
+- `docs/API_SMOKE_DRAFT_FLOW.md` 标记为当前推荐 smoke 文档，负责主路径理解、异常契约、legacy 边界和人工/API smoke 验收。
+- `docs/API_SMOKE_DRAFT_PIPELINE.md` 标记为脚本化 smoke 补充文档，负责 `scripts/smoke_draft_pipeline.ps1` 的执行参数和脚本断言说明。
+- `docs/DECISIONS.md` 新增保留两个 smoke 文档并明确主次的决策。
+- `docs/KNOWN_ISSUES.md` 已将 Draft 异常契约、Dashboard UI 状态、legacy 审计和 smoke 文档关系标为阶段性收口，同时保留非生产完成态、legacy 退场、批量 PDF、多页 Draft、真实第三方全量在线验证等风险。
+- 未修改业务代码。
+
+验证结果：
+
+- `cd frontend && npm run test:auth-contract` 通过。
+- `cd frontend && npm run test:stage3-contract` 通过。
+- `cd frontend && npm run build` 通过，仅有 Vite chunk size warning。
+- `cd backend && python -m compileall app` 通过。
+- `cd backend && python -m unittest discover tests` 通过，`Ran 53 tests OK`。
+
+边界：
+
+- 未修改 `Dashboard.vue`。
+- 未修改后端业务代码。
+- 未删除 `/api/v1/recognize`。
+- 未删除 `runLegacyRecognition()`。
+- 未修改数据库模型或迁移文件。
+- 未引入新依赖。
+- 未做批量 PDF 或多页 Draft 功能。
+
 ## 2026-05-27 第十五轮：legacy recognize 引用审计与清理计划
 
 目标：
