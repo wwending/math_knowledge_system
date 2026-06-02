@@ -34,10 +34,12 @@ from app.models.source_asset import SourceAsset
 from app.models.user import User
 from app.schemas.draft import DraftCreate, DraftDetail, DraftRecognizeResponse, DraftSaveToBankResponse
 from app.schemas.ocr import OCRResponse
+from app.schemas.paper import PaperCreate, PaperListItem, PaperRead
 from app.schemas.question import KnowledgeTag, QuestionDetail, QuestionListItem, QuestionUpdate
 from app.services.draft_state import transition_draft_status
 from app.services.llm import nlp_service
 from app.services.ocr_engine import ocr_service
+from app.services.paper_service import create_paper, get_paper, list_papers
 
 
 router = APIRouter()
@@ -679,6 +681,32 @@ def save_draft_to_bank(
         question_revision_id=revision.id,
         rev_no=revision.rev_no,
     )
+
+
+@router.post("/papers", response_model=PaperRead)
+def create_paper_endpoint(
+    payload: PaperCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_active_user),
+):
+    return create_paper(db, current_user, payload)
+
+
+@router.get("/papers", response_model=List[PaperListItem])
+def list_papers_endpoint(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_active_user),
+):
+    return list_papers(db, current_user)
+
+
+@router.get("/papers/{paper_id}", response_model=PaperRead)
+def get_paper_endpoint(
+    paper_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_active_user),
+):
+    return get_paper(db, current_user, paper_id)
 
 
 # Legacy compatibility endpoint. Keep behavior unchanged while Dashboard uses the Draft flow.

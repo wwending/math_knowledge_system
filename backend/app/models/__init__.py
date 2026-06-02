@@ -10,3 +10,4 @@ from app.models import draft_event  # noqa: F401
 from app.models import ocr_run  # noqa: F401
 from app.models import llm_run  # noqa: F401
 from app.models import question_revision  # noqa: F401
+from app.models import paper  # noqa: F401

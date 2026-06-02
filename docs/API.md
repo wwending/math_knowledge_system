@@ -13,6 +13,34 @@
 
 当前推荐 smoke 文档为 `docs/API_SMOKE_DRAFT_FLOW.md`；`docs/API_SMOKE_DRAFT_PIPELINE.md` 是脚本化 smoke 补充文档。
 
+## 组卷 MVP
+
+第十七轮新增后端最小组卷能力。当前只支持登录用户手动选择自己题库中的题目生成草稿试卷，不支持智能组卷、导出、前端组卷或拖拽排序。
+
+接口：
+
+- `POST /api/v1/papers`
+  - 创建试卷。
+  - 请求体：`title`、可选 `description`、`items`。
+  - `items` 中每项包含 `question_id` 和可选 `score`。
+  - `items` 不能为空；同一张试卷内重复 `question_id` 返回冲突错误。
+  - 只能使用当前登录用户自己的题目；不存在或不属于当前用户的题目按不存在处理。
+  - 返回 `PaperRead`，包含 `items`、`item_count`、`total_score`。
+
+- `GET /api/v1/papers`
+  - 返回当前登录用户自己的试卷列表。
+  - 返回每张试卷的 `id`、`title`、`status`、`item_count`、`total_score`、`created_at`、`updated_at`。
+
+- `GET /api/v1/papers/{paper_id}`
+  - 返回当前登录用户自己的试卷详情。
+  - 试卷不存在或不属于当前用户时返回 `404`。
+
+组卷快照：
+
+- `PaperItem` 创建时保存题目内容快照，避免题库后续编辑导致历史试卷内容被动变化。
+- 如果题目已有 `QuestionRevision`，优先使用最新 revision 的内容生成快照。
+- 当前返回字段包括 `content_snapshot`、`answer_snapshot`、`analysis_snapshot`、`knowledge_tags_snapshot`。
+
 ## Draft 流水线
 
 Draft 当前作为 Dashboard 上传主路径的开发基线，相关接口为：
