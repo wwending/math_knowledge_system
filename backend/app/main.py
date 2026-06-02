@@ -1,70 +1,52 @@
-import os
-from pathlib import Path
 from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
-# 1. 导入数据库引擎 (Engine) 和 Session
-# 假设你的 engine 和 SessionLocal 还在 core.database 里
-from app.core.database import engine, SessionLocal
-from app.core.security import get_password_hash
-
-# 2. 🔥🔥🔥 导入统一的 Base 🔥🔥🔥
+from app.api.v1.router import api_router
+from app.core.config import settings
+from app.core.database import engine
 from app.db.base import Base
+from app.db.question_contract import ensure_legacy_question_columns
+from app.models import auth_audit_log, auth_session, login_rate_limit, question, user  # noqa: F401
 
-# 3. 🔥🔥🔥 显式导入所有模型 (触发注册) 🔥🔥🔥
-# 即使下面代码没直接用到 Question，也必须导入，否则 create_all 不会创建 questions 表
-from app.models.user import User
-from app.models.question import Question
-from app.api.endpoints import router as api_router
 
-# 4. 创建所有表
-# 因为上面导入了 User 和 Question，Base 现在知道要创建这两个表了
-Base.metadata.create_all(bind=engine)
+def create_app() -> FastAPI:
+    settings.validate_security_settings()
+    settings.validate_runtime_schema_settings()
+    app = FastAPI(title=settings.PROJECT_NAME)
+    settings.ensure_runtime_dirs()
 
-app = FastAPI(title="错题本 AI", version="1.0")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.CORS_ALLOW_ORIGINS_LIST,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
-# 配置 CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+    app.mount(
+        settings.STATIC_URL_PREFIX_NORMALIZED,
+        StaticFiles(directory=str(settings.STATIC_DIR_PATH)),
+        name="static",
+    )
 
-# 挂载静态文件
-BASE_DIR = Path(__file__).resolve().parent
-BACKEND_DIR = BASE_DIR.parent
-STATIC_DIR = BACKEND_DIR / "static"
-os.makedirs(STATIC_DIR / "uploads", exist_ok=True)
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+    if settings.AUTO_CREATE_TABLES:
+        Base.metadata.create_all(bind=engine)
 
-# 自动创建管理员
-def create_admin():
-    db = SessionLocal()
-    try:
-        user = db.query(User).filter(User.id == 1).first()
-        if not user:
-            print("⚠️ 管理员缺失，正在创建...")
-            admin = User(
-                id=1,
-                username="admin",
-                hashed_password=get_password_hash("123456"),
-                role="admin"
-            )
-            db.add(admin)
-            db.commit()
-            print("✅ 管理员 (ID:1) 已恢复！")
-    except Exception as e:
-        print(f"初始化管理员失败: {e}")
-    finally:
-        db.close()
+    if settings.AUTO_APPLY_LEGACY_QUESTION_COMPAT:
+        ensure_legacy_question_columns(engine)
 
-create_admin()
+    app.include_router(api_router, prefix=settings.API_V1_STR)
 
-app.include_router(api_router, prefix="/api/v1")
+    @app.get("/healthz")
+    def healthz():
+        return {"status": "ok"}
 
-@app.get("/")
-def root():
-    return {"message": "Math Knowledge System API is running!"}
+    @app.get("/")
+    def root():
+        return {"message": "Math Knowledge System API is running!"}
+
+    return app
+
+
+app = create_app()

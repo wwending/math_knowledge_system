@@ -22,28 +22,35 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+.venv_clean/
+backend/.venv_reqcheck/
 
-# --- AI & Models (大文件不进 Git) ---
+# --- AI & Models ---
 *.pth
 *.pt
 *.onnx
 *.bin
 backend/weights/
-# Jupyter Notebook Checkpoints
+
+# --- Jupyter ---
 .ipynb_checkpoints/
 
 # --- Frontend (Vue/Node) ---
 node_modules/
 npm-debug.log*
 yarn-error.log*
-# 前端构建输出
 frontend/dist/
+frontend/.vite/
+frontend/.eslintcache
+frontend/coverage/
 
-# --- Project Specific (临时文件) ---
+# --- Project Specific ---
 test_data/
 backend/temp_uploads/
 test_data/results/
+test_data/output_images/
 *.log
+backend/test/output/
 
 # --- Testing & Quality ---
 .pytest_cache/
@@ -55,76 +62,40 @@ htmlcov/
 *.sqlite3
 *.db
 
-# --- Environment Variables (安全) ---
-.env
-.env.local
-
-# --- IDE & Editors ---
-.idea/
-.vscode/
-*.swp
-.DS_Store
-# VS Code Local History 插件
-.history/
-
-# --- 上传的临时文件 (不要提交图片/PDF) ---
-backend/static/uploads/*
-!backend/static/uploads/.gitkeep
-backend/static/pdf_temp/*
-!backend/static/pdf_temp/.gitkeep
-
-static/
-
-backend/static/
-
-# --- IDE ---
-.vscode/
-.idea/
-
-# --- 敏感信息 ---
-config_local.py
-secrets.json
-
-
-# --- 忽略 Python 用户级配置文件 ---
-.spyderproject (Spyder IDE)
-
-.ropeproject (Rope 库生成)
-
-# --- 系统相关 (通用) ---
-.DS_Store
-Thumbs.db
-*.swp
-*.tmp
-
-# --- 安全与敏感信息 ---
+# --- Environment Variables ---
 .env
 .env.*
 !.env.example
 *.key
 *.pem
 
-# --- Python 进阶 ---
+# --- IDE & Editors ---
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+*.tmp
+.history/
+
+# --- Python Advanced ---
 .spyderproject
 .ropeproject
 .python-version
 pip-log.txt
 pip-delete-this-directory.txt
 
-# --- 前端进阶 (Vite/Vue) ---
-frontend/.vite/
-frontend/.eslintcache
-frontend/coverage/
+# --- Static Uploads ---
+static/
+backend/static/uploads/*
+!backend/static/uploads/.gitkeep
+backend/static/pdf_temp/*
+!backend/static/pdf_temp/.gitkeep
 
-# --- 本地测试输出 ---
-backend/test/output/
-test_data/output_images/
-
-# 临时脚本和测试文件
+# --- Sensitive / Temp Scripts ---
+config_local.py
+secrets.json
 check_gpu.py
 reset_admin.py
-test_OCR.py
-test_deepseek.py
 
-# 或者使用通配符忽略所有以 test_ 开头的 python 文件
-test_*.py
+
