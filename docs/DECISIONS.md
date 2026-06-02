@@ -2,6 +2,32 @@
 
 说明：本文件按时间倒序记录决策。较早决策中的“当前主链路”等表述保留为当时历史事实；如与顶部较新决策冲突，以较新决策和 `docs/STATUS.md` 当前 checkpoint 为准。
 
+## 决策 22：组卷 MVP 使用 Paper + PaperItem 并保存题目快照
+
+结论：
+
+- 新增 `Paper` 表表示一张试卷草稿。
+- 新增 `PaperItem` 表表示试卷中的题目条目，按请求顺序生成 `position`。
+- `PaperItem` 关联 `question_id`，并在存在 `QuestionRevision` 时记录当前最新 `question_revision_id`。
+- `PaperItem` 同时保存 `content_snapshot`、`answer_snapshot`、`analysis_snapshot`、`knowledge_tags_snapshot`。
+
+原因：
+
+- 组卷 MVP 当前目标是后端最小手动选题竖切，不引入智能组卷、导出或前端复杂交互。
+- 题库题目后续可能被编辑，如果试卷只动态读取 Question 当前内容，历史试卷会被动变化。
+- 保存快照可以保证已创建试卷内容稳定，同时保留与题库题目的关联。
+- 当前 `QuestionRevision` 已存在，但历史题目不一定都有完整 revision；因此同时保存快照作为稳定兜底。
+
+边界：
+
+- 当前不做智能组卷算法。
+- 当前不做 PDF/Word 导出。
+- 当前不做前端组卷入口。
+- 当前不做拖拽排序或自动配比。
+- 不改变 Draft flow、legacy recognize 或题库保存逻辑。
+
+日期：2026-05-27
+
 ## 决策 21：保留两个 Draft smoke 文档并明确主次
 
 结论：

@@ -2,6 +2,37 @@
 
 说明：本文件按时间倒序记录每轮工作。较早轮次中的“当前主链路”等表述保留为当时历史事实；当前状态以 `docs/STATUS.md` 最新 checkpoint 和较新的 DECISIONS 为准。
 
+## 2026-05-27 第十七轮：组卷 MVP 后端最小竖切
+
+目标：
+
+- 新增后端最小组卷能力。
+- 不重构 Draft flow、legacy recognize 或题库保存逻辑。
+- 不做前端、PDF/Word 导出、智能组卷算法或大规模重构。
+
+结果：
+
+- 新增 `Paper` 和 `PaperItem` 数据模型，支持试卷草稿和题目条目。
+- `PaperItem` 创建时保存题目快照；如存在 `QuestionRevision`，优先使用最新 revision 内容。
+- 新增 `POST /api/v1/papers`、`GET /api/v1/papers`、`GET /api/v1/papers/{paper_id}`。
+- 新增 paper service 和 Pydantic schema。
+- 新增 `backend/tests/test_paper_mvp.py` 覆盖创建、详情、列表隔离、非法题目、重复题目、position 顺序、快照不随题库修改变化。
+- 更新 API、STATUS、DECISIONS、KNOWN_ISSUES 文档。
+
+验证结果：
+
+- 已运行 `cd backend && python -m compileall app`，通过。
+- 已运行 `cd backend && python -m unittest tests.test_paper_mvp`，通过，`Ran 9 tests OK`。
+- 已运行 `cd backend && python -m unittest discover tests`，通过，`Ran 62 tests OK`。
+
+边界：
+
+- 未修改前端。
+- 未修改 `Dashboard.vue`。
+- 未删除或重构 `/api/v1/recognize`。
+- 未修改 Draft 主流程。
+- 未做智能组卷、导出、拖拽排序或自动配比。
+
 ## 2026-05-27 第十六轮：阶段性收口、文档去重与 release checkpoint
 
 目标：
