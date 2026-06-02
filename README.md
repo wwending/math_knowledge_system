@@ -1,6 +1,6 @@
 # Math Knowledge System
 
-当前项目已完成第十六轮：阶段性收口、文档去重与 release checkpoint，状态定位为：可启动、可验证、可继续开发。不要把当前状态表述为生产可用。
+当前项目已完成第十六轮：阶段性收口、文档去重与 release checkpoint，状态定位为：可启动、可验证、可继续开发。
 
 当前 `Dashboard.vue` 上传主路径已初步接入 Draft 流水线：先上传素材到 `POST /api/v1/assets`，再创建 Draft，调用 `POST /api/v1/drafts/{draft_id}/recognize`，保存时调用 `POST /api/v1/drafts/{draft_id}/save-to-bank`。`POST /api/v1/recognize` 未删除、未重构，保留为 legacy / 兼容入口。
 
