@@ -1,43 +1,33 @@
-import os
 import json
-import re
+
 from loguru import logger
 from openai import OpenAI
-from dotenv import load_dotenv
 
-# 加载环境变量
-load_dotenv()
+from app.core.config import settings
+
 
 class NLPEngine:
     def __init__(self):
-        self.api_key = os.getenv("DEEPSEEK_API_KEY")
-        self.base_url = os.getenv("DEEPSEEK_BASE_URL")
+        self.api_key = settings.DEEPSEEK_API_KEY
+        self.base_url = settings.DEEPSEEK_BASE_URL
         self.client = None
 
     def initialize(self):
-        """初始化 DeepSeek 客户端"""
         if self.api_key and self.base_url:
             try:
                 self.client = OpenAI(api_key=self.api_key, base_url=self.base_url)
-                logger.success("✅ DeepSeek LLM 客户端初始化成功")
+                logger.success("DeepSeek client initialized")
             except Exception as e:
-                logger.error(f"❌ DeepSeek 初始化失败: {e}")
+                logger.error(f"Failed to initialize DeepSeek client: {e}")
         else:
-            logger.warning("⚠️ 未配置 DeepSeek API Key，智能分析无法使用")
+            logger.warning("DeepSeek credentials are not configured")
 
     def analyze(self, text: str):
-        """
-        全权交给 DeepSeek 处理：
-        1. 清洗 OCR 乱码（修复重复分数、断行、错误符号）
-        2. 标准化 LaTeX 排版
-        3. 提取知识点
-        """
         if not text or not self.client:
             return {"corrected_text": text, "tags": []}
 
-        logger.info("正在请求 DeepSeek 进行全能分析...")
+        logger.info("Calling DeepSeek analysis")
 
-        # --- 🔥 核心提示词：针对百度 OCR 的“脏数据”定向优化 ---
         system_prompt = """
 你是一个高中数学排版专家和知识点分类助手。
 你的任务是处理 OCR 识别出的原始混乱文本，输出标准的 Markdown + LaTeX 格式，并提取知识点。
@@ -61,38 +51,36 @@ class NLPEngine:
 不要输出任何 Markdown 代码块标记（如 ```json），直接输出 JSON 字符串。
 """
 
-        user_prompt = f"请处理以下 OCR 原始文本：\n\n{text}"
+        user_prompt = f"Process this OCR text and return JSON only:\n\n{text}"
 
         try:
             response = self.client.chat.completions.create(
-                model="deepseek-chat",  # 或 deepseek-v3
+                model=settings.DEEPSEEK_MODEL,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
                 ],
-                # 开启 JSON 模式 (DeepSeek 支持)
-                response_format={"type": "json_object"}, 
-                temperature=0.1, # 低温度，保证修复的准确性
-                max_tokens=4000
+                response_format={"type": "json_object"},
+                temperature=0.1,
+                max_tokens=4000,
             )
 
             result_content = response.choices[0].message.content
-            logger.debug(f"DeepSeek 响应: {result_content}")
+            logger.debug(f"DeepSeek response: {result_content}")
 
-            # 解析 JSON
             try:
                 data = json.loads(result_content)
                 return {
                     "corrected_text": data.get("corrected_text", text),
-                    "tags": data.get("tags", [])
+                    "tags": data.get("tags", []),
                 }
             except json.JSONDecodeError:
-                # 兜底：如果模型没返回完美 JSON，尝试简单清洗
-                logger.warning("DeepSeek 返回非标准 JSON，尝试提取")
+                logger.warning("DeepSeek returned non-JSON content")
                 return {"corrected_text": result_content, "tags": []}
 
         except Exception as e:
-            logger.error(f"DeepSeek 调用失败: {e}")
+            logger.error(f"DeepSeek call failed: {e}")
             return {"corrected_text": text, "tags": []}
+
 
 nlp_service = NLPEngine()

@@ -1,27 +1,63 @@
 <template>
-  <div class="common-layout">
-    <el-container>
-      <el-aside width="220px" class="sidebar-aside">
-        <div class="logo-area">
-          <div class="logo-left">
-            <el-icon :size="24" color="#409EFF"><EditPen /></el-icon>
-            <span class="logo-text">错题本 AI</span>
-          </div>
-          <el-button text size="small" class="logout-btn" @click="handleLogout">退出登录</el-button>
+  <div class="dashboard-layout">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-icon">
+          <el-icon :size="24"><DataAnalysis /></el-icon>
         </div>
-        <el-menu :default-active="activeMenu" class="el-menu-vertical sidebar-menu" @select="handleMenuSelect">
-           <el-menu-item index="upload"><el-icon><UploadFilled /></el-icon><span>题目采集</span></el-menu-item>
-           <el-menu-item index="bank"><el-icon><Collection /></el-icon><span>智能题库</span></el-menu-item>
-           <el-menu-item index="history"><el-icon><Clock /></el-icon><span>历史记录</span></el-menu-item>
-        </el-menu>
-      </el-aside>
+        <div>
+          <strong>Math Knowledge</strong>
+          <span>生产鉴权后台</span>
+        </div>
+      </div>
 
-      <el-main>
-        <div v-if="activeMenu === 'upload'" class="upload-container">
-          
-          <div class="upload-header">
-            <h2>📸 题目采集</h2>
-            <p class="subtitle">第一步：上传 图片 或 PDF</p>
+      <el-menu :default-active="activeMenu" class="sidebar-menu" @select="handleMenuSelect">
+        <el-menu-item index="upload">
+          <el-icon><UploadFilled /></el-icon>
+          <span>题目录入</span>
+        </el-menu-item>
+        <el-menu-item index="bank">
+          <el-icon><Collection /></el-icon>
+          <span>智能题库</span>
+        </el-menu-item>
+        <el-menu-item index="history">
+          <el-icon><Clock /></el-icon>
+          <span>历史记录</span>
+        </el-menu-item>
+        <el-menu-item v-if="adminMode" index="users">
+          <el-icon><UserFilled /></el-icon>
+          <span>用户管理</span>
+        </el-menu-item>
+      </el-menu>
+    </aside>
+
+    <div class="main-shell">
+      <header class="topbar">
+        <div>
+          <h1>{{ pageTitle }}</h1>
+          <p>{{ pageDescription }}</p>
+        </div>
+        <div class="topbar-actions">
+          <div class="identity-card">
+            <div class="identity-name">
+              <strong>{{ currentUser?.display_name || '当前用户' }}</strong>
+              <span>{{ currentUser?.phone || '-' }}</span>
+            </div>
+            <div class="identity-tags">
+              <el-tag :type="adminMode ? 'warning' : 'info'">{{ roleLabel(currentUser?.role) }}</el-tag>
+              <el-tag :type="statusTagType(currentUser?.status)">{{ statusLabel(currentUser?.status) }}</el-tag>
+            </div>
+          </div>
+          <el-button @click="handleChangePassword">修改密码</el-button>
+          <el-button type="danger" plain @click="handleLogout">退出登录</el-button>
+        </div>
+      </header>
+
+      <main class="main-content">
+        <section v-if="activeMenu === 'upload'" class="content-panel">
+          <div class="section-heading">
+            <h2>题目录入</h2>
+            <p>上传图片或 PDF 进入 OCR / AI 识别流程。鉴权失效时会自动清理会话并重新登录。</p>
           </div>
 
           <div v-if="step === 'select-file'" class="upload-box">
@@ -33,23 +69,23 @@
               :show-file-list="false"
               accept=".jpg,.jpeg,.png,.pdf"
             >
-              <el-icon class="el-icon--upload"><upload-filled /></el-icon>
+              <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
               <div class="el-upload__text">
-                拖拽 PDF 或 图片 到此处，或 <em>点击选择</em>
+                拖拽 PDF 或图片到此处，或 <em>点击选择文件</em>
               </div>
             </el-upload>
           </div>
 
           <div v-if="step === 'preview-pdf'" class="pdf-preview-section">
-            <div class="section-header">
-              <h3>📄 请选择要识别的那一页</h3>
+            <div class="section-toolbar">
+              <h3>请选择要识别的 PDF 页面</h3>
               <el-button size="small" @click="resetUpload">重新上传</el-button>
             </div>
-            
+
             <div v-loading="pdfLoading" class="pdf-grid">
-              <div 
-                v-for="(pageData, index) in pdfPages" 
-                :key="index" 
+              <div
+                v-for="(pageData, index) in pdfPages"
+                :key="index"
                 class="pdf-page-card"
                 @click="selectPdfPage(pageData)"
               >
@@ -60,138 +96,401 @@
           </div>
 
           <div v-if="step === 'process-image'" class="image-process-section">
-            <div class="section-header">
-               <h3>🖼️ 图片确认</h3>
-               <el-button size="small" @click="resetUpload">取消</el-button>
+            <div class="section-toolbar">
+              <h3>图片确认</h3>
+              <el-button size="small" @click="resetUpload">取消</el-button>
             </div>
 
             <div class="process-options">
-               <el-radio-group v-model="processMode" size="large">
-                 <el-radio-button label="full">📄 整页识别</el-radio-button>
-                 <el-radio-button label="crop">✂️ 裁剪部分</el-radio-button>
-               </el-radio-group>
+              <el-radio-group v-model="processMode" size="large">
+                <el-radio-button label="full">整页识别</el-radio-button>
+                <el-radio-button label="crop">裁剪识别</el-radio-button>
+              </el-radio-group>
             </div>
 
             <div class="preview-container">
-               <div v-if="processMode === 'crop'" class="cropper-wrapper">
-                  <vue-cropper
-                    ref="cropperRef"
-                    :img="currentImageUrl"
-                    :output-size="1"
-                    output-type="jpeg"
-                    :auto-crop="true"
-                    :center-box="true"
-                    :fixed-box="false"
-                    
-                    :full="true"   
-                    :high="true"
-                    mode="contain"
-                  ></vue-cropper>
-                  <el-button type="primary" class="confirm-btn" @click="confirmCropAndUpload" :loading="ocrLoading">
-                    确认裁剪并上传
-                  </el-button>
-               </div>
+              <div v-if="processMode === 'crop'" class="cropper-wrapper">
+                <vue-cropper
+                  ref="cropperRef"
+                  :img="currentImageUrl"
+                  :output-size="1"
+                  output-type="jpeg"
+                  :auto-crop="true"
+                  :center-box="true"
+                  :fixed-box="false"
+                  :full="true"
+                  :high="true"
+                  mode="contain"
+                />
+                <el-button
+                  type="primary"
+                  class="confirm-btn"
+                  :loading="ocrLoading"
+                  :disabled="isDraftBusy"
+                  @click="confirmCropAndUpload"
+                >
+                  确认裁剪并上传
+                </el-button>
+              </div>
 
-               <div v-else class="full-preview">
-                  <img :src="currentImageUrl" />
-                  <div style="margin-top: 15px;">
-                    <el-button type="primary" @click="uploadFullImage" :loading="ocrLoading">
-                      确认整页上传
-                    </el-button>
-                  </div>
-               </div>
+              <div v-else class="full-preview">
+                <img :src="currentImageUrl" />
+                <el-button type="primary" :loading="ocrLoading" :disabled="isDraftBusy" @click="uploadFullImage">
+                  确认整页上传
+                </el-button>
+              </div>
             </div>
           </div>
 
           <div v-if="ocrLoading && step === 'uploading'" class="loading-state">
-             <el-skeleton :rows="5" animated />
-             <p>正在请求 AI 进行智能分析...</p>
+            <el-skeleton :rows="5" animated />
+            <p>{{ draftOperationText }}</p>
           </div>
 
-          <div v-if="ocrResult && step === 'result'" class="result-section">
-              <el-button @click="resetUpload" style="margin-bottom: 10px;">继续上传下一题</el-button>
-              <el-card shadow="hover">
-                  <div class="markdown-body" v-html="renderedContent"></div>
-              </el-card>
+          <div
+            v-if="step === 'result' && (ocrResult || draftError || draftStatus === 'saved_to_bank')"
+            class="result-section"
+          >
+            <el-button class="reset-result-btn" @click="resetUpload">继续录入下一题</el-button>
+            <el-alert
+              v-if="draftStatusText"
+              :title="draftStatusText"
+              :type="draftStatusAlertType"
+              show-icon
+              :closable="false"
+              class="result-alert"
+            />
+            <el-alert
+              v-if="recognizeWarning"
+              :title="recognizeWarning"
+              type="warning"
+              show-icon
+              :closable="false"
+              class="result-alert"
+            />
+            <el-alert
+              v-if="draftError && draftStatus !== 'failed'"
+              :title="draftError"
+              type="error"
+              show-icon
+              :closable="false"
+              class="result-alert"
+            />
+            <el-card v-if="ocrResult" shadow="hover">
+              <div class="markdown-body" v-html="renderedContent"></div>
+            </el-card>
+            <div v-if="draftStatus === 'draft_ready'" class="result-actions">
+              <el-button type="primary" :loading="saveLoading" :disabled="!canSaveDraft" @click="saveDraftToBank">
+                {{ saveLoading ? '正在保存...' : '保存入题库' }}
+              </el-button>
+            </div>
+            <div v-if="draftStatus === 'saved_to_bank'" class="result-actions">
+              <el-button type="primary" plain @click="resetUpload">继续录入</el-button>
+              <el-button type="success" @click="activeMenu = 'bank'">切换到题库</el-button>
+            </div>
           </div>
-        </div>
+        </section>
 
-        <div v-else-if="activeMenu === 'bank'">
+        <section v-else-if="activeMenu === 'bank'" class="content-panel">
           <bank-panel />
-        </div>
+        </section>
 
-        <div v-else-if="activeMenu === 'history'">
+        <section v-else-if="activeMenu === 'history'" class="content-panel">
           <history-panel />
-        </div>
+        </section>
 
-      </el-main>
-    </el-container>
+        <section v-else-if="activeMenu === 'users'" class="content-panel">
+          <user-management-panel />
+        </section>
+      </main>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
-import { UploadFilled, EditPen, Collection, Clock } from '@element-plus/icons-vue'
+import { Clock, Collection, DataAnalysis, UploadFilled, UserFilled } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
-import MarkdownIt from 'markdown-it'
-import markdownItMathjax3 from 'markdown-it-mathjax3'
 import 'vue-cropper/dist/index.css'
-import { VueCropper } from "vue-cropper"
+import { VueCropper } from 'vue-cropper'
 
-// 引入BankPanel和HistoryPanel组件
+import { API_V1_BASE_URL } from '../config/api'
+import { renderMarkdown } from '@/utils/renderMarkdown'
+import {
+  authState,
+  fetchCurrentUser,
+  isAdminUser,
+  logout
+} from '../utils/auth'
 import HistoryPanel from '../components/HistoryPanel.vue'
 import BankPanel from '../components/BankPanel.vue'
+import UserManagementPanel from '../components/UserManagementPanel.vue'
 
-// 🔥 引入 PDF.js
 import * as pdfjsLib from 'pdfjs-dist'
-// 设置 worker (必须步骤，否则 PDF 无法解析)
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.mjs?url'
+
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker
-//pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`
 
 const router = useRouter()
-const API_BASE = 'http://127.0.0.1:8000/api/v1'
-const md = new MarkdownIt({ html: true, breaks: true, linkify: true })
-md.use(markdownItMathjax3)
 
-// 状态控制
 const activeMenu = ref('upload')
-const step = ref('select-file') // 状态: select-file | preview-pdf | process-image | uploading | result
-const processMode = ref('full') // full | crop
+const step = ref('select-file')
+const processMode = ref('full')
 
-// 数据变量
-const currentImageUrl = ref('') // 当前待处理的图片 Blob URL
-const pdfPages = ref([])        // PDF 每一页转成的图片 Base64 数组
+const currentImageUrl = ref('')
+const pdfPages = ref([])
 const pdfLoading = ref(false)
 const ocrLoading = ref(false)
 const ocrResult = ref('')
+const recognizeWarning = ref('')
 const cropperRef = ref(null)
+const draftStatus = ref('')
+const draftStage = ref('idle')
+const draftId = ref(null)
+const sourceAssetId = ref(null)
+const draftError = ref('')
+const saveLoading = ref(false)
+const saveBlocked = ref(false)
+const saveResult = ref(null)
 
-// -----------------------------------------------------------
-// 1. 文件选择处理
-// -----------------------------------------------------------
-const handleFileSelect = async (uploadFile) => {
-  const file = uploadFile.raw
-  if (!file) return
+const currentUser = computed(() => authState.currentUser)
+const adminMode = computed(() => isAdminUser(currentUser.value))
 
-  const fileType = file.name.split('.').pop().toLowerCase()
-
-  if (fileType === 'pdf') {
-    // === PDF 处理流程 ===
-    await renderPdfToImages(file)
-  } else {
-    // === 图片 处理流程 ===
-    currentImageUrl.value = URL.createObjectURL(file)
-    step.value = 'process-image'
-    processMode.value = 'full' // 默认整页，用户可切裁剪
+const pageTitle = computed(() => {
+  if (activeMenu.value === 'bank') {
+    return '智能题库'
   }
+  if (activeMenu.value === 'history') {
+    return '历史记录'
+  }
+  if (activeMenu.value === 'users') {
+    return '用户管理'
+  }
+  return '题目录入'
+})
+
+const pageDescription = computed(() => {
+  if (activeMenu.value === 'users') {
+    return '管理员可以创建账号、调整角色、启停用和重置密码。'
+  }
+  if (activeMenu.value === 'bank') {
+    return '查看已沉淀的题库内容。'
+  }
+  if (activeMenu.value === 'history') {
+    return '查看近期识别与处理历史。'
+  }
+  return '上传题目素材并进入识别工作流。'
+})
+
+const roleLabel = (role) => {
+  if (role === 'super_admin') {
+    return '超级管理员'
+  }
+  if (role === 'admin') {
+    return '管理员'
+  }
+  return '普通用户'
 }
 
-// -----------------------------------------------------------
-// 2. PDF 解析核心逻辑 (PDF -> 图片数组)
-// -----------------------------------------------------------
+const statusLabel = (status) => {
+  if (status === 'disabled') {
+    return '已禁用'
+  }
+  if (status === 'pending_password_change') {
+    return '待改密'
+  }
+  return '已启用'
+}
+
+const statusTagType = (status) => {
+  if (status === 'disabled') {
+    return 'danger'
+  }
+  if (status === 'pending_password_change') {
+    return 'warning'
+  }
+  return 'success'
+}
+
+const getRecognizeErrorMessage = (payload) => {
+  if (!payload) {
+    return '识别失败，请稍后重试。'
+  }
+  if (typeof payload === 'string') {
+    return payload
+  }
+  const errorText = payload.error || payload.warning || ''
+  if (payload.error_type && errorText) {
+    return `${payload.error_type}: ${errorText}`
+  }
+  return errorText || '识别失败，请稍后重试。'
+}
+
+const getDetailText = (detail) => {
+  if (!detail) {
+    return ''
+  }
+  if (typeof detail === 'string') {
+    return detail
+  }
+  if (Array.isArray(detail)) {
+    return detail.map((item) => item?.msg || item?.message || String(item)).join('；')
+  }
+  return detail.message || detail.error || JSON.stringify(detail)
+}
+
+const getRequestErrorMessage = (error) => {
+  if (!error.response) {
+    return '网络请求失败，请检查后端服务或网络连接后重试。'
+  }
+
+  const status = error.response.status
+  const data = error.response?.data || {}
+  const detail = getDetailText(data.detail)
+  const combinedText = `${detail} ${data.error || ''} ${data.warning || ''}`.toLowerCase()
+
+  if (status === 400) {
+    if (combinedText.includes('non-image') || combinedText.includes('image') || combinedText.includes('图片')) {
+      return '当前 Draft recognize 仅支持图片素材。'
+    }
+    return detail || '请求参数不正确，请检查上传素材后重试。'
+  }
+  if (status === 401) {
+    return '登录状态已失效，请重新登录。'
+  }
+  if (status === 403) {
+    return '当前账号无权限或登录状态异常，请重新登录。'
+  }
+  if (status === 404) {
+    if (combinedText.includes('asset') || combinedText.includes('素材')) {
+      return '素材不存在，请重新上传后再试。'
+    }
+    if (combinedText.includes('draft') || combinedText.includes('草稿')) {
+      return '草稿不存在，请重新上传后再试。'
+    }
+    return '请求的素材或草稿不存在，请重新上传后再试。'
+  }
+  if (status === 409) {
+    return '当前草稿已保存或状态不允许重复保存。'
+  }
+  if (status >= 500) {
+    return '服务端处理失败，请稍后重试或联系管理员。'
+  }
+  if (data.error_type || data.error) {
+    return getRecognizeErrorMessage(data)
+  }
+  return detail || '请求失败，请稍后重试。'
+}
+
+const resetDraftState = () => {
+  draftStatus.value = ''
+  draftStage.value = 'idle'
+  draftId.value = null
+  sourceAssetId.value = null
+  draftError.value = ''
+  saveLoading.value = false
+  saveBlocked.value = false
+  saveResult.value = null
+}
+
+const setStageMessage = (stage) => {
+  draftStage.value = stage
+}
+
+const extractId = (payload, fields) => {
+  for (const field of fields) {
+    if (payload?.[field] !== undefined && payload[field] !== null) {
+      return payload[field]
+    }
+  }
+  return null
+}
+
+const getDraftContent = (payload) => payload?.content || payload?.current_content?.text || ''
+
+const isDraftBusy = computed(() => ocrLoading.value || draftStatus.value === 'recognizing')
+const canSaveDraft = computed(
+  () =>
+    draftStatus.value === 'draft_ready' &&
+    Boolean(draftId.value) &&
+    !ocrLoading.value &&
+    !saveLoading.value &&
+    !saveBlocked.value
+)
+
+const draftOperationText = computed(() => {
+  if (draftStage.value === 'uploading_asset') {
+    return '正在上传素材...'
+  }
+  if (draftStage.value === 'creating_draft') {
+    return '正在创建草稿...'
+  }
+  if (draftStage.value === 'recognizing') {
+    return '正在识别题目，请稍候...'
+  }
+  if (draftStage.value === 'saving_to_bank') {
+    return '正在保存入题库...'
+  }
+  return '正在处理，请稍候...'
+})
+
+const draftStatusText = computed(() => {
+  if (draftStatus.value === 'draft_created') {
+    return '草稿已创建，准备识别'
+  }
+  if (draftStatus.value === 'recognizing') {
+    return '正在识别'
+  }
+  if (draftStatus.value === 'draft_ready') {
+    return '识别结果已就绪'
+  }
+  if (draftStatus.value === 'failed') {
+    return draftError.value || '识别失败，请重新上传。'
+  }
+  if (draftStatus.value === 'saved_to_bank') {
+    const questionId = saveResult.value?.question_id || '-'
+    const revisionId = saveResult.value?.question_revision_id || '-'
+    return `保存成功，question_id: ${questionId}，question_revision_id: ${revisionId}`
+  }
+  return ''
+})
+
+const draftStatusAlertType = computed(() => {
+  if (draftStatus.value === 'failed') {
+    return 'error'
+  }
+  if (draftStatus.value === 'saved_to_bank') {
+    return 'success'
+  }
+  return 'info'
+})
+
+const handleMenuSelect = (index) => {
+  if (index === 'users' && !adminMode.value) {
+    return
+  }
+  activeMenu.value = index
+}
+
+const handleFileSelect = async (uploadFile) => {
+  const file = uploadFile.raw
+  if (!file) {
+    return
+  }
+
+  const fileType = file.name.split('.').pop().toLowerCase()
+  if (fileType === 'pdf') {
+    await renderPdfToImages(file)
+    return
+  }
+
+  currentImageUrl.value = URL.createObjectURL(file)
+  step.value = 'process-image'
+  processMode.value = 'full'
+}
+
 const renderPdfToImages = async (file) => {
   step.value = 'preview-pdf'
   pdfLoading.value = true
@@ -200,312 +499,569 @@ const renderPdfToImages = async (file) => {
   try {
     const arrayBuffer = await file.arrayBuffer()
     const pdf = await pdfjsLib.getDocument(arrayBuffer).promise
-    
-    // 循环读取每一页
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i)
-      const viewport = page.getViewport({ scale: 2.5 }) // 1.5倍清晰度
-      
+
+    for (let index = 1; index <= pdf.numPages; index += 1) {
+      const page = await pdf.getPage(index)
+      const viewport = page.getViewport({ scale: 2.5 })
       const canvas = document.createElement('canvas')
       const context = canvas.getContext('2d')
       canvas.height = viewport.height
       canvas.width = viewport.width
 
-      await page.render({ canvasContext: context, viewport: viewport }).promise
-      
-      // 转为 Base64 图片用于展示
+      await page.render({ canvasContext: context, viewport }).promise
       pdfPages.value.push(canvas.toDataURL('image/jpeg'))
     }
   } catch (error) {
     console.error(error)
-    ElMessage.error('PDF 解析失败，可能是加密文件')
+    ElMessage.error('PDF 解析失败，可能是加密文件或文件损坏。')
     resetUpload()
   } finally {
     pdfLoading.value = false
   }
 }
 
-// 用户点击了 PDF 的某一页
 const selectPdfPage = (base64Img) => {
   currentImageUrl.value = base64Img
   step.value = 'process-image'
   processMode.value = 'full'
 }
 
-// -----------------------------------------------------------
-// 3. 上传逻辑
-// -----------------------------------------------------------
-
-// 场景 A: 确认裁剪并上传
 const confirmCropAndUpload = () => {
-  if (!cropperRef.value) return
+  if (!cropperRef.value || isDraftBusy.value) {
+    return
+  }
+
   cropperRef.value.getCropBlob((blob) => {
-    const file = new File([blob], "crop_question.jpg", { type: "image/jpeg" })
+    const file = new File([blob], 'crop_question.jpg', { type: 'image/jpeg' })
     runRecognition(file)
   })
 }
 
-// 场景 B: 确认整页上传 (需要把 blob URL 转回 File 对象)
 const uploadFullImage = async () => {
-  // fetch 拿回 blob
-  const response = await fetch(currentImageUrl.value)
-  const blob = await response.blob()
-  const file = new File([blob], "full_page.jpg", { type: "image/jpeg" })
-  runRecognition(file)
+  if (isDraftBusy.value) {
+    return
+  }
+
+  try {
+    const response = await fetch(currentImageUrl.value)
+    const blob = await response.blob()
+    const file = new File([blob], 'full_page.jpg', { type: 'image/jpeg' })
+    runRecognition(file)
+  } catch (error) {
+    console.error(error)
+    ElMessage.error('当前图片不可用，请重新选择后再试。')
+    step.value = 'process-image'
+  }
 }
 
-// 统一后的 API 调用
 const runRecognition = async (file) => {
   step.value = 'uploading'
   ocrLoading.value = true
   ocrResult.value = ''
+  recognizeWarning.value = ''
+  resetDraftState()
+
+  try {
+    setStageMessage('uploading_asset')
+    const assetFormData = new FormData()
+    assetFormData.append('file', file)
+    const assetResponse = await axios.post(`${API_V1_BASE_URL}/assets`, assetFormData)
+    const uploadedAssetId = extractId(assetResponse.data, ['source_asset_id', 'asset_id', 'id'])
+
+    if (!uploadedAssetId) {
+      throw new Error('素材上传成功，但响应中缺少 source_asset_id。')
+    }
+
+    sourceAssetId.value = uploadedAssetId
+    setStageMessage('creating_draft')
+    const draftResponse = await axios.post(`${API_V1_BASE_URL}/drafts`, {
+      source_asset_id: uploadedAssetId
+    })
+    const createdDraftId = extractId(draftResponse.data, ['draft_id', 'id'])
+
+    if (!createdDraftId) {
+      throw new Error('草稿创建成功，但响应中缺少 draft_id。')
+    }
+
+    draftId.value = createdDraftId
+    draftStatus.value = draftResponse.data?.status || 'draft_created'
+    await Promise.resolve()
+    setStageMessage('recognizing')
+    draftStatus.value = 'recognizing'
+
+    const recognizeResponse = await axios.post(`${API_V1_BASE_URL}/drafts/${createdDraftId}/recognize`)
+    const payload = recognizeResponse.data || {}
+    draftStatus.value = payload.status || (payload.success ? 'draft_ready' : 'failed')
+
+    if (draftStatus.value === 'draft_ready' && payload.success !== false) {
+      ocrResult.value = getDraftContent(payload)
+      step.value = 'result'
+      if (payload.partial_success) {
+        recognizeWarning.value =
+          payload.warning || 'OCR 已完成，但 AI 整理部分失败，当前展示降级结果，请核对后再保存。'
+        ElMessage.warning(recognizeWarning.value)
+      } else {
+        ElMessage.success('识别完成。')
+      }
+      return
+    }
+
+    draftStatus.value = 'failed'
+    draftError.value = getRecognizeErrorMessage(payload)
+    ElMessage.error(draftError.value)
+    step.value = 'result'
+  } catch (error) {
+    console.error(error)
+    draftStatus.value = 'failed'
+    draftError.value = getRequestErrorMessage(error)
+    if (error.response?.status === 409 && error.response?.data?.detail === 'Asset already exists') {
+      draftError.value = '素材上传失败：Asset already exists，请更换图片或重新裁剪后再试。'
+    } else if (!error.response && !error.isAxiosError && error.message) {
+      draftError.value = error.message
+    }
+    ElMessage.error(draftError.value)
+    step.value = 'result'
+  } finally {
+    ocrLoading.value = false
+    setStageMessage('idle')
+  }
+}
+
+// Legacy compatibility path. Do not use for Dashboard main Draft flow.
+const runLegacyRecognition = async (file) => {
+  step.value = 'uploading'
+  ocrLoading.value = true
+  ocrResult.value = ''
+  recognizeWarning.value = ''
+  resetDraftState()
 
   const formData = new FormData()
   formData.append('file', file)
 
   try {
-    const res = await axios.post(`${API_BASE}/recognize`, formData, {
-      headers: { 
-        'Authorization': `Bearer ${localStorage.getItem('token')}` 
-      }
-    })
+    const response = await axios.post(`${API_V1_BASE_URL}/recognize`, formData)
+    const payload = response.data || {}
 
-    if (res.data.success) {
-      ocrResult.value = res.data.content
+    if (payload.success) {
+      ocrResult.value = payload.content || ''
       step.value = 'result'
-      ElMessage.success('识别完成')
-    } else {
-      ElMessage.error(res.data.error || '识别失败')
-      step.value = 'process-image' // 失败后退回图片确认页
+      if (payload.partial_success) {
+        recognizeWarning.value = payload.warning || 'OCR 已完成，但 AI 整理失败，当前展示 OCR 原始结果。'
+        ElMessage.warning(getRecognizeErrorMessage(payload))
+      } else {
+        ElMessage.success('识别完成。')
+      }
+      return
     }
+
+    ElMessage.error(getRecognizeErrorMessage(payload))
+    step.value = 'process-image'
   } catch (error) {
     console.error(error)
-    ElMessage.error('请求失败')
+    ElMessage.error(getRequestErrorMessage(error))
     step.value = 'process-image'
   } finally {
     ocrLoading.value = false
   }
 }
 
-// 重置流程
+const saveDraftToBank = async () => {
+  if (!canSaveDraft.value) {
+    return
+  }
+
+  saveLoading.value = true
+  draftError.value = ''
+  setStageMessage('saving_to_bank')
+  try {
+    const response = await axios.post(`${API_V1_BASE_URL}/drafts/${draftId.value}/save-to-bank`)
+    saveResult.value = {
+      question_id: response.data?.question_id,
+      question_revision_id: response.data?.question_revision_id
+    }
+    draftStatus.value = response.data?.status || 'saved_to_bank'
+    ElMessage.success(draftStatusText.value)
+  } catch (error) {
+    console.error(error)
+    draftError.value = getRequestErrorMessage(error)
+    if (error.response?.status === 409) {
+      saveBlocked.value = true
+    }
+    ElMessage.error(draftError.value)
+  } finally {
+    saveLoading.value = false
+    setStageMessage('idle')
+  }
+}
+
 const resetUpload = () => {
   step.value = 'select-file'
   currentImageUrl.value = ''
   pdfPages.value = []
   ocrResult.value = ''
+  recognizeWarning.value = ''
+  resetDraftState()
 }
 
-// 路由与渲染
-const renderedContent = computed(() => {
-  return ocrResult.value ? md.render(ocrResult.value) : ''
+const renderedContent = computed(() => (ocrResult.value ? renderMarkdown(ocrResult.value) : ''))
+
+const handleLogout = async () => {
+  await logout()
+  router.replace('/login')
+}
+
+const handleChangePassword = () => {
+  router.push('/change-password')
+}
+
+onMounted(async () => {
+  if (!currentUser.value) {
+    await fetchCurrentUser()
+  }
+
+  if (!adminMode.value && activeMenu.value === 'users') {
+    activeMenu.value = 'upload'
+  }
 })
-const handleMenuSelect = (index) => {
-  // 我们不再 router.push，而是直接切换 activeMenu 变量
-  // 这样侧边栏就不会消失了
-  activeMenu.value = index
-}
-
-
-const handleLogout = () => {
-  localStorage.removeItem('token')
-  localStorage.removeItem('username')
-  router.push('/login')
-}
 </script>
 
-<style scoped>
-/* 布局样式 */
-.upload-container { max-width: 900px; margin: 0 auto; padding: 20px; }
-.upload-header { text-align: center; margin-bottom: 30px; }
-.subtitle { color: #666; font-size: 14px; margin-top: 5px; }
-
-/* Sidebar */
-.sidebar-aside {
-  background: #f8fafc;
-  border-right: 1px solid #e6e8eb;
-  padding: 16px 12px;
-  box-sizing: border-box;
+<style scoped lang="scss">
+.dashboard-layout {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  background: linear-gradient(180deg, #f4efe5 0%, #f7faf8 100%);
 }
 
-.logo-area {
+.sidebar {
+  padding: 20px 16px;
+  border-right: 1px solid rgba(20, 51, 66, 0.08);
+  background:
+    radial-gradient(circle at top, rgba(41, 132, 103, 0.16), transparent 24%),
+    linear-gradient(180deg, #143142 0%, #163746 100%);
+}
+
+.sidebar-brand {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 12px 8px 18px;
-  margin-bottom: 6px;
-  border-radius: 10px;
-  background: #ffffff;
-  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.08);
+  gap: 12px;
+  margin-bottom: 22px;
+  padding: 14px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #f7fbfb;
+
+  strong,
+  span {
+    display: block;
+  }
+
+  span {
+    margin-top: 4px;
+    font-size: 12px;
+    opacity: 0.8;
+  }
 }
 
-.logo-left {
-  display: flex;
+.brand-icon {
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-}
-
-.logout-btn {
-  color: #d14343;
-}
-
-
-.logo-text {
-  font-size: 16px;
-  font-weight: 600;
-  color: #2b3a4a;
-  letter-spacing: 0.3px;
+  justify-content: center;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.14);
 }
 
 :deep(.sidebar-menu) {
   border-right: none;
   background: transparent;
-  padding-top: 4px;
 }
 
 :deep(.sidebar-menu .el-menu-item) {
-  height: 48px;
-  line-height: 48px;
-  font-size: 15px;
-  margin: 4px 6px;
-  border-radius: 10px;
-  padding-left: 16px;
-  padding-right: 12px;
-  color: #2b3a4a;
-  position: relative;
-  transition: background-color 0.2s ease, box-shadow 0.2s ease, color 0.2s ease;
-}
-
-:deep(.sidebar-menu .el-menu-item .el-icon) {
-  font-size: 19px;
-  margin-right: 10px;
-  color: #5b6b7a;
+  margin-bottom: 8px;
+  height: 46px;
+  line-height: 46px;
+  border-radius: 14px;
+  color: rgba(247, 251, 251, 0.8);
 }
 
 :deep(.sidebar-menu .el-menu-item:hover) {
-  background: #eef4ff;
+  background: rgba(255, 255, 255, 0.12);
 }
 
 :deep(.sidebar-menu .el-menu-item.is-active) {
-  background: #e6f0ff;
-  color: #1f5fbf;
-  box-shadow: 0 6px 14px rgba(31, 95, 191, 0.12);
+  background: #f5eee3;
+  color: #123142;
   font-weight: 600;
 }
 
-:deep(.sidebar-menu .el-menu-item.is-active .el-icon) {
-  color: #1f5fbf;
+.main-shell {
+  padding: 24px;
 }
 
-:deep(.sidebar-menu .el-menu-item.is-active::before) {
-  content: '';
-  position: absolute;
-  left: -6px;
-  top: 8px;
-  width: 4px;
-  height: 32px;
-  border-radius: 4px;
-  background: #1f5fbf;
-}
-
-/* 文件选择框 */
-.upload-box { border: 2px dashed #dcdfe6; padding: 40px 0; text-align: center; border-radius: 8px; cursor: pointer; transition: 0.3s; }
-.upload-box:hover { border-color: #409eff; background-color: #f5f7fa; }
-
-/* PDF 预览网格 */
-.pdf-preview-section { 
-  text-align: center; 
-  padding: 0 20px; /* 给两边留点空隙 */
-}
-
-.pdf-grid { 
-  display: grid; 
-  /* 🔥 修改点：最小宽度从 150px 增大到 240px，让预览图更大 */
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); 
-  gap: 30px; 
-  margin-top: 25px; 
-}
-
-.pdf-page-card { 
-  cursor: pointer; 
-  border: 1px solid #e4e7ed; 
-  border-radius: 8px; 
-  padding: 15px; 
-  background: white;
-  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
-  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.05);
-  position: relative; /* 为了放页码 */
-}
-
-/* 悬停效果：上浮 + 阴影加深 + 边框变蓝 */
-.pdf-page-card:hover { 
-  border-color: #409eff; 
-  transform: translateY(-8px); 
-  box-shadow: 0 10px 20px rgba(64, 158, 255, 0.15);
-}
-
-.pdf-thumb { 
-  width: 100%; 
-  height: auto;
-  border-radius: 4px; 
-  /* 给图片加一点边框，像A4纸的感觉 */
-  border: 1px solid #eee; 
-}
-
-.page-number { 
-  margin-top: 12px; 
-  font-size: 14px; 
-  color: #606266; 
-  font-weight: 600; 
-  letter-spacing: 1px;
-}
-
-/* =========================================
-   图片处理区 (裁剪/整页预览) - 加大
-   ========================================= */
-.image-process-section { 
-  text-align: center; 
-  /* 限制最大宽度，防止在大屏上太宽 */
-  max-width: 1000px; 
-  margin: 0 auto;
-}
-
-.preview-container { 
-  /* 🔥 修改点：移除之前的 min-height，改用 Flex 或直接撑开 */
-  background: #f5f7fa;
-  border: 1px solid #dcdfe6;
-  border-radius: 8px; 
-  padding: 20px; 
-  margin-top: 10px;
-  box-shadow: inset 0 0 10px rgba(0,0,0,0.05);
-}
-
-/* 裁剪器容器：高度设为屏幕高度的 70%，保证操作空间 */
-.cropper-wrapper { 
-  width: 100%; 
-  height: 70vh; /* 🔥 关键：使用视口高度，让它尽可能大 */
-  min-height: 500px;
-  position: relative; 
-  background-color: #333; /* 裁剪时背景深色更专业 */
-}
-
-.confirm-btn { 
-  position: absolute; 
-  bottom: 30px; 
-  right: 30px; 
-  z-index: 999; 
-  padding: 12px 24px;
-  font-size: 16px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-}
-
-/* 整页预览模式：让图片宽一点 */
-.full-preview img {
-  max-width: 100%; 
-  /* 🔥 修改点：移除 max-height: 500px 限制，让它自然长高 */
-  height: auto; 
-  box-shadow: 0 4px 16px rgba(0,0,0,0.1); /* 纸张阴影 */
+.topbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
   margin-bottom: 20px;
-  background: white;
+  padding: 24px 26px;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 18px 48px rgba(18, 49, 66, 0.08);
+
+  h1 {
+    margin: 0 0 8px;
+    font-size: 30px;
+    color: #173242;
+  }
+
+  p {
+    margin: 0;
+    color: #5b7078;
+    line-height: 1.7;
+  }
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.identity-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: #f5f7f3;
+}
+
+.identity-name {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+
+  strong {
+    color: #193243;
+  }
+
+  span {
+    color: #60737b;
+    font-size: 13px;
+  }
+}
+
+.identity-tags {
+  display: flex;
+  gap: 8px;
+}
+
+.main-content {
+  min-width: 0;
+}
+
+.content-panel {
+  padding: 24px;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: 0 18px 48px rgba(18, 49, 66, 0.08);
+}
+
+.section-heading {
+  margin-bottom: 20px;
+
+  h2 {
+    margin: 0 0 8px;
+    font-size: 26px;
+    color: #173242;
+  }
+
+  p {
+    margin: 0;
+    color: #5c7078;
+    line-height: 1.7;
+  }
+}
+
+.section-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.upload-box {
+  border: 2px dashed #c6d4d2;
+  padding: 44px 0;
+  text-align: center;
+  border-radius: 18px;
+  cursor: pointer;
+  transition: 0.2s ease;
+}
+
+.upload-box:hover {
+  border-color: #2d7a67;
+  background-color: #f5faf8;
+}
+
+.pdf-preview-section {
+  padding: 0 8px;
+}
+
+.pdf-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 24px;
+}
+
+.pdf-page-card {
+  cursor: pointer;
+  border: 1px solid #e6ece9;
+  border-radius: 16px;
+  padding: 14px;
+  background: #fff;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  box-shadow: 0 10px 24px rgba(18, 49, 66, 0.05);
+}
+
+.pdf-page-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 16px 36px rgba(18, 49, 66, 0.12);
+}
+
+.pdf-thumb {
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid #edf1f0;
+}
+
+.page-number {
+  margin-top: 10px;
+  text-align: center;
+  color: #5f7077;
+  font-weight: 600;
+}
+
+.image-process-section {
+  max-width: 1080px;
+}
+
+.process-options {
+  margin-bottom: 14px;
+}
+
+.preview-container {
+  background: #f5f7f6;
+  border: 1px solid #dce5e1;
+  border-radius: 18px;
+  padding: 20px;
+}
+
+.cropper-wrapper {
+  width: 100%;
+  height: 70vh;
+  min-height: 480px;
+  position: relative;
+  background-color: #233843;
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.confirm-btn {
+  position: absolute;
+  right: 22px;
+  bottom: 22px;
+  z-index: 10;
+}
+
+.full-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.full-preview img {
+  max-width: 100%;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 12px 28px rgba(18, 49, 66, 0.08);
+}
+
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.result-section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.reset-result-btn {
+  width: fit-content;
+}
+
+.result-alert {
+  margin-bottom: 4px;
+}
+
+.result-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+@media (max-width: 1180px) {
+  .dashboard-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    padding-bottom: 8px;
+  }
+
+  .main-shell {
+    padding-top: 0;
+  }
+}
+
+@media (max-width: 900px) {
+  .topbar {
+    flex-direction: column;
+  }
+
+  .topbar-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .identity-card {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
+
+@media (max-width: 640px) {
+  .main-shell {
+    padding: 16px;
+  }
+
+  .content-panel,
+  .topbar {
+    padding: 18px;
+    border-radius: 20px;
+  }
+
+  .identity-card {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 }
 </style>

@@ -1,16 +1,40 @@
 import { createRouter, createWebHistory } from 'vue-router'
-// 注意路径：如果 Login.vue 在 views 文件夹下，就要写 ../views/Login.vue
-import Login from '../views/Login.vue' 
+import { ElMessage } from 'element-plus'
+
+import Login from '../views/Login.vue'
+import Register from '../views/Register.vue'
 import Dashboard from '../views/Dashboard.vue'
+import ChangePassword from '../views/ChangePassword.vue'
+import {
+  ensureAuthenticated,
+  getCurrentUser,
+  needsPasswordChange,
+  resolvePublicSignupCapability
+} from '../utils/auth'
 
-
+const PUBLIC_SIGNUP_DISABLED_MESSAGE = '当前环境未开放公开注册，请联系管理员创建账号。'
+const PUBLIC_SIGNUP_CAPABILITY_UNAVAILABLE_MESSAGE = '暂时无法确认当前环境是否开放公开注册，前端会按关闭状态处理，请稍后重试。'
 
 const routes = [
-  { path: '/login', component: Login },
-  { 
-    path: '/', 
-    component: Dashboard, 
-    meta: { requiresAuth: true } 
+  {
+    path: '/login',
+    component: Login,
+    meta: { guestOnly: true }
+  },
+  {
+    path: '/register',
+    component: Register,
+    meta: { guestOnly: true }
+  },
+  {
+    path: '/change-password',
+    component: ChangePassword,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/',
+    component: Dashboard,
+    meta: { requiresAuth: true }
   }
 ]
 
@@ -19,19 +43,53 @@ const router = createRouter({
   routes
 })
 
-// 全局前置守卫：检查是否有 token
-router.beforeEach((to, from, next) => {
-  const token = localStorage.getItem('token')
-  
-  // ????????? -> ???
-  if (to.path === '/login' && token) {
-    next('/')
+router.beforeEach(async (to, from, next) => {
+  if (to.meta.guestOnly) {
+    const authenticated = await ensureAuthenticated()
+    if (authenticated) {
+      const currentUser = getCurrentUser()
+      next(needsPasswordChange(currentUser) ? '/change-password' : '/')
+      return
+    }
+  }
+
+  if (to.path === '/register') {
+    const publicSignupCapability = await resolvePublicSignupCapability({ force: true })
+    if (!publicSignupCapability.enabled) {
+      ElMessage[publicSignupCapability.failed ? 'error' : 'warning'](
+        publicSignupCapability.failed
+          ? PUBLIC_SIGNUP_CAPABILITY_UNAVAILABLE_MESSAGE
+          : PUBLIC_SIGNUP_DISABLED_MESSAGE
+      )
+      next('/login')
+      return
+    }
+  }
+
+  if (to.meta.requiresAuth) {
+    const authenticated = await ensureAuthenticated()
+    if (!authenticated) {
+      next('/login')
+      return
+    }
+  }
+
+  const currentUser = getCurrentUser()
+  const requiresPasswordChange = needsPasswordChange(currentUser)
+
+  if (to.path === '/login' && currentUser) {
+    next(requiresPasswordChange ? '/change-password' : '/')
     return
   }
 
-  // ??????????????? token -> ?????
-  if (to.meta.requiresAuth && !token) {
-    next('/login')
+  if (requiresPasswordChange && to.path !== '/change-password') {
+    ElMessage.warning('当前账号需要先完成密码修改。')
+    next('/change-password')
+    return
+  }
+
+  if (!to.meta.requiresAuth && from.path === '/change-password' && requiresPasswordChange) {
+    next('/change-password')
     return
   }
 

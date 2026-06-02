@@ -25,7 +25,7 @@ python -m pip install -U pip
 Write-Host "Installing requirements: pip install -r $requirementsPath"
 pip install -r $requirementsPath
 
-Write-Host "Starting backend: uvicorn app.main:app --reload"
-Push-Location (Join-Path $repoRoot "backend")
-uvicorn app.main:app --reload
+Write-Host "Starting backend from repo root: uvicorn --app-dir backend app.main:app --reload"
+Push-Location $repoRoot
+uvicorn --app-dir backend app.main:app --reload
 Pop-Location

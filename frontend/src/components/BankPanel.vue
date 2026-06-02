@@ -43,9 +43,9 @@
         shadow="hover"
       >
         <div class="list-item-content" @click="openDetail(item)">
-          <div class="thumb-box" v-if="item.image_url">
+          <div class="thumb-box" v-if="getImageUrl(item)">
             <el-image
-              :src="getImageUrl(item.image_url)"
+              :src="getImageUrl(item)"
               fit="cover"
               class="thumb-img"
             >
@@ -97,10 +97,10 @@
 
       <div class="detail-layout" v-else-if="currentItem">
         <div class="detail-left">
-          <div class="image-wrapper" v-if="currentItem.image_url">
+          <div class="image-wrapper" v-if="getImageUrl(currentItem)">
             <el-image
-              :src="getImageUrl(currentItem.image_url)"
-              :preview-src-list="[getImageUrl(currentItem.image_url)]"
+              :src="getImageUrl(currentItem)"
+              :preview-src-list="[getImageUrl(currentItem)]"
               fit="scale-down"
               class="detail-image"
             >
@@ -144,11 +144,10 @@ import { ref, computed, onMounted } from 'vue'
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 import { Refresh, Search, Picture as IconPicture } from '@element-plus/icons-vue'
-import MarkdownIt from 'markdown-it'
-import markdownItMathjax3 from 'markdown-it-mathjax3'
+import { API_V1_BASE_URL, resolveQuestionImageUrl } from '../config/api'
+import { renderMarkdown } from '@/utils/renderMarkdown'
 
-const md = new MarkdownIt({ html: true }).use(markdownItMathjax3)
-const API_BASE = 'http://127.0.0.1:8000/api/v1'
+const API_BASE = API_V1_BASE_URL
 
 const loading = ref(false)
 const detailLoading = ref(false)
@@ -160,9 +159,7 @@ const currentItem = ref(null)
 const fetchQuestions = async () => {
   loading.value = true
   try {
-    const res = await axios.get(`${API_BASE}/history?limit=100`, {
-      headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-    })
+    const res = await axios.get(`${API_BASE}/questions?limit=100`)
     list.value = res.data || []
   } catch (error) {
     console.error(error)
@@ -173,9 +170,20 @@ const fetchQuestions = async () => {
 }
 
 
-const openDetail = (item) => {
-  currentItem.value = item
+const openDetail = async (item) => {
   dialogVisible.value = true
+  detailLoading.value = true
+  currentItem.value = item
+
+  try {
+    const res = await axios.get(`${API_BASE}/questions/${item.id}`)
+    currentItem.value = res.data
+  } catch (error) {
+    console.error(error)
+    ElMessage.error('获取题目详情失败')
+  } finally {
+    detailLoading.value = false
+  }
 }
 
 const filteredList = computed(() => {
@@ -199,7 +207,7 @@ const getTags = (item) => {
   })
 }
 
-const renderTex = (text) => text ? md.render(text) : '<span style="color:#999">暂无内容</span>'
+const renderTex = (text) => text ? renderMarkdown(text) : '<span style="color:#999">暂无内容</span>'
 
 const getPreviewText = (text) => {
   if (!text) return '暂无识别内容'
@@ -209,7 +217,7 @@ const getPreviewText = (text) => {
 
 const formatTime = (value) => value ? new Date(value).toLocaleString() : '-'
 
-const getImageUrl = (path) => path ? `http://127.0.0.1:8000/static/uploads/${path}` : ''
+const getImageUrl = (item) => resolveQuestionImageUrl(item)
 
 const handleGoUpload = () => {
   ElMessage.info('请切换到“题目采集”上传题目')
