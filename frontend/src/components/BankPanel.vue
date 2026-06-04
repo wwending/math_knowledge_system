@@ -6,6 +6,16 @@
         <p class="subtitle">仅显示当前登录用户的题目</p>
       </div>
       <div class="header-actions">
+        <div class="selection-summary">
+          已选 {{ selectedQuestionIds.length }} 题
+        </div>
+        <el-button
+          type="success"
+          :disabled="selectedQuestionIds.length === 0"
+          @click="openCreatePaperDialog"
+        >
+          创建试卷
+        </el-button>
         <el-input
           v-model="keyword"
           placeholder="关键词搜索（内容/知识点）"
@@ -43,6 +53,13 @@
         shadow="hover"
       >
         <div class="list-item-content" @click="openDetail(item)">
+          <div class="select-box" @click.stop>
+            <el-checkbox
+              :model-value="isQuestionSelected(item.id)"
+              @change="toggleQuestionSelection(item.id)"
+            />
+          </div>
+
           <div class="thumb-box" v-if="getImageUrl(item)">
             <el-image
               :src="getImageUrl(item)"
@@ -136,6 +153,46 @@
         </div>
       </div>
     </el-dialog>
+
+    <el-dialog
+      v-model="createPaperDialogVisible"
+      title="创建试卷"
+      width="520px"
+      destroy-on-close
+    >
+      <el-alert
+        :title="`将使用当前已选 ${selectedQuestionIds.length} 道题创建试卷`"
+        type="info"
+        show-icon
+        :closable="false"
+        class="paper-dialog-alert"
+      />
+      <el-form label-position="top" class="paper-form" @submit.prevent>
+        <el-form-item label="标题（必填）">
+          <el-input v-model="paperForm.title" maxlength="80" show-word-limit />
+        </el-form-item>
+        <el-form-item label="说明（可选）">
+          <el-input
+            v-model="paperForm.description"
+            type="textarea"
+            :rows="3"
+            maxlength="300"
+            show-word-limit
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="createPaperDialogVisible = false">取消</el-button>
+        <el-button
+          type="primary"
+          :loading="creatingPaper"
+          :disabled="!canSubmitPaper"
+          @click="createPaper"
+        >
+          创建
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -148,6 +205,7 @@ import { API_V1_BASE_URL, resolveQuestionImageUrl } from '../config/api'
 import { renderMarkdown } from '@/utils/renderMarkdown'
 
 const API_BASE = API_V1_BASE_URL
+const emit = defineEmits(['paper-created'])
 
 const loading = ref(false)
 const detailLoading = ref(false)
@@ -155,6 +213,17 @@ const list = ref([])
 const keyword = ref('')
 const dialogVisible = ref(false)
 const currentItem = ref(null)
+const selectedQuestionIds = ref([])
+const createPaperDialogVisible = ref(false)
+const creatingPaper = ref(false)
+const paperForm = ref({
+  title: '',
+  description: ''
+})
+
+const canSubmitPaper = computed(() => {
+  return selectedQuestionIds.value.length > 0 && paperForm.value.title.trim().length > 0 && !creatingPaper.value
+})
 
 const fetchQuestions = async () => {
   loading.value = true
@@ -183,6 +252,79 @@ const openDetail = async (item) => {
     ElMessage.error('获取题目详情失败')
   } finally {
     detailLoading.value = false
+  }
+}
+
+const isQuestionSelected = (questionId) => selectedQuestionIds.value.includes(questionId)
+
+const toggleQuestionSelection = (questionId) => {
+  if (isQuestionSelected(questionId)) {
+    selectedQuestionIds.value = selectedQuestionIds.value.filter((id) => id !== questionId)
+    return
+  }
+  selectedQuestionIds.value = [...selectedQuestionIds.value, questionId]
+}
+
+const openCreatePaperDialog = () => {
+  if (selectedQuestionIds.value.length === 0) {
+    ElMessage.warning('请先选择至少一道题。')
+    return
+  }
+  paperForm.value = {
+    title: '',
+    description: ''
+  }
+  createPaperDialogVisible.value = true
+}
+
+const getPaperErrorMessage = (error) => {
+  const status = error.response?.status
+  const detail = error.response?.data?.detail
+  if (status === 409) {
+    return detail || '试卷中存在重复题目，请调整后重试。'
+  }
+  if (status === 404) {
+    return detail || '题目不存在或无权访问，请刷新题库后重试。'
+  }
+  if (status === 400) {
+    return detail || '试卷信息不完整，请检查标题和题目。'
+  }
+  if (status === 401 || status === 403) {
+    return '登录状态或权限异常，请重新登录后再试。'
+  }
+  return detail || '创建试卷失败，请稍后重试。'
+}
+
+const createPaper = async () => {
+  if (!canSubmitPaper.value) {
+    if (selectedQuestionIds.value.length === 0) {
+      ElMessage.warning('请先选择至少一道题。')
+    } else {
+      ElMessage.warning('请填写试卷标题。')
+    }
+    return
+  }
+
+  creatingPaper.value = true
+  try {
+    await axios.post(`${API_BASE}/papers`, {
+      title: paperForm.value.title.trim(),
+      description: paperForm.value.description.trim() || null,
+      items: selectedQuestionIds.value.map((questionId) => ({
+        question_id: questionId,
+        score: 0
+      }))
+    })
+    selectedQuestionIds.value = []
+    createPaperDialogVisible.value = false
+    ElMessage.success('试卷创建成功。')
+    emit('paper-created')
+    window.dispatchEvent(new CustomEvent('paper-created'))
+  } catch (error) {
+    console.error(error)
+    ElMessage.error(getPaperErrorMessage(error))
+  } finally {
+    creatingPaper.value = false
   }
 }
 
@@ -253,6 +395,13 @@ onMounted(() => {
   gap: 10px;
 }
 
+.selection-summary {
+  min-width: 92px;
+  color: #48626b;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
 .search-input {
   width: 260px;
 }
@@ -276,6 +425,13 @@ onMounted(() => {
   align-items: center;
   gap: 18px;
   padding: 6px 0;
+}
+
+.select-box {
+  width: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .thumb-box {
@@ -416,5 +572,13 @@ onMounted(() => {
   background: #f5f7fa;
   color: #909399;
   font-size: 14px;
+}
+
+.paper-dialog-alert {
+  margin-bottom: 16px;
+}
+
+.paper-form {
+  margin-top: 8px;
 }
 </style>

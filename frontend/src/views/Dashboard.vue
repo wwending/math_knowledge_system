@@ -24,6 +24,10 @@
           <el-icon><Clock /></el-icon>
           <span>历史记录</span>
         </el-menu-item>
+        <el-menu-item index="papers">
+          <el-icon><Document /></el-icon>
+          <span>组卷</span>
+        </el-menu-item>
         <el-menu-item v-if="adminMode" index="users">
           <el-icon><UserFilled /></el-icon>
           <span>用户管理</span>
@@ -192,11 +196,15 @@
         </section>
 
         <section v-else-if="activeMenu === 'bank'" class="content-panel">
-          <bank-panel />
+          <bank-panel @paper-created="activeMenu = 'papers'" />
         </section>
 
         <section v-else-if="activeMenu === 'history'" class="content-panel">
           <history-panel />
+        </section>
+
+        <section v-else-if="activeMenu === 'papers'" class="content-panel">
+          <paper-panel />
         </section>
 
         <section v-else-if="activeMenu === 'users'" class="content-panel">
@@ -211,7 +219,7 @@
 import { computed, onMounted, ref } from 'vue'
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
-import { Clock, Collection, DataAnalysis, UploadFilled, UserFilled } from '@element-plus/icons-vue'
+import { Clock, Collection, DataAnalysis, Document, UploadFilled, UserFilled } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import 'vue-cropper/dist/index.css'
 import { VueCropper } from 'vue-cropper'
@@ -226,6 +234,7 @@ import {
 } from '../utils/auth'
 import HistoryPanel from '../components/HistoryPanel.vue'
 import BankPanel from '../components/BankPanel.vue'
+import PaperPanel from '../components/PaperPanel.vue'
 import UserManagementPanel from '../components/UserManagementPanel.vue'
 
 import * as pdfjsLib from 'pdfjs-dist'
@@ -265,6 +274,9 @@ const pageTitle = computed(() => {
   if (activeMenu.value === 'history') {
     return '历史记录'
   }
+  if (activeMenu.value === 'papers') {
+    return '组卷'
+  }
   if (activeMenu.value === 'users') {
     return '用户管理'
   }
@@ -277,6 +289,9 @@ const pageDescription = computed(() => {
   }
   if (activeMenu.value === 'bank') {
     return '查看已沉淀的题库内容。'
+  }
+  if (activeMenu.value === 'papers') {
+    return '查看已创建的试卷草稿和题目快照。'
   }
   if (activeMenu.value === 'history') {
     return '查看近期识别与处理历史。'
