@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "test:auth-contract": "node ./tests/login-page-auth-contract.test.mjs",
-    "test:stage3-contract": "node ./tests/auth-session-contract.test.mjs && node ./tests/admin-user-management-contract.test.mjs"
+    "test:stage3-contract": "node ./tests/auth-session-contract.test.mjs && node ./tests/admin-user-management-contract.test.mjs && node ./tests/paper-mvp-contract.test.mjs"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.2",

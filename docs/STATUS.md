@@ -1,5 +1,26 @@
 # STATUS
 
+## 2026-06-03 第十八轮前端组卷入口 MVP
+
+当前项目在不改动后端 Paper API 主逻辑、不改动 Draft flow、不改动 legacy recognize 的前提下，新增前端最小组卷入口。
+
+新增前端能力：
+
+- `BankPanel.vue` 支持从当前题库勾选题目、显示已选数量，并创建试卷。
+- 创建试卷调用 `POST /api/v1/papers`，items 使用当前已选题目生成 `{ question_id, score }`，score 当前统一为 `0`。
+- 新增 `PaperPanel.vue`，支持查看当前用户试卷列表和试卷详情。
+- `Dashboard.vue` 新增独立“组卷”菜单入口，不干扰题目录入、Draft 保存入库、题库查看和历史记录。
+- 试卷详情中的题目内容、答案、解析继续复用 `frontend/src/utils/renderMarkdown.ts` 渲染 Markdown / LaTeX。
+
+当前组卷前端能力边界：
+
+- 只支持手动从题库选题创建试卷。
+- 不支持拖拽排序。
+- 不支持分值编辑。
+- 不支持 PDF / Word 导出。
+- 不支持智能组卷。
+- 不支持复杂试卷排版或打印样式优化。
+
 ## 2026-05-27 第十七轮组卷 MVP 后端最小竖切
 
 当前项目在既有 Draft flow、legacy recognize 和题库保存逻辑不重构的前提下，新增后端最小组卷能力。
@@ -37,6 +58,7 @@
 - 第十五轮已完成 legacy recognize 引用审计与最小标注：Dashboard 主路径确认继续走 Draft，`runLegacyRecognition()` 和 `POST /api/v1/recognize` 均保留为 legacy / 兼容入口。
 - 第十六轮已完成阶段性文档去重和 release checkpoint：README、API、smoke 文档、STATUS、DECISIONS、KNOWN_ISSUES、WORKLOG 的当前口径已统一。
 - 第十七轮已完成组卷 MVP 后端最小竖切，新增 Paper / PaperItem、papers API、service 和后端测试；不涉及前端、导出或智能组卷。
+- 第十八轮已完成前端组卷入口 MVP：题库选题、创建试卷、试卷列表、试卷详情已接入；不涉及后端 Paper API 主逻辑、导出、智能组卷或 Draft/recognize 改动。
 - Draft 前端接入不是完整生产级完成，legacy recognize 已完成引用审计和误用风险标注，仍需后续退场策略执行。
 - 当前推荐 smoke 文档为 `docs/API_SMOKE_DRAFT_FLOW.md`；`docs/API_SMOKE_DRAFT_PIPELINE.md` 保留为脚本化 smoke 补充文档。
 - `saved_to_bank` 状态重复 save-to-bank 当前返回 `409`，本轮不改为幂等返回，且已测试不会重复创建 Question 或 QuestionRevision。
@@ -78,6 +100,7 @@
 | backend | `python -m unittest discover tests` | 通过，`Ran 62 tests OK` |
 说明：
 
+- 第十八轮已重新实测 `npm run build`、`npm run test:auth-contract`、`npm run test:stage3-contract`；其中 `test:stage3-contract` 已纳入 Paper MVP 前端契约检查。
 - 第十七轮已重新实测 `python -m compileall app`、`python -m unittest discover tests`。
 - 第十六轮已重新实测 `npm run test:auth-contract`、`npm run test:stage3-contract`、`npm run build`、`python -m compileall app`、`python -m unittest discover tests`。
 - `python -m pytest tests/test_draft_pipeline.py` 和 `python -m pytest tests/test_llm.py` 为第十三轮专项验证结果，本轮未重复执行。

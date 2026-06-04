@@ -1,0 +1,66 @@
+import { existsSync, readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+
+const dashboardPath = resolve(process.cwd(), 'src/views/Dashboard.vue')
+const bankPanelPath = resolve(process.cwd(), 'src/components/BankPanel.vue')
+const paperPanelPath = resolve(process.cwd(), 'src/components/PaperPanel.vue')
+
+const dashboardSource = readFileSync(dashboardPath, 'utf8')
+const bankPanelSource = readFileSync(bankPanelPath, 'utf8')
+const failures = []
+
+if (!dashboardSource.includes("index=\"papers\"")) {
+  failures.push('dashboard is missing the paper navigation entry')
+}
+
+if (!dashboardSource.includes('<paper-panel')) {
+  failures.push('dashboard does not render PaperPanel')
+}
+
+if (!bankPanelSource.includes('selectedQuestionIds')) {
+  failures.push('bank panel does not track selected questions')
+}
+
+if (!bankPanelSource.includes('/papers')) {
+  failures.push('bank panel does not call the papers API to create a paper')
+}
+
+if (!bankPanelSource.includes('question_id')) {
+  failures.push('bank panel does not map selected questions to question_id items')
+}
+
+if (!existsSync(paperPanelPath)) {
+  failures.push('PaperPanel.vue is missing')
+} else {
+  const paperPanelSource = readFileSync(paperPanelPath, 'utf8')
+
+  if (!paperPanelSource.includes('/papers')) {
+    failures.push('PaperPanel does not call the papers API')
+  }
+
+  if (!paperPanelSource.includes('renderMarkdown')) {
+    failures.push('PaperPanel does not reuse the shared Markdown renderer')
+  }
+
+  if (!paperPanelSource.includes('content_snapshot')) {
+    failures.push('PaperPanel does not display paper item content snapshots')
+  }
+
+  if (!paperPanelSource.includes('answer_snapshot')) {
+    failures.push('PaperPanel does not handle answer snapshots')
+  }
+
+  if (!paperPanelSource.includes('analysis_snapshot')) {
+    failures.push('PaperPanel does not handle analysis snapshots')
+  }
+}
+
+if (failures.length > 0) {
+  console.error('Paper MVP frontend contract failed:')
+  for (const failure of failures) {
+    console.error(`- ${failure}`)
+  }
+  process.exit(1)
+}
+
+console.log('Paper MVP frontend contract passed.')

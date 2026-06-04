@@ -2,6 +2,41 @@
 
 说明：本文件按时间倒序记录每轮工作。较早轮次中的“当前主链路”等表述保留为当时历史事实；当前状态以 `docs/STATUS.md` 最新 checkpoint 和较新的 DECISIONS 为准。
 
+## 2026-06-03 第十八轮：前端组卷入口 MVP
+
+目标：
+
+- 在不改后端 Paper API 主逻辑、不改 Draft flow、不改 legacy recognize 的前提下，接入前端最小组卷入口。
+- 支持从题库选择题目、创建试卷、查看试卷列表、查看试卷详情。
+- 不做 PDF / Word 导出、智能组卷、拖拽排序、复杂排版、打印样式优化或大规模前端重构。
+
+结果：
+
+- `BankPanel.vue` 新增题目勾选、已选数量、创建试卷按钮和最小创建弹窗。
+- 创建试卷调用 `POST /api/v1/papers`，items 由已选题目生成，score 当前统一为 `0`。
+- 新增 `PaperPanel.vue`，支持 `GET /api/v1/papers` 列表和 `GET /api/v1/papers/{paper_id}` 详情。
+- 试卷详情展示 position、score、content_snapshot、answer_snapshot、analysis_snapshot、knowledge_tags_snapshot。
+- 题目内容、答案、解析继续复用 `frontend/src/utils/renderMarkdown.ts`。
+- `Dashboard.vue` 新增独立“组卷”菜单入口，未改动上传、识别、保存入库流程。
+- 新增 `frontend/tests/paper-mvp-contract.test.mjs`，并纳入 `npm run test:stage3-contract`。
+- 更新 STATUS、DECISIONS、KNOWN_ISSUES 文档。
+
+验证结果：
+
+- 已先运行 `cd frontend && node ./tests/paper-mvp-contract.test.mjs`，在功能缺失时按预期失败。
+- 实现后运行 `cd frontend && node ./tests/paper-mvp-contract.test.mjs`，通过。
+- 已运行 `cd frontend && npm run build`，通过，仅有 Vite chunk size warning。
+- 已运行 `cd frontend && npm run test:auth-contract`，通过。
+- 已运行 `cd frontend && npm run test:stage3-contract`，通过，包含 Paper MVP 前端契约检查。
+
+边界：
+
+- 未修改后端 Paper API 主逻辑。
+- 未修改 Draft flow。
+- 未修改 legacy recognize。
+- 未做导出、智能组卷、拖拽排序、分值编辑、复杂试卷排版或打印样式优化。
+- 未执行真实浏览器登录和手动创建试卷流程；本轮仅完成代码构建和前端契约验证。
+
 ## 2026-05-27 第十七轮：组卷 MVP 后端最小竖切
 
 目标：

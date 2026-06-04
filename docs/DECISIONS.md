@@ -2,6 +2,31 @@
 
 说明：本文件按时间倒序记录决策。较早决策中的“当前主链路”等表述保留为当时历史事实；如与顶部较新决策冲突，以较新决策和 `docs/STATUS.md` 当前 checkpoint 为准。
 
+## 决策 23：前端组卷入口采用 BankPanel 选题 + PaperPanel 展示
+
+结论：
+
+- 在 `BankPanel.vue` 中增加最小选题和创建试卷入口。
+- 新增 `PaperPanel.vue` 作为试卷列表和试卷详情的独立展示组件。
+- `Dashboard.vue` 新增独立“组卷”菜单入口，避免组卷 UI 干扰题目录入、Draft 保存入库、题库查看和历史记录。
+- 前端继续沿用现有 axios 全局 token 注入，不新增统一 API 层或状态管理。
+
+原因：
+
+- 本轮目标是前端组卷入口 MVP，不是前端结构重构。
+- 题库选题最贴近现有题库列表，放在 `BankPanel.vue` 能减少跨组件状态复杂度。
+- 试卷列表和详情是独立展示职责，拆成 `PaperPanel.vue` 可以避免继续扩大 `BankPanel.vue` 的展示责任。
+- 复用 `renderMarkdown.ts` 能保持题目内容、答案、解析的 Markdown / LaTeX 渲染规则一致。
+
+边界：
+
+- 不修改后端 Paper API 主逻辑。
+- 不修改 Draft flow。
+- 不修改 legacy recognize。
+- 不做导出、智能组卷、拖拽排序、分值编辑、复杂排版或打印样式优化。
+
+日期：2026-06-03
+
 ## 决策 22：组卷 MVP 使用 Paper + PaperItem 并保存题目快照
 
 结论：
