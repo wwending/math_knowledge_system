@@ -5,10 +5,11 @@ import os
 import shutil
 import time
 import uuid
+from datetime import datetime, timezone
 from typing import Any, List, Optional
 
 import fitz
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
 from loguru import logger
 from PIL import Image
 from pydantic import BaseModel
@@ -40,6 +41,7 @@ from app.services.draft_state import transition_draft_status
 from app.services.llm import nlp_service
 from app.services.ocr_engine import ocr_service
 from app.services.paper_service import create_paper, get_paper, list_papers
+from app.services.question_metadata import evaluate_question_metadata_task
 
 
 router = APIRouter()
@@ -54,6 +56,7 @@ QUESTION_SAVE_FAILED_MESSAGE = "\u9898\u76ee\u4fdd\u5b58\u5931\u8d25\uff0c\u8bf7
 DRAFT_READY_REQUIRED_MESSAGE = "\u53ea\u6709\u5df2\u8bc6\u522b\u5b8c\u6210\u7684 Draft \u53ef\u4ee5\u4fdd\u5b58\u5165\u9898\u5e93"
 DRAFT_ALREADY_SAVED_MESSAGE = "\u5df2\u4fdd\u5b58\u5165\u9898\u5e93\u7684 Draft \u4e0d\u80fd\u91cd\u590d\u4fdd\u5b58"
 DRAFT_ALREADY_SAVED_RECOGNIZE_MESSAGE = "\u5df2\u4fdd\u5b58\u5165\u9898\u5e93\u7684 Draft \u4e0d\u80fd\u518d\u6b21\u8bc6\u522b"
+QUESTION_TYPES = {"single_choice", "multiple_choice", "fill_blank", "solution", "judge", "unknown"}
 
 
 class SourceAssetResponse(BaseModel):
@@ -186,6 +189,59 @@ def _normalize_llm_tags(raw_tags: Any) -> list[dict[str, Any]]:
     return knowledge_tags
 
 
+def _normalize_question_type(raw_question_type: Any) -> Optional[str]:
+    if not isinstance(raw_question_type, str):
+        return None
+    question_type = raw_question_type.strip()
+    if not question_type:
+        return None
+    return question_type if question_type in QUESTION_TYPES else "unknown"
+
+
+def _extract_difficulty(llm_result: dict[str, Any]) -> dict[str, Any]:
+    difficulty = llm_result.get("difficulty")
+    if not isinstance(difficulty, dict):
+        return {
+            "difficulty_level": None,
+            "difficulty_label": None,
+            "difficulty_confidence": None,
+            "difficulty_reason": None,
+        }
+
+    level = difficulty.get("level")
+    confidence = difficulty.get("confidence")
+    if not isinstance(level, int) or level < 1 or level > 5:
+        return {
+            "difficulty_level": None,
+            "difficulty_label": None,
+            "difficulty_confidence": None,
+            "difficulty_reason": None,
+        }
+    if not isinstance(confidence, (int, float)) or confidence < 0 or confidence > 1:
+        return {
+            "difficulty_level": None,
+            "difficulty_label": None,
+            "difficulty_confidence": None,
+            "difficulty_reason": None,
+        }
+
+    return {
+        "difficulty_level": level,
+        "difficulty_label": difficulty.get("label"),
+        "difficulty_confidence": float(confidence),
+        "difficulty_reason": difficulty.get("reason"),
+    }
+
+
+def _apply_draft_metadata(draft: Draft, llm_result: dict[str, Any]) -> None:
+    difficulty = _extract_difficulty(llm_result)
+    draft.question_type = _normalize_question_type(llm_result.get("question_type"))
+    draft.difficulty_level = difficulty["difficulty_level"]
+    draft.difficulty_label = difficulty["difficulty_label"]
+    draft.difficulty_confidence = difficulty["difficulty_confidence"]
+    draft.difficulty_reason = difficulty["difficulty_reason"]
+
+
 def _content_text(current_content: Any) -> str:
     if isinstance(current_content, dict):
         return str(current_content.get("text") or current_content.get("content") or "")
@@ -209,6 +265,11 @@ def _build_draft_detail(draft: Draft) -> DraftDetail:
         current_content=draft.current_content,
         content=_content_text(draft.current_content),
         knowledge_tags=_content_tags(draft.current_content),
+        question_type=draft.question_type,
+        difficulty_level=draft.difficulty_level,
+        difficulty_label=draft.difficulty_label,
+        difficulty_confidence=draft.difficulty_confidence,
+        difficulty_reason=draft.difficulty_reason,
         last_ocr_run_id=draft.last_ocr_run_id,
         last_llm_run_id=draft.last_llm_run_id,
         created_at=draft.created_at,
@@ -473,6 +534,7 @@ def recognize_draft(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_active_user),
 ):
+    total_started_at = time.time()
     draft = _ensure_owned_draft(db, draft_id, current_user.id)
     if draft.status == DraftStatus.SAVED_TO_BANK:
         raise HTTPException(status_code=409, detail=DRAFT_ALREADY_SAVED_RECOGNIZE_MESSAGE)
@@ -491,6 +553,7 @@ def recognize_draft(
     )
 
     file_path = _asset_file_path(asset)
+    ocr_started_at = time.time()
     try:
         ocr_result = ocr_service.recognize(file_path)
     except Exception:
@@ -503,6 +566,7 @@ def recognize_draft(
             "error": "\u6587\u5b57\u8bc6\u522b\u670d\u52a1\u8c03\u7528\u5931\u8d25",
             "detail": "ocr_unexpected_error",
         }
+    ocr_ms = int((time.time() - ocr_started_at) * 1000)
 
     raw_content = (ocr_result.get("content") or "").strip()
     ocr_run = OCRRun(
@@ -537,6 +601,20 @@ def recognize_draft(
             metadata={"ocr_run_id": ocr_run.id, "error_type": ocr_result.get("error_type")},
             commit=True,
         )
+        logger.info(
+            "[DraftRecognizePerf] draft_id={} asset_id={} ocr_ms={} llm_text_ms={} total_ms={} model={} ocr_text_len={} corrected_text_len={} llm_fallback={} fallback_reason={} failure_stage={}",
+            draft.id,
+            asset.id,
+            ocr_ms,
+            0,
+            int((time.time() - total_started_at) * 1000),
+            settings.DEEPSEEK_MODEL,
+            len(raw_content),
+            0,
+            True,
+            ocr_result.get("error_type"),
+            "ocr",
+        )
         detail = _build_draft_detail(draft)
         return DraftRecognizeResponse(
             **detail.model_dump(),
@@ -550,6 +628,7 @@ def recognize_draft(
     warning = None
     partial_success = False
 
+    llm_started_at = time.time()
     try:
         llm_result = nlp_service.analyze(raw_content)
     except Exception:
@@ -563,15 +642,18 @@ def recognize_draft(
             "tags": [],
             "cost_seconds": 0.0,
         }
+    llm_text_ms = int((time.time() - llm_started_at) * 1000)
 
     if llm_result.get("success"):
         final_content = llm_result.get("corrected_text", raw_content) or raw_content
-        knowledge_tags = _normalize_llm_tags(llm_result.get("tags", []))
+        knowledge_tags = _normalize_llm_tags(llm_result.get("knowledge_tags", llm_result.get("tags", [])))
+        _apply_draft_metadata(draft, {})
     else:
         partial_success = True
         warning = llm_result.get("error") or "\u667a\u80fd\u6574\u7406\u5931\u8d25\uff0c\u5df2\u4fdd\u7559\u539f\u59cb\u8bc6\u522b\u7ed3\u679c"
         final_content = llm_result.get("corrected_text", raw_content) or raw_content
-        knowledge_tags = _normalize_llm_tags(llm_result.get("tags", []))
+        knowledge_tags = _normalize_llm_tags(llm_result.get("knowledge_tags", llm_result.get("tags", [])))
+        _apply_draft_metadata(draft, {})
 
     llm_run = LLMRun(
         draft_id=draft.id,
@@ -608,8 +690,24 @@ def recognize_draft(
             "ocr_run_id": ocr_run.id,
             "llm_run_id": llm_run.id,
             "partial_success": partial_success,
+            "metadata_warning": llm_result.get("metadata_warning"),
         },
         commit=True,
+    )
+
+    logger.info(
+        "[DraftRecognizePerf] draft_id={} asset_id={} ocr_ms={} llm_text_ms={} total_ms={} model={} ocr_text_len={} corrected_text_len={} llm_fallback={} fallback_reason={} failure_stage={}",
+        draft.id,
+        asset.id,
+        ocr_ms,
+        llm_text_ms,
+        int((time.time() - total_started_at) * 1000),
+        settings.DEEPSEEK_MODEL,
+        len(raw_content),
+        len(final_content or ""),
+        partial_success,
+        llm_result.get("error_type") if partial_success else None,
+        "llm" if partial_success else None,
     )
 
     detail = _build_draft_detail(draft)
@@ -625,6 +723,7 @@ def recognize_draft(
 @router.post("/drafts/{draft_id}/save-to-bank", response_model=DraftSaveToBankResponse)
 def save_draft_to_bank(
     draft_id: int,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_active_user),
 ):
@@ -642,6 +741,7 @@ def save_draft_to_bank(
         user_id=current_user.id,
         content=content_text,
         knowledge_tags=knowledge_tags,
+        metadata_status="pending",
         origin_image=(draft.source_asset.normalized_path or draft.source_asset.original_path)
         if draft.source_asset
         else None,
@@ -673,6 +773,7 @@ def save_draft_to_bank(
     db.refresh(question)
     db.refresh(revision)
     db.refresh(draft)
+    background_tasks.add_task(evaluate_question_metadata_task, question.id)
 
     detail = _build_draft_detail(draft)
     return DraftSaveToBankResponse(
@@ -799,7 +900,7 @@ def recognize_image(
 
         if llm_result.get("success"):
             final_content = llm_result.get("corrected_text", raw_content) or raw_content
-            knowledge_tags = _normalize_llm_tags(llm_result.get("tags", []))
+            knowledge_tags = _normalize_llm_tags(llm_result.get("knowledge_tags", llm_result.get("tags", [])))
         else:
             partial_success = True
             warning = llm_result.get("error") or "\u667a\u80fd\u6574\u7406\u5931\u8d25\uff0c\u5df2\u4fdd\u7559\u539f\u59cb\u8bc6\u522b\u7ed3\u679c"
@@ -810,7 +911,7 @@ def recognize_image(
                 llm_result.get("detail"),
             )
             final_content = llm_result.get("corrected_text", raw_content) or raw_content
-            knowledge_tags = _normalize_llm_tags(llm_result.get("tags", []))
+            knowledge_tags = _normalize_llm_tags(llm_result.get("knowledge_tags", llm_result.get("tags", [])))
 
     try:
         new_question = Question(
@@ -818,6 +919,17 @@ def recognize_image(
             user_id=current_user.id,
             content=final_content,
             knowledge_tags=knowledge_tags,
+            question_type=_normalize_question_type(llm_result.get("question_type")) if raw_content else None,
+            difficulty_level=_extract_difficulty(llm_result)["difficulty_level"] if raw_content else None,
+            difficulty_label=_extract_difficulty(llm_result)["difficulty_label"] if raw_content else None,
+            difficulty_confidence=_extract_difficulty(llm_result)["difficulty_confidence"] if raw_content else None,
+            difficulty_reason=_extract_difficulty(llm_result)["difficulty_reason"] if raw_content else None,
+            difficulty_model=settings.DEEPSEEK_MODEL
+            if raw_content and _extract_difficulty(llm_result)["difficulty_level"] is not None
+            else None,
+            difficulty_evaluated_at=datetime.now(timezone.utc)
+            if raw_content and _extract_difficulty(llm_result)["difficulty_level"] is not None
+            else None,
         )
         db.add(new_question)
         db.commit()
@@ -872,6 +984,17 @@ def list_questions(
             id=item.id,
             content=item.content,
             knowledge_tags=normalize_tags(item.knowledge_tags),
+            question_type=item.question_type,
+            difficulty_level=item.difficulty_level,
+            difficulty_label=item.difficulty_label,
+            difficulty_confidence=item.difficulty_confidence,
+            difficulty_reason=item.difficulty_reason,
+            difficulty_model=item.difficulty_model,
+            difficulty_evaluated_at=item.difficulty_evaluated_at,
+            metadata_status=item.metadata_status,
+            metadata_error=item.metadata_error,
+            metadata_started_at=item.metadata_started_at,
+            metadata_finished_at=item.metadata_finished_at,
             origin_image=item.origin_image,
             image_url=build_upload_image_url(item.origin_image),
             created_at=item.created_at,
@@ -896,6 +1019,17 @@ def get_question_detail(
         id=question.id,
         content=question.content,
         knowledge_tags=normalize_tags(question.knowledge_tags),
+        question_type=question.question_type,
+        difficulty_level=question.difficulty_level,
+        difficulty_label=question.difficulty_label,
+        difficulty_confidence=question.difficulty_confidence,
+        difficulty_reason=question.difficulty_reason,
+        difficulty_model=question.difficulty_model,
+        difficulty_evaluated_at=question.difficulty_evaluated_at,
+        metadata_status=question.metadata_status,
+        metadata_error=question.metadata_error,
+        metadata_started_at=question.metadata_started_at,
+        metadata_finished_at=question.metadata_finished_at,
         origin_image=question.origin_image,
         image_url=build_upload_image_url(question.origin_image),
         created_at=question.created_at,

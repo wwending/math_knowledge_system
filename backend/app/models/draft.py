@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, JSON
+from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, JSON, String, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -14,6 +14,11 @@ class Draft(Base):
     crop_bbox = Column(JSON, nullable=False)
     status = Column(String, nullable=False)
     current_content = Column(JSON, nullable=True)
+    question_type = Column(String, nullable=True)
+    difficulty_level = Column(Integer, nullable=True)
+    difficulty_label = Column(String, nullable=True)
+    difficulty_confidence = Column(Float, nullable=True)
+    difficulty_reason = Column(Text, nullable=True)
     last_ocr_run_id = Column(Integer, ForeignKey("ocr_runs.id"), nullable=True)
     last_llm_run_id = Column(Integer, ForeignKey("llm_runs.id"), nullable=True)
     superseded_by_draft_id = Column(Integer, ForeignKey("drafts.id"), nullable=True)

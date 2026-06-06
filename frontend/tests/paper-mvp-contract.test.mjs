@@ -29,6 +29,28 @@ if (!bankPanelSource.includes('question_id')) {
   failures.push('bank panel does not map selected questions to question_id items')
 }
 
+if (!bankPanelSource.includes('formatQuestionType')) {
+  failures.push('bank panel does not format question_type for display')
+}
+
+if (!bankPanelSource.includes('formatDifficultyStars')) {
+  failures.push('bank panel does not format difficulty_level as stars')
+}
+
+if (!bankPanelSource.includes('difficulty_level')) {
+  failures.push('bank panel does not read difficulty_level')
+}
+
+if (!bankPanelSource.includes('metadata_status')) {
+  failures.push('bank panel does not read metadata_status')
+}
+
+for (const expectedText of ['元数据评估中', '难度评估失败', '未评估']) {
+  if (!bankPanelSource.includes(expectedText)) {
+    failures.push(`bank panel does not display metadata state text: ${expectedText}`)
+  }
+}
+
 if (!existsSync(paperPanelPath)) {
   failures.push('PaperPanel.vue is missing')
 } else {

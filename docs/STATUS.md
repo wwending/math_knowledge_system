@@ -1,5 +1,32 @@
 # STATUS
 
+## 2026-06-04 第十九轮性能收口：元数据后台补全
+
+当前项目在不重构 OCR / Draft / Paper 主流程、不删除 legacy recognize、不新增排序/模板/导出/答题区/智能组卷的前提下，将题型与五星难度从同步 Draft recognize 主链路拆出，改为保存入题库后后台补全。
+
+新增能力：
+
+- LLM analyze 默认轻量返回 `corrected_text` 和 `knowledge_tags`；题型/难度评估需显式调用元数据评估。
+- 旧字段 `tags` 继续兼容；`corrected_text` 仍是主结果。
+- Draft recognize 只强制等待 OCR + 轻量 LLM 洗稿 + 知识点标签，不再强制等待题型/难度。
+- Draft save-to-bank 创建 `Question` 后设置 `metadata_status=pending`，并通过 FastAPI `BackgroundTasks` 后台补全题型与难度。
+- Question 列表和详情返回题型、难度以及 `metadata_status` / `metadata_error` / 开始结束时间。
+- PaperItem 仅在 Question 元数据 ready 且已有难度时保存题型与难度快照；pending/failed/null 时快照为空但不阻止组卷。
+- `BankPanel.vue` 支持展示“元数据评估中”“难度评估失败”“未评估”和五星难度。
+- Draft recognize 增加 `[DraftRecognizePerf]` 性能日志；后台元数据评估增加 `[QuestionMetadataPerf]` 性能日志。
+- 补充 recognize 和 metadata 阶段耗时日志：Draft recognize 记录 OCR、轻量 LLM、total 和失败阶段；后台 metadata 记录 load、prompt、api、parse、db 和 total。
+
+当前边界：
+
+- 不支持按难度排序或筛选。
+- 不支持按知识点排序。
+- 不支持组卷模板、自定义模板、PDF / DOCX 导出、答题区域或智能组卷。
+- LLM 难度评分是估计值，不是绝对标准。
+- 历史题目可能没有题型和难度字段。
+- 用户编辑题目后不会自动重新评估难度。
+- 前端不轮询元数据状态；用户刷新题库后可看到后台评估结果。
+- 后台任务依赖当前后端进程，服务重启可能丢失正在执行的元数据评估任务。
+
 ## 2026-06-03 第十八轮前端组卷入口 MVP
 
 当前项目在不改动后端 Paper API 主逻辑、不改动 Draft flow、不改动 legacy recognize 的前提下，新增前端最小组卷入口。
@@ -59,6 +86,7 @@
 - 第十六轮已完成阶段性文档去重和 release checkpoint：README、API、smoke 文档、STATUS、DECISIONS、KNOWN_ISSUES、WORKLOG 的当前口径已统一。
 - 第十七轮已完成组卷 MVP 后端最小竖切，新增 Paper / PaperItem、papers API、service 和后端测试；不涉及前端、导出或智能组卷。
 - 第十八轮已完成前端组卷入口 MVP：题库选题、创建试卷、试卷列表、试卷详情已接入；不涉及后端 Paper API 主逻辑、导出、智能组卷或 Draft/recognize 改动。
+- 第十九轮已完成 LLM 题型与五星难度元数据，并完成性能收口：Draft recognize 主链路只强制等待 OCR、`corrected_text` 和知识点标签，题型/难度在 save-to-bank 后通过后台任务补全到 Question。
 - Draft 前端接入不是完整生产级完成，legacy recognize 已完成引用审计和误用风险标注，仍需后续退场策略执行。
 - 当前推荐 smoke 文档为 `docs/API_SMOKE_DRAFT_FLOW.md`；`docs/API_SMOKE_DRAFT_PIPELINE.md` 保留为脚本化 smoke 补充文档。
 - `saved_to_bank` 状态重复 save-to-bank 当前返回 `409`，本轮不改为幂等返回，且已测试不会重复创建 Question 或 QuestionRevision。
@@ -97,9 +125,14 @@
 | frontend | `npm run test:stage3-contract` | 通过 |
 | frontend | `npm run build` | 通过，仅有 Vite chunk size warning |
 | backend | `python -m compileall app` | 通过 |
-| backend | `python -m unittest discover tests` | 通过，`Ran 62 tests OK` |
+| backend | `python -m unittest discover tests` | 通过，`Ran 74 tests OK` |
+| backend | `alembic current` | 默认本地 SQLite 当前 `20260604_0004` |
+| backend | `DATABASE_URL=sqlite:///./alembic_verify_tmp.db alembic upgrade head; alembic current` | 通过，当前 `20260604_0005 (head)` |
 说明：
 
+- 第十九轮性能收口已重新实测 `python -m compileall app`、`python -m unittest discover tests`、`npm run build`、`npm run test:auth-contract`、`npm run test:stage3-contract`。
+- 第十九轮性能收口默认 `alembic upgrade head` 因当前本地 SQLite 数据库只读失败，默认 `alembic current` 显示仍为 `20260604_0004`；已改用临时 SQLite 数据库验证迁移链成功到 `20260604_0005 (head)`。
+- 第十九轮初次元数据实现已重新实测 `python -m compileall app`、`python -m unittest discover tests`、`npm run build`、`npm run test:auth-contract`、`npm run test:stage3-contract`；当时临时 SQLite 迁移链验证到 `20260604_0004 (head)`。
 - 第十八轮已重新实测 `npm run build`、`npm run test:auth-contract`、`npm run test:stage3-contract`；其中 `test:stage3-contract` 已纳入 Paper MVP 前端契约检查。
 - 第十七轮已重新实测 `python -m compileall app`、`python -m unittest discover tests`。
 - 第十六轮已重新实测 `npm run test:auth-contract`、`npm run test:stage3-contract`、`npm run build`、`python -m compileall app`、`python -m unittest discover tests`。

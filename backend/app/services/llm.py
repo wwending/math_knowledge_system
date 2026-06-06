@@ -9,7 +9,7 @@ from openai import APIConnectionError, APIError, APITimeoutError, Authentication
 from app.core.config import settings
 
 
-LLM_TIMEOUT_SECONDS = 30
+QUESTION_TYPES = {"single_choice", "multiple_choice", "fill_blank", "solution", "judge", "unknown"}
 
 
 def normalize_latex_delimiters(text: str) -> str:
@@ -28,16 +28,65 @@ def _build_failure(
     corrected_text: str = "",
     tags: list[str] | None = None,
     cost_seconds: float = 0.0,
+    perf: dict[str, int] | None = None,
 ) -> dict[str, Any]:
     return {
         "success": False,
         "corrected_text": corrected_text,
         "tags": tags or [],
+        "knowledge_tags": tags or [],
+        "question_type": "unknown",
+        "difficulty": None,
+        "metadata_warning": None,
         "cost_seconds": round(cost_seconds, 2),
         "error_type": error_type,
         "error": error,
         "detail": detail or error,
+        "_perf": perf or {"prompt_ms": 0, "api_ms": 0, "parse_ms": 0},
     }
+
+
+def _normalize_question_type(raw_question_type: Any) -> str:
+    if not isinstance(raw_question_type, str):
+        return "unknown"
+    question_type = raw_question_type.strip()
+    return question_type if question_type in QUESTION_TYPES else "unknown"
+
+
+def _normalize_difficulty(raw_difficulty: Any) -> tuple[dict[str, Any] | None, str | None]:
+    if raw_difficulty is None:
+        return None, None
+    if not isinstance(raw_difficulty, dict):
+        logger.warning("DeepSeek difficulty has invalid type: {}", raw_difficulty)
+        return None, "difficulty_fallback"
+
+    level = raw_difficulty.get("level")
+    confidence = raw_difficulty.get("confidence")
+    label = raw_difficulty.get("label")
+    reason = raw_difficulty.get("reason")
+
+    if not isinstance(level, int) or level < 1 or level > 5:
+        logger.warning("DeepSeek difficulty level is invalid: {}", raw_difficulty)
+        return None, "difficulty_fallback"
+
+    if not isinstance(confidence, (int, float)) or confidence < 0 or confidence > 1:
+        logger.warning("DeepSeek difficulty confidence is invalid: {}", raw_difficulty)
+        return None, "difficulty_fallback"
+
+    normalized_label = label.strip() if isinstance(label, str) and label.strip() else None
+    normalized_reason = reason.strip() if isinstance(reason, str) and reason.strip() else None
+    if normalized_reason and len(normalized_reason) > 80:
+        normalized_reason = normalized_reason[:80]
+
+    return (
+        {
+            "level": level,
+            "label": normalized_label,
+            "confidence": float(confidence),
+            "reason": normalized_reason,
+        },
+        None,
+    )
 
 
 class NLPService:
@@ -63,13 +112,18 @@ class NLPService:
             self.client = None
             logger.exception("Failed to initialize DeepSeek client")
 
-    def analyze(self, text: str) -> dict[str, Any]:
+    def analyze(self, text: str, *, include_metadata: bool = False) -> dict[str, Any]:
         if not text:
             return {
                 "success": True,
                 "corrected_text": "",
                 "tags": [],
+                "knowledge_tags": [],
+                "question_type": "unknown",
+                "difficulty": None,
+                "metadata_warning": None,
                 "cost_seconds": 0.0,
+                "_perf": {"prompt_ms": 0, "api_ms": 0, "parse_ms": 0},
             }
 
         if not self.client:
@@ -81,6 +135,36 @@ class NLPService:
             )
 
         started_at = time.time()
+        prompt_started_at = time.time()
+        metadata_instructions = ""
+        metadata_response_shape = ""
+        if include_metadata:
+            metadata_instructions = """
+10. 识别题型 question_type，只能从以下枚举选择：
+    - single_choice：单选题
+    - multiple_choice：多选题
+    - fill_blank：填空题
+    - solution：解答题
+    - judge：判断题
+    - unknown：未知
+11. 评估五星难度 difficulty：
+    - 1星：基础识记题，直接套概念或公式即可完成
+    - 2星：基础应用题，单一知识点，一到两步计算
+    - 3星：中等综合题，涉及两类知识点或多步推理
+    - 4星：较难综合题，需要分类讨论、复杂计算或较强转化能力
+    - 5星：压轴难题，需要抽象建模、创新构造或高综合能力
+12. difficulty.level 必须是 1 到 5 的整数。
+13. difficulty.confidence 必须是 0 到 1 的小数。
+14. difficulty.reason 不超过 80 字。"""
+            metadata_response_shape = """,
+  "question_type": "single_choice",
+  "difficulty": {
+    "level": 3,
+    "label": "中等",
+    "confidence": 0.78,
+    "reason": "涉及两类知识点或多步推理。"
+  }"""
+
         prompt = f"""
 你是一个高中数学助教。请对以下 OCR 识别出的数学题目文本进行整理。
 
@@ -97,6 +181,7 @@ class NLPService:
 7. 保持题目原意不变，不要自行补充题目没有给出的条件、答案或解析。
 8. 中文题目保持中文表达。
 9. 提取 3-5 个高中数学知识点标签。
+{metadata_instructions}
 
 原始 OCR 文本：
 {text}
@@ -105,11 +190,14 @@ class NLPService:
 返回格式如下：
 {{
   "corrected_text": "修复后的完整题目文本，包含使用 $...$ 或 $$...$$ 包裹的 LaTeX 公式",
-  "tags": ["标签1", "标签2", "标签3"]
+  "knowledge_tags": ["标签1", "标签2", "标签3"]{metadata_response_shape}
 }}
 """
+        prompt_ms = int((time.time() - prompt_started_at) * 1000)
+        api_ms = 0
 
         try:
+            api_started_at = time.time()
             response = self.client.chat.completions.create(
                 model=settings.DEEPSEEK_MODEL,
                 messages=[
@@ -122,9 +210,13 @@ class NLPService:
                 stream=False,
                 temperature=0.1,
                 max_tokens=2000,
-                timeout=LLM_TIMEOUT_SECONDS,
+                timeout=settings.DEEPSEEK_METADATA_TIMEOUT_SECONDS
+                if include_metadata
+                else settings.DEEPSEEK_TIMEOUT_SECONDS,
             )
+            api_ms = int((time.time() - api_started_at) * 1000)
         except APITimeoutError:
+            api_ms = int((time.time() - api_started_at) * 1000)
             logger.warning("DeepSeek call timed out")
             return _build_failure(
                 "timeout",
@@ -132,8 +224,10 @@ class NLPService:
                 detail="deepseek_timeout",
                 corrected_text=text,
                 cost_seconds=time.time() - started_at,
+                perf={"prompt_ms": prompt_ms, "api_ms": api_ms, "parse_ms": 0},
             )
         except AuthenticationError as exc:
+            api_ms = int((time.time() - api_started_at) * 1000)
             logger.warning("DeepSeek authentication failed: {}", exc)
             return _build_failure(
                 "auth_failed",
@@ -141,8 +235,10 @@ class NLPService:
                 detail=f"deepseek_auth_failed:{exc}",
                 corrected_text=text,
                 cost_seconds=time.time() - started_at,
+                perf={"prompt_ms": prompt_ms, "api_ms": api_ms, "parse_ms": 0},
             )
         except APIConnectionError as exc:
+            api_ms = int((time.time() - api_started_at) * 1000)
             logger.warning("DeepSeek connection failed: {}", exc)
             return _build_failure(
                 "service_unavailable",
@@ -150,8 +246,10 @@ class NLPService:
                 detail=f"deepseek_connection_failed:{exc}",
                 corrected_text=text,
                 cost_seconds=time.time() - started_at,
+                perf={"prompt_ms": prompt_ms, "api_ms": api_ms, "parse_ms": 0},
             )
         except APIError as exc:
+            api_ms = int((time.time() - api_started_at) * 1000)
             logger.warning("DeepSeek API error: {}", exc)
             return _build_failure(
                 "service_error",
@@ -159,8 +257,10 @@ class NLPService:
                 detail=f"deepseek_api_error:{exc}",
                 corrected_text=text,
                 cost_seconds=time.time() - started_at,
+                perf={"prompt_ms": prompt_ms, "api_ms": api_ms, "parse_ms": 0},
             )
         except Exception:
+            api_ms = int((time.time() - api_started_at) * 1000)
             logger.exception("Unexpected DeepSeek failure")
             return _build_failure(
                 "service_error",
@@ -168,8 +268,10 @@ class NLPService:
                 detail="deepseek_unexpected_error",
                 corrected_text=text,
                 cost_seconds=time.time() - started_at,
+                perf={"prompt_ms": prompt_ms, "api_ms": api_ms, "parse_ms": 0},
             )
 
+        parse_started_at = time.time()
         try:
             result_content = response.choices[0].message.content or ""
         except (AttributeError, IndexError, TypeError):
@@ -180,6 +282,11 @@ class NLPService:
                 detail=f"deepseek_invalid_choice_shape:{response}",
                 corrected_text=text,
                 cost_seconds=time.time() - started_at,
+                perf={
+                    "prompt_ms": prompt_ms,
+                    "api_ms": api_ms,
+                    "parse_ms": int((time.time() - parse_started_at) * 1000),
+                },
             )
 
         clean_json = result_content.replace("```json", "").replace("```", "").strip()
@@ -191,6 +298,11 @@ class NLPService:
                 detail="deepseek_empty_content",
                 corrected_text=text,
                 cost_seconds=time.time() - started_at,
+                perf={
+                    "prompt_ms": prompt_ms,
+                    "api_ms": api_ms,
+                    "parse_ms": int((time.time() - parse_started_at) * 1000),
+                },
             )
 
         try:
@@ -203,10 +315,15 @@ class NLPService:
                 detail=f"deepseek_non_json:{clean_json}",
                 corrected_text=text,
                 cost_seconds=time.time() - started_at,
+                perf={
+                    "prompt_ms": prompt_ms,
+                    "api_ms": api_ms,
+                    "parse_ms": int((time.time() - parse_started_at) * 1000),
+                },
             )
 
         corrected_text = result.get("corrected_text", text)
-        raw_tags = result.get("tags", [])
+        raw_tags = result.get("knowledge_tags", result.get("tags", []))
 
         if not isinstance(corrected_text, str):
             logger.warning("DeepSeek corrected_text has invalid type: {}", result)
@@ -216,6 +333,11 @@ class NLPService:
                 detail=f"deepseek_invalid_corrected_text:{result}",
                 corrected_text=text,
                 cost_seconds=time.time() - started_at,
+                perf={
+                    "prompt_ms": prompt_ms,
+                    "api_ms": api_ms,
+                    "parse_ms": int((time.time() - parse_started_at) * 1000),
+                },
             )
 
         corrected_text = normalize_latex_delimiters(corrected_text)
@@ -228,6 +350,11 @@ class NLPService:
                 detail=f"deepseek_invalid_tags:{result}",
                 corrected_text=text,
                 cost_seconds=time.time() - started_at,
+                perf={
+                    "prompt_ms": prompt_ms,
+                    "api_ms": api_ms,
+                    "parse_ms": int((time.time() - parse_started_at) * 1000),
+                },
             )
 
         normalized_tags: list[str] = []
@@ -245,14 +372,33 @@ class NLPService:
                 detail=f"deepseek_invalid_tag_item:{tag}",
                 corrected_text=text,
                 cost_seconds=time.time() - started_at,
+                perf={
+                    "prompt_ms": prompt_ms,
+                    "api_ms": api_ms,
+                    "parse_ms": int((time.time() - parse_started_at) * 1000),
+                },
             )
+
+        difficulty = None
+        metadata_warning = None
+        if include_metadata:
+            difficulty, metadata_warning = _normalize_difficulty(result.get("difficulty"))
+        parse_ms = int((time.time() - parse_started_at) * 1000)
 
         return {
             "success": True,
             "corrected_text": corrected_text or text,
             "tags": normalized_tags,
+            "knowledge_tags": normalized_tags,
+            "question_type": _normalize_question_type(result.get("question_type")) if include_metadata else "unknown",
+            "difficulty": difficulty,
+            "metadata_warning": metadata_warning,
             "cost_seconds": round(time.time() - started_at, 2),
+            "_perf": {"prompt_ms": prompt_ms, "api_ms": api_ms, "parse_ms": parse_ms},
         }
+
+    def evaluate_question_metadata(self, text: str) -> dict[str, Any]:
+        return self.analyze(text, include_metadata=True)
 
 
 nlp_service = NLPService()

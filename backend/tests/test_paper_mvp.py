@@ -100,6 +100,10 @@ class PaperMvpTests(unittest.TestCase):
         content: str = "question content",
         tags: list[dict] | None = None,
         revision_content: dict | None = None,
+        question_type: str | None = None,
+        difficulty_level: int | None = None,
+        difficulty_label: str | None = None,
+        metadata_status: str | None = None,
     ) -> int:
         with self.SessionLocal() as db:
             question = Question(
@@ -107,6 +111,10 @@ class PaperMvpTests(unittest.TestCase):
                 content=content,
                 knowledge_tags=tags or [{"label": "algebra", "score": 1.0}],
                 origin_image="question.png",
+                question_type=question_type,
+                difficulty_level=difficulty_level,
+                difficulty_label=difficulty_label,
+                metadata_status=metadata_status,
             )
             db.add(question)
             db.flush()
@@ -242,6 +250,40 @@ class PaperMvpTests(unittest.TestCase):
         self.assertEqual(item["answer_snapshot"], "revision answer")
         self.assertEqual(item["analysis_snapshot"], "revision analysis")
         self.assertEqual(item["knowledge_tags_snapshot"], [{"label": "function", "score": 1.0}])
+
+    def test_paper_item_snapshots_question_metadata(self):
+        question_id = self._create_question(
+            content="metadata question",
+            question_type="single_choice",
+            difficulty_level=4,
+            difficulty_label="较难",
+            metadata_status="ready",
+        )
+
+        response = self._create_paper([question_id])
+
+        self.assertEqual(response.status_code, 200)
+        item = response.json()["items"][0]
+        self.assertEqual(item["question_type_snapshot"], "single_choice")
+        self.assertEqual(item["difficulty_level_snapshot"], 4)
+        self.assertEqual(item["difficulty_label_snapshot"], "较难")
+
+    def test_paper_item_allows_pending_question_metadata_with_empty_difficulty_snapshot(self):
+        question_id = self._create_question(
+            content="pending metadata question",
+            question_type="single_choice",
+            difficulty_level=4,
+            difficulty_label="较难",
+            metadata_status="pending",
+        )
+
+        response = self._create_paper([question_id])
+
+        self.assertEqual(response.status_code, 200)
+        item = response.json()["items"][0]
+        self.assertIsNone(item["question_type_snapshot"])
+        self.assertIsNone(item["difficulty_level_snapshot"])
+        self.assertIsNone(item["difficulty_label_snapshot"])
 
     def test_other_user_question_is_hidden_as_not_found(self):
         other_question_id = self._create_question(user_id=self.other_user_id, content="hidden")
