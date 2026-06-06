@@ -2,6 +2,112 @@
 
 说明：本文件按时间倒序记录每轮工作。较早轮次中的“当前主链路”等表述保留为当时历史事实；当前状态以 `docs/STATUS.md` 最新 checkpoint 和较新的 DECISIONS 为准。
 
+## 2026-06-05 第十九轮性能收口补丁：性能日志可观测性
+
+目标：
+
+- 只补充性能日志可观测性，不新增功能。
+- 检查 Draft recognize 主链路 `[DraftRecognizePerf]` 是否覆盖 LLM 成功、LLM fallback 和 OCR 失败路径。
+- 将后台元数据评估 `[QuestionMetadataPerf]` 从总耗时拆分为 load、prompt、api、parse、db 和 total 阶段耗时。
+
+结果：
+
+- 确认 Draft recognize 在 OCR 失败路径和 LLM 成功 / fallback 路径都会输出 `[DraftRecognizePerf]`，日志只包含耗时、模型、文本长度、fallback 状态、原因和失败阶段。
+- `NLPService.analyze(..., include_metadata=True)` 内部返回 `_perf` 阶段耗时，供后台任务日志使用；不记录 API key、完整 prompt 或完整题目正文。
+- `evaluate_question_metadata_task()` 输出 `load_ms`、`prompt_ms`、`api_ms`、`parse_ms`、`db_ms`、`total_ms`、模型、状态、题型、难度和错误。
+- DeepSeek metadata 失败日志将 timeout、invalid JSON、API 类错误归一为 `timeout`、`invalid_json`、`api_error`。
+- 新增后端测试覆盖 metadata 阶段耗时日志字段，以及 OCR 失败时 Draft recognize 性能日志字段。
+
+验证结果：
+
+- `cd backend && python -m compileall app` 通过。
+- `cd backend && python -m unittest discover tests` 通过。
+
+边界：
+
+- 未修改前端。
+- 未修改数据库模型或迁移。
+- 未做排序、模板、导出、答题区域、重新评估按钮、轮询、WebSocket、Celery / Redis。
+- 未删除或重构 legacy recognize。
+
+## 2026-06-04 第十九轮性能收口：元数据后台补全与性能日志
+
+目标：
+
+- 将题型/难度评估从同步 Draft recognize 主链路拆出，降低录入等待时间。
+- 保存入题库后后台补全题型与五星难度元数据。
+- 增加 Draft recognize 和后台元数据评估性能日志。
+- 不做模板、排序、导出、答题区域、智能组卷、WebSocket、自动轮询、Celery / Redis 或大重构。
+
+结果：
+
+- `NLPService.analyze()` 默认轻量返回 `corrected_text` 和 `knowledge_tags`，显式 `include_metadata=True` 时才解析题型与难度。
+- 新增 `evaluate_question_metadata()` 供后台元数据评估使用。
+- `Question` 新增 `metadata_status`、`metadata_error`、`metadata_started_at`、`metadata_finished_at` nullable 字段。
+- 新增 Alembic 迁移 `20260604_0005_question_metadata_status.py`。
+- Draft recognize 不再把题型/难度写入 Draft；返回字段保留为可空兼容字段。
+- save-to-bank 创建 Question 时设置 `metadata_status=pending`，通过 FastAPI `BackgroundTasks` 调用后台任务。
+- 后台任务内部新建 DB session，成功写入题型/难度并标记 `ready`，失败标记 `failed`，不影响保存入题库请求。
+- PaperItem 仅在 Question 元数据 ready 且已有难度时保存题型/难度快照；否则快照为空。
+- `BankPanel.vue` 根据 `metadata_status` 展示“元数据评估中”“难度评估失败”“未评估”或五星难度。
+- 增加 `[DraftRecognizePerf]` 和 `[QuestionMetadataPerf]` 日志，记录耗时、模型、文本长度、fallback 或错误状态。
+- `backend/.env.example` 增加 `DEEPSEEK_TIMEOUT_SECONDS` 和 `DEEPSEEK_METADATA_TIMEOUT_SECONDS` 示例配置。
+- 更新 API、STATUS、DECISIONS、KNOWN_ISSUES 文档。
+
+验证结果：
+
+- 已先运行 `python -m unittest tests.test_llm tests.test_draft_pipeline tests.test_paper_mvp` 和 `node ./tests/paper-mvp-contract.test.mjs`，在功能缺失时按预期失败。
+- 实现后定向后端测试通过，`Ran 38 tests OK`。
+- 实现后前端 Paper MVP 契约测试通过。
+- 完整验证命令结果见 `docs/STATUS.md` 最新验证结果。
+
+边界：
+
+- 未改变 Draft 状态机。
+- 未删除或重构 legacy recognize。
+- 未做排序、筛选、模板、导出、答题区域、智能组卷、重新评估按钮、WebSocket、自动轮询或 Celery / Redis。
+- 后台任务依赖当前后端进程，服务重启可能丢失正在执行的元数据评估任务。
+
+## 2026-06-04 第十九轮：LLM 题型与五星难度元数据
+
+目标：
+
+- 扩展 LLM analyze 输出契约，增加题型和五星难度元数据。
+- 将题型与难度保存到 Question，并在 Draft recognize、Question API 和题库前端最小展示。
+- 不做排序、模板、导出、答题区域、智能组卷或大规模重构。
+
+结果：
+
+- `backend/app/services/llm.py` 兼容 `knowledge_tags` 和旧 `tags`，新增 `question_type` 和 `difficulty` 解析。
+- `difficulty` 缺失或非法时不阻断 `corrected_text` 主流程，非法 difficulty 返回 fallback warning。
+- `Draft` 新增 nullable 题型与难度字段，避免把 `current_content` 扩展成复杂元数据载体。
+- `Question` 新增题型、难度、置信度、理由、评估模型和评估时间字段。
+- `PaperItem` 新增可选题型与难度快照字段。
+- Draft recognize 返回题型与难度；save-to-bank 保存到 Question。
+- Question 列表和详情返回题型与难度。
+- `BankPanel.vue` 最小展示题型和五星难度；`PaperPanel.vue` 最小展示 PaperItem 快照题型和难度。
+- 更新 API、STATUS、DECISIONS、KNOWN_ISSUES 文档。
+
+验证结果：
+
+- 已先运行 `python -m unittest tests.test_llm`、`python -m unittest tests.test_draft_pipeline`、`python -m unittest tests.test_paper_mvp` 和 `node ./tests/paper-mvp-contract.test.mjs`，在功能缺失时按预期失败。
+- 实现后上述定向测试均已通过。
+- 已运行 `python -m compileall app`，通过。
+- 已运行 `python -m unittest discover tests`，通过，`Ran 68 tests OK`。
+- 已运行 `npm run build`，通过，仅有 Vite chunk size warning。
+- 已运行 `npm run test:auth-contract`，通过。
+- 已运行 `npm run test:stage3-contract`，通过。
+- 默认 `alembic upgrade head` 因当前本地 SQLite 数据库只读失败；改用临时 SQLite 数据库运行 `alembic upgrade head; alembic current`，通过，当前 `20260604_0004 (head)`。
+
+边界：
+
+- 未做按难度排序或筛选。
+- 未做按知识点排序。
+- 未做组卷模板、自定义模板、PDF / DOCX 导出、答题区域或智能组卷。
+- 未改变 Draft flow 状态机。
+- 未删除 legacy recognize。
+- 用户编辑题目后不会自动重新评估题型或难度。
+
 ## 2026-06-03 第十八轮：前端组卷入口 MVP
 
 目标：

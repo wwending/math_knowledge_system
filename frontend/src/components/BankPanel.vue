@@ -77,6 +77,10 @@
           <div class="info-box">
             <div class="meta-row">
               <el-tag size="small" type="info">ID: {{ item.id }}</el-tag>
+              <el-tag size="small" type="warning" effect="plain">
+                {{ formatQuestionType(item.question_type) }}
+              </el-tag>
+              <span class="difficulty-text">难度：{{ formatDifficultyStatus(item) }}</span>
               <span class="time">{{ formatTime(item.created_at) }}</span>
             </div>
             <div class="preview-text">
@@ -134,6 +138,10 @@
         <div class="detail-right">
           <div class="detail-meta">
             <el-tag size="small" type="info">ID: {{ currentItem.id }}</el-tag>
+            <el-tag size="small" type="warning" effect="plain">
+              {{ formatQuestionType(currentItem.question_type) }}
+            </el-tag>
+            <span class="difficulty-text">难度：{{ formatDifficultyStatus(currentItem) }}</span>
             <span class="time">{{ formatTime(currentItem.created_at) }}</span>
           </div>
           <el-divider content-position="left">知识点</el-divider>
@@ -349,6 +357,31 @@ const getTags = (item) => {
   })
 }
 
+const questionTypeLabels = {
+  single_choice: '单选题',
+  multiple_choice: '多选题',
+  fill_blank: '填空题',
+  solution: '解答题',
+  judge: '判断题',
+  unknown: '未知'
+}
+
+const formatQuestionType = (questionType) => questionTypeLabels[questionType] || '未知'
+
+const formatDifficultyStars = (difficultyLevel) => {
+  const level = Number(difficultyLevel)
+  if (!Number.isInteger(level) || level < 1 || level > 5) return '未评估'
+  return `${'★'.repeat(level)}${'☆'.repeat(5 - level)}`
+}
+
+const formatDifficultyStatus = (item) => {
+  const status = item?.metadata_status
+  if (status === 'pending' || status === 'processing') return '元数据评估中'
+  if (status === 'failed') return '难度评估失败'
+  if (status === 'ready' && item?.difficulty_level) return formatDifficultyStars(item.difficulty_level)
+  return formatDifficultyStars(item?.difficulty_level)
+}
+
 const renderTex = (text) => text ? renderMarkdown(text) : '<span style="color:#999">暂无内容</span>'
 
 const getPreviewText = (text) => {
@@ -457,10 +490,16 @@ onMounted(() => {
 
 .meta-row {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   align-items: center;
   font-size: 12px;
   color: #999;
+}
+
+.difficulty-text {
+  color: #8a6d1f;
+  white-space: nowrap;
 }
 
 .preview-text {

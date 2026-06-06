@@ -75,6 +75,10 @@
                 <span>第 {{ item.position }} 题</span>
                 <el-tag size="small" effect="plain">分值：{{ item.score ?? 0 }}</el-tag>
                 <el-tag size="small" type="info" effect="plain">题目 ID：{{ item.question_id }}</el-tag>
+                <el-tag size="small" type="warning" effect="plain">
+                  {{ formatQuestionType(item.question_type_snapshot) }}
+                </el-tag>
+                <span class="difficulty-text">难度：{{ formatDifficultyStars(item.difficulty_level_snapshot) }}</span>
               </div>
 
               <el-divider content-position="left">题目内容</el-divider>
@@ -190,6 +194,23 @@ const getTags = (item) => {
     }
     return { label: String(tag) }
   })
+}
+
+const questionTypeLabels = {
+  single_choice: '单选题',
+  multiple_choice: '多选题',
+  fill_blank: '填空题',
+  solution: '解答题',
+  judge: '判断题',
+  unknown: '未知'
+}
+
+const formatQuestionType = (questionType) => questionTypeLabels[questionType] || '未知'
+
+const formatDifficultyStars = (difficultyLevel) => {
+  const level = Number(difficultyLevel)
+  if (!Number.isInteger(level) || level < 1 || level > 5) return '未评估'
+  return `${'★'.repeat(level)}${'☆'.repeat(5 - level)}`
 }
 
 const formatTime = (value) => value ? new Date(value).toLocaleString() : '-'
@@ -327,6 +348,12 @@ onBeforeUnmount(() => {
   gap: 8px;
   color: #243846;
   font-weight: 600;
+}
+
+.difficulty-text {
+  color: #8a6d1f;
+  font-size: 13px;
+  white-space: nowrap;
 }
 
 .item-content {

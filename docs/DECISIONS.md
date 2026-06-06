@@ -2,6 +2,67 @@
 
 说明：本文件按时间倒序记录决策。较早决策中的“当前主链路”等表述保留为当时历史事实；如与顶部较新决策冲突，以较新决策和 `docs/STATUS.md` 当前 checkpoint 为准。
 
+## 决策 25：题型与难度元数据改为保存后后台补全
+
+结论：
+
+- 交互式 `POST /api/v1/drafts/{draft_id}/recognize` 优先保证 OCR、`corrected_text` 和知识点标签快速返回。
+- 题型和五星难度作为增强元数据，不再阻塞 Draft recognize 主链路。
+- `POST /api/v1/drafts/{draft_id}/save-to-bank` 创建 `Question` 后将 `metadata_status` 设为 `pending`。
+- 当前使用 FastAPI `BackgroundTasks` 调用后台任务补全 `question_type`、`difficulty_level`、`difficulty_label`、`difficulty_confidence`、`difficulty_reason`、`difficulty_model` 和 `difficulty_evaluated_at`。
+- 后台任务内部新建 DB session，不复用请求 session。
+- 后台任务失败只更新 `metadata_status=failed` 和 `metadata_error`，不回滚已经保存入题库的结果。
+- 当前不引入 Celery / Redis；未来如果部署并发压力或任务可靠性要求提高，再迁移到真正任务队列。
+
+原因：
+
+- 用户录入题目时更关心 `corrected_text` 主结果，题型和难度是后续题库/组卷增强能力。
+- 同步 recognize 同时承担 OCR、洗稿、知识点、题型和难度评估会让交互等待变长。
+- 使用 `BackgroundTasks` 可以在当前架构内完成最小性能收口，不扩大基础设施复杂度。
+
+边界：
+
+- 不改变 Draft 状态机。
+- 不删除 legacy recognize。
+- 不做自动轮询、WebSocket、重新评估按钮、智能组卷、模板、导出或答题区域。
+- 后台任务依赖当前后端进程，服务重启可能丢失正在执行的元数据评估任务。
+
+日期：2026-06-04
+
+## 决策 24：LLM 洗稿阶段同时生成题型与五星难度元数据
+
+结论：
+
+- LLM analyze 从“文本清洗 + 知识点标签”扩展为“题目结构化分析”。
+- `corrected_text` 仍是主结果，继续优先保障识别和保存流程。
+- `question_type` 和 `difficulty` 是增强结果；`difficulty` 缺失或非法时不阻断 Draft recognize。
+- 后端兼容旧 `tags` 字段，并将其归一为 `knowledge_tags`。
+- Draft 使用独立 nullable 字段暂存题型与难度，避免把 `current_content` 从正文结果扩展成复杂元数据载体。
+- Question 保存最终题型与难度；PaperItem 保存可选题型与难度快照。
+
+五星评分标准：
+
+- 1星：基础识记题，直接套概念或公式即可完成。
+- 2星：基础应用题，单一知识点，一到两步计算。
+- 3星：中等综合题，涉及两类知识点或多步推理。
+- 4星：较难综合题，需要分类讨论、复杂计算或较强转化能力。
+- 5星：压轴难题，需要抽象建模、创新构造或高综合能力。
+
+原因：
+
+- 后续按题型、知识点、难度组卷需要题库层稳定保存元数据。
+- 难度评估来自 LLM，可信度低于 `corrected_text`，因此不能让增强字段失败影响主识别流程。
+- PaperItem 快照可以保持已创建试卷的题型和难度展示稳定。
+
+边界：
+
+- 不做按难度排序、按知识点排序、组卷模板、PDF / DOCX 导出、答题区域或智能组卷。
+- 不改变 Draft flow 状态机。
+- 不删除 legacy recognize。
+- 用户编辑题目后不会自动重新评估题型或难度。
+
+日期：2026-06-04
+
 ## 决策 23：前端组卷入口采用 BankPanel 选题 + PaperPanel 展示
 
 结论：

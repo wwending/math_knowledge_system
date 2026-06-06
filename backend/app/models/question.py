@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, JSON, Text
+from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, JSON, String, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -12,6 +12,17 @@ class Question(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     content = Column(Text, nullable=True)
     knowledge_tags = Column(JSON, nullable=True)
+    question_type = Column(String, nullable=True)
+    difficulty_level = Column(Integer, nullable=True)
+    difficulty_label = Column(String, nullable=True)
+    difficulty_confidence = Column(Float, nullable=True)
+    difficulty_reason = Column(Text, nullable=True)
+    difficulty_model = Column(String, nullable=True)
+    difficulty_evaluated_at = Column(DateTime(timezone=True), nullable=True)
+    metadata_status = Column(String, nullable=True)
+    metadata_error = Column(String, nullable=True)
+    metadata_started_at = Column(DateTime(timezone=True), nullable=True)
+    metadata_finished_at = Column(DateTime(timezone=True), nullable=True)
     origin_image = Column(String, nullable=True)
     canonical_fingerprint = Column(String, nullable=True, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

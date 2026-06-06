@@ -13,6 +13,42 @@
 
 当前推荐 smoke 文档为 `docs/API_SMOKE_DRAFT_FLOW.md`；`docs/API_SMOKE_DRAFT_PIPELINE.md` 是脚本化 smoke 补充文档。
 
+## LLM 题目分析元数据
+
+第十九轮性能收口后，交互式 Draft recognize 只强制等待 OCR、`corrected_text` 和知识点标签；题型与五星难度作为增强元数据，在保存入题库后由后台任务补全。
+
+LLM 目标输出结构：
+
+```json
+{
+  "corrected_text": "修复后的题目文本",
+  "knowledge_tags": ["圆与方程", "切线"],
+  "question_type": "single_choice",
+  "difficulty": {
+    "level": 3,
+    "label": "中等",
+    "confidence": 0.78,
+    "reason": "涉及圆的切线方程与参数代入，需要两步推理。"
+  }
+}
+```
+
+兼容说明：
+
+- 旧字段 `tags` 仍兼容；如 LLM 返回 `tags` 但没有 `knowledge_tags`，后端会转换为知识点标签。
+- `corrected_text` 是主结果；`question_type` 和 `difficulty` 是增强结果。
+- `POST /api/v1/drafts/{draft_id}/recognize` 不再保证返回题型和难度，相关字段可为空。
+- `POST /api/v1/drafts/{draft_id}/save-to-bank` 创建 `Question` 后将 `metadata_status` 设为 `pending`，并用 FastAPI `BackgroundTasks` 后台补全题型与难度。
+- 后台元数据评估失败不会回滚已经保存入题库的题目，失败时 `metadata_status=failed` 并写入 `metadata_error`。
+- `question_type` 可选值为 `single_choice`、`multiple_choice`、`fill_blank`、`solution`、`judge`、`unknown`。
+- `difficulty.level` 为 1-5 星整数，`difficulty.confidence` 为 0-1 小数，`difficulty.reason` 是简短理由。
+
+相关 API 返回字段：
+
+- `POST /api/v1/drafts/{draft_id}/recognize` 和 `GET /api/v1/drafts/{draft_id}` 仍保留可空的 `question_type`、`difficulty_level`、`difficulty_label`、`difficulty_confidence`、`difficulty_reason` 字段用于兼容。
+- `GET /api/v1/questions` 和 `GET /api/v1/questions/{question_id}` 返回题型、难度、置信度、理由、评估模型、评估时间，以及 `metadata_status`、`metadata_error`、`metadata_started_at`、`metadata_finished_at`。
+- `GET /api/v1/papers/{paper_id}` 的 `items` 返回可选快照字段 `question_type_snapshot`、`difficulty_level_snapshot`、`difficulty_label_snapshot`；如果创建试卷时题目元数据尚未 ready，快照字段为空。
+
 ## 组卷 MVP
 
 第十七轮新增后端最小组卷能力。当前只支持登录用户手动选择自己题库中的题目生成草稿试卷，不支持智能组卷、导出、前端组卷或拖拽排序。
@@ -39,7 +75,7 @@
 
 - `PaperItem` 创建时保存题目内容快照，避免题库后续编辑导致历史试卷内容被动变化。
 - 如果题目已有 `QuestionRevision`，优先使用最新 revision 的内容生成快照。
-- 当前返回字段包括 `content_snapshot`、`answer_snapshot`、`analysis_snapshot`、`knowledge_tags_snapshot`。
+- 当前返回字段包括 `content_snapshot`、`answer_snapshot`、`analysis_snapshot`、`knowledge_tags_snapshot`，以及可选的题型和难度快照字段。
 
 ## Draft 流水线
 

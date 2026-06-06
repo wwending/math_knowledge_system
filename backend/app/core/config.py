@@ -106,6 +106,8 @@ class Settings(BaseSettings):
     DEEPSEEK_API_KEY: str = ""
     DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"
     DEEPSEEK_MODEL: str = "deepseek-chat"
+    DEEPSEEK_TIMEOUT_SECONDS: int = 30
+    DEEPSEEK_METADATA_TIMEOUT_SECONDS: int = 45
 
     model_config = SettingsConfigDict(
         env_file=ENV_FILE_PATH,

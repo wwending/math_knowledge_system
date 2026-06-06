@@ -23,6 +23,11 @@ class DraftDetail(BaseModel):
     current_content: Optional[dict[str, Any]] = None
     content: str = ""
     knowledge_tags: list[KnowledgeTag] = Field(default_factory=list)
+    question_type: Optional[str] = None
+    difficulty_level: Optional[int] = None
+    difficulty_label: Optional[str] = None
+    difficulty_confidence: Optional[float] = None
+    difficulty_reason: Optional[str] = None
     last_ocr_run_id: Optional[int] = None
     last_llm_run_id: Optional[int] = None
     created_at: Optional[datetime] = None

@@ -41,6 +41,9 @@ class PaperItem(Base):
     answer_snapshot = Column(Text, nullable=True)
     analysis_snapshot = Column(Text, nullable=True)
     knowledge_tags_snapshot = Column(JSON, nullable=True)
+    question_type_snapshot = Column(String, nullable=True)
+    difficulty_level_snapshot = Column(Integer, nullable=True)
+    difficulty_label_snapshot = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     paper = relationship("Paper", back_populates="items")

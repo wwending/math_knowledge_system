@@ -26,6 +26,9 @@ class PaperItemRead(BaseModel):
     answer_snapshot: Optional[str] = None
     analysis_snapshot: Optional[str] = None
     knowledge_tags_snapshot: Optional[list[Any]] = None
+    question_type_snapshot: Optional[str] = None
+    difficulty_level_snapshot: Optional[int] = None
+    difficulty_label_snapshot: Optional[str] = None
 
 
 class PaperRead(BaseModel):

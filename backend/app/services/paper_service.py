@@ -52,12 +52,17 @@ def _snapshot_from_question(db: Session, question: Question) -> dict[str, Any]:
         analysis_snapshot = None
         knowledge_tags_snapshot = question.knowledge_tags
 
+    metadata_ready = question.metadata_status == "ready" and question.difficulty_level is not None
+
     return {
         "question_revision_id": revision.id if revision else None,
         "content_snapshot": content_snapshot or "",
         "answer_snapshot": answer_snapshot,
         "analysis_snapshot": analysis_snapshot,
         "knowledge_tags_snapshot": knowledge_tags_snapshot or [],
+        "question_type_snapshot": question.question_type if metadata_ready else None,
+        "difficulty_level_snapshot": question.difficulty_level if metadata_ready else None,
+        "difficulty_label_snapshot": question.difficulty_label if metadata_ready else None,
     }
 
 
@@ -84,6 +89,9 @@ def _build_paper_read(paper: Paper) -> PaperRead:
                 answer_snapshot=item.answer_snapshot,
                 analysis_snapshot=item.analysis_snapshot,
                 knowledge_tags_snapshot=item.knowledge_tags_snapshot,
+                question_type_snapshot=item.question_type_snapshot,
+                difficulty_level_snapshot=item.difficulty_level_snapshot,
+                difficulty_label_snapshot=item.difficulty_label_snapshot,
             )
             for item in items
         ],
