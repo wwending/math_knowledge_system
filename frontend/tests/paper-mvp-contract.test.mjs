@@ -4,6 +4,7 @@ import { resolve } from 'node:path'
 const dashboardPath = resolve(process.cwd(), 'src/views/Dashboard.vue')
 const bankPanelPath = resolve(process.cwd(), 'src/components/BankPanel.vue')
 const paperPanelPath = resolve(process.cwd(), 'src/components/PaperPanel.vue')
+const paperPreviewPath = resolve(process.cwd(), 'src/components/PaperPreview.vue')
 
 const dashboardSource = readFileSync(dashboardPath, 'utf8')
 const bankPanelSource = readFileSync(bankPanelPath, 'utf8')
@@ -60,6 +61,18 @@ if (!existsSync(paperPanelPath)) {
     failures.push('PaperPanel does not call the papers API')
   }
 
+  if (!paperPanelSource.includes('/render-model')) {
+    failures.push('PaperPanel does not call the paper render-model API')
+  }
+
+  if (!paperPanelSource.includes('answer_area_mode')) {
+    failures.push('PaperPanel does not expose answer_area_mode configuration')
+  }
+
+  if (!paperPanelSource.includes('PaperPreview')) {
+    failures.push('PaperPanel does not render PaperPreview')
+  }
+
   if (!paperPanelSource.includes('renderMarkdown')) {
     failures.push('PaperPanel does not reuse the shared Markdown renderer')
   }
@@ -74,6 +87,24 @@ if (!existsSync(paperPanelPath)) {
 
   if (!paperPanelSource.includes('analysis_snapshot')) {
     failures.push('PaperPanel does not handle analysis snapshots')
+  }
+}
+
+if (!existsSync(paperPreviewPath)) {
+  failures.push('PaperPreview.vue is missing')
+} else {
+  const paperPreviewSource = readFileSync(paperPreviewPath, 'utf8')
+
+  if (!paperPreviewSource.includes('renderMarkdown')) {
+    failures.push('PaperPreview does not reuse the shared Markdown renderer')
+  }
+
+  if (paperPreviewSource.includes('markdown-it') || paperPreviewSource.includes('MarkdownIt')) {
+    failures.push('PaperPreview initializes markdown-it directly')
+  }
+
+  if (paperPreviewSource.includes('answer_snapshot') || paperPreviewSource.includes('analysis_snapshot')) {
+    failures.push('PaperPreview renders answer or analysis snapshot fields')
   }
 }
 

@@ -1,18 +1,61 @@
 # KNOWN_ISSUES
 
+## 0.5 Draft LLM 空响应仍需真实复杂题复现
+
+第二十轮人工验收发现，复杂数学题 Draft 识别链路可能出现 DeepSeek empty content：
+
+- Baidu OCR 成功。
+- LLM 返回空 content 或异常响应结构。
+- 后端 fallback 到 OCR 原文，`draft_ready + partial_success=True`。
+- 前端会提示“智能整理服务返回了空数据”，公式可能因未被 LLM 标准化而渲染异常。
+
+第二十点五轮已补充安全诊断日志：
+
+- 记录 response 类型、id、model、choices 数、finish_reason、message role、content 长度和截断预览。
+- 记录 refusal、reasoning_content、tool_calls、usage token、输入长度、配置模型、timeout 和截断后的 raw response preview。
+- empty content 的错误 detail 会包含 `choices_count`、`finish_reason`、`content_len`、`completion_tokens`。
+
+第二十点六轮已按 DeepSeek 官方文档调整 Draft LLM 调用：
+
+- 默认通过 `extra_body={"thinking": {"type": "disabled"}}` 关闭 thinking，可用 `LLM_THINKING_MODE` 配置。
+- 启用 `response_format={"type": "json_object"}`。
+- Prompt 明确只返回 JSON，并提供 JSON 输出样例。
+- 不使用 `reasoning_effort="low"`，因为 DeepSeek 文档说明 low/medium 会映射为 high。
+- `finish_reason=length` 且 content 为空时，错误 detail 改为 `deepseek_length_exhausted_empty_content`。
+
+当前限制：
+
+- 该问题尚未通过真实复杂椭圆题在线复现闭环。
+- 本轮未改变 fallback 状态机，也未禁止 partial_success Draft 保存入库。
+- 本轮不表示已彻底解决所有 DeepSeek 空响应；仍需真实复杂题复测。
+
+影响：
+
+- 复杂 OCR 文本仍可能触发 LLM fallback；用户保存前应关注 partial_success warning。
+- 后续应使用复杂椭圆题重新验收，依据新增日志判断关闭 thinking 和 JSON Output 后是否仍存在 token 截断、内容过滤、空 choices、字段位置变化或第三方异常体。
+
 ## 0. 组卷 MVP 后续能力仍未完成
 
 第十七轮新增后端最小手动组卷能力。第十八轮新增前端组卷入口 MVP，支持从题库勾选题目、创建试卷、查看试卷列表和查看试卷详情。
+
+第二十轮新增学生版 A4 作业预览 MVP：后端生成 PaperRenderModel，前端显示预览。该能力仍是预览基础能力，不是导出或正式排版引擎。
 
 当前明确暂不支持：
 
 - 智能组卷算法。
 - PDF / Word 导出。
+- 自动分页；长题可能撑开 A4 视觉容器。
 - 拖拽排序。
 - 分值编辑。
 - 复杂试卷排版。
 - 打印样式优化。
 - 按知识点、难度或分值自动配比。
+
+补充边界：
+
+- 题型快照为空时，预览统一归入 `unknown / 未分类`。
+- 当前答题区只支持无答题区或每题后简单横线。
+- 当前预览不包含答案或解析，且学生版后端响应层面不返回答案解析快照。
 
 影响：
 

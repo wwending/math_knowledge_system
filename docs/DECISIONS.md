@@ -2,6 +2,32 @@
 
 说明：本文件按时间倒序记录决策。较早决策中的“当前主链路”等表述保留为当时历史事实；如与顶部较新决策冲突，以较新决策和 `docs/STATUS.md` 当前 checkpoint 为准。
 
+## 决策 26：PaperRenderModel 由后端生成，前端只负责展示
+
+结论：
+
+- 新增 `POST /api/v1/papers/{paper_id}/render-model`，由后端将 Paper / PaperItem 快照转换为稳定 PaperRenderModel。
+- PaperRenderModel 独立放在 `backend/app/schemas/paper_render.py` 和 `backend/app/services/paper_render_service.py`，避免扩大既有 Paper schema/service 职责。
+- 当前只支持 `homework` 模板、`student` 版本、`A4`、按 `question_type` 分组、按 `position` 排序。
+- 学生版响应层面不返回答案或解析快照，前端不承担隐藏敏感字段的责任。
+- 前端新增 `PaperPreview.vue` 负责 A4 视觉展示，并复用共享 Markdown / LaTeX 渲染工具。
+- 后续 PDF / DOCX 导出应优先复用 PaperRenderModel，而不是重新读取 PaperItem 并各自拼装结构。
+
+原因：
+
+- 预览、PDF、DOCX 的核心内容结构应保持一致，避免不同导出通道各自实现排序、分组、题型兜底和答题区逻辑。
+- 后端生成模型可以统一权限、学生版字段裁剪和历史数据归一化。
+- 前端只做展示可以降低后续模板扩展和导出接入的分叉风险。
+
+边界：
+
+- 不新增数据库表，不修改 Paper / PaperItem 模型，不做数据库迁移。
+- 不做 PDF / DOCX 导出。
+- 不做自定义模板、模板编辑器、自动分页、拖拽排序、知识点排序、难度排序或复杂答题卡。
+- 不修改 Draft flow 或 legacy `/api/v1/recognize`。
+
+日期：2026-06-06
+
 ## 决策 25：题型与难度元数据改为保存后后台补全
 
 结论：

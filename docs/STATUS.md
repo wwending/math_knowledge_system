@@ -1,5 +1,79 @@
 # STATUS
 
+## 2026-06-06 第二十点六轮 Draft LLM 非思考模式 + JSON 输出稳定化
+
+当前项目暂停第二十一轮新功能，根据 DeepSeek 官方文档将第二十点六轮目标从“单纯提高 max_tokens”调整为 Draft LLM 非思考模式和 JSON 输出稳定化。
+
+新增能力：
+
+- Draft LLM 调用默认关闭 thinking：OpenAI SDK 调用传入 `extra_body={"thinking": {"type": "disabled"}}`。
+- thinking mode 可通过 `LLM_THINKING_MODE` 配置，默认 `disabled`。
+- 启用 JSON Output：OpenAI SDK 调用传入 `response_format={"type": "json_object"}`。
+- system/user prompt 均明确 JSON 要求，user prompt 包含 JSON 输出样例。
+- Prompt 角色调整为“高中数学 OCR 文本清洗与结构化工具”，强调不解题、不证明、不分析、不输出推理过程，只修正 OCR、只规范 LaTeX、只返回 JSON。
+- `max_tokens` 可通过 `LLM_MAX_TOKENS` 配置，默认 `2048`；timeout 可通过 `LLM_TIMEOUT_SECONDS` 配置，默认 `45` 秒。
+- 不传 `reasoning_effort`，避免 DeepSeek low/medium 映射为 high。
+- 第二十点五轮安全摘要日志继续保留：`finish_reason`、`content_len`、`reasoning_content_len`、`usage_completion_tokens`、`usage_total_tokens`、`raw_response_preview` 等字段仍记录。
+- `finish_reason=length` 且 content 为空时继续 fallback，并返回可区分 detail：`deepseek_length_exhausted_empty_content`。
+
+当前边界：
+
+- 本轮未修改 PaperRenderModel、PaperPreview、前端、数据库模型、Alembic 迁移或 legacy `/api/v1/recognize`。
+- 本轮未把 max_tokens 直接升到 6000。
+- 本轮未把 `reasoning_content` 当作 `corrected_text` 使用。
+- Draft fallback 状态机未改变：LLM 失败仍返回 `draft_ready + partial_success=True`。
+- 复杂椭圆题仍需真实在线复测，以确认关闭 thinking 和 JSON Output 后是否消除 empty content。
+
+验证结果：
+
+- `cd backend && python -m unittest tests.test_llm` 通过。
+- `cd backend && python -m unittest tests.test_draft_pipeline.DraftPipelineTests.test_draft_recognize_records_empty_content_invalid_response` 通过。
+- `cd backend && python -m compileall app` 通过。
+- `cd backend && python -m unittest discover tests` 通过，`Ran 92 tests OK`。
+
+## 2026-06-06 第二十点五轮 Draft LLM 空响应诊断增强
+
+当前项目暂停第二十一轮新功能，针对第二十轮人工验收发现的复杂 OCR 文本触发 DeepSeek empty content 问题，完成 Draft LLM 响应解析的最小可观测性增强。
+
+新增诊断能力：
+
+- `NLPService.analyze()` 对 DeepSeek 响应生成安全摘要日志，覆盖 response 类型、id、model、choices 数、finish_reason、message role、content 长度和截断预览、refusal、reasoning_content、tool_calls、usage token、输入长度、配置模型、timeout 和截断 raw response preview。
+- empty content、空 choices、缺 choices、非 JSON、缺 `corrected_text`、字段结构非法等分支不再打印完整 response/result，改为打印安全摘要。
+- empty content 的 `detail` 包含 `choices_count`、`finish_reason`、`content_len`、`completion_tokens`，便于下一次复杂题复现时定位原因。
+- Draft fallback 状态机未改变：LLM 失败仍返回 `draft_ready + partial_success=True`，并保留 warning 和 LLMRun 错误信息。
+
+当前边界：
+
+- 本轮未修改 PaperRenderModel、PaperPreview、前端、数据库模型、Alembic 迁移或 legacy `/api/v1/recognize`。
+- 本轮未恢复 `response_format={"type": "json_object"}`；是否启用需等待复杂椭圆题复现后的日志证据。
+- 本轮不表示已彻底解决所有 DeepSeek 空响应，只表示已有可诊断日志和测试保护。
+
+验证结果：
+
+- `cd backend && python -m compileall app` 通过。
+- `cd backend && python -m unittest discover tests` 通过，`Ran 90 tests OK`。
+
+## 2026-06-06 第二十轮 PaperRenderModel + 作业模板预览 MVP
+
+当前项目在不修改 Paper / PaperItem 数据库模型、不做迁移、不做 PDF / DOCX 导出、不切换 Draft/Paper 主流程的前提下，为已有试卷增加学生版作业预览能力。
+
+新增能力：
+
+- 新增 `POST /api/v1/papers/{paper_id}/render-model`，将 Paper / PaperItem 快照转换为 PaperRenderModel。
+- 当前仅支持 `template_type=homework`、`version=student`、`paper_size=A4`、`group_by=question_type`、`sort_by=position`。
+- 支持 `answer_area_mode=none` 和 `after_each_question`，默认 `none`。
+- PaperRenderModel 按 `question_type_snapshot` 分组，每组内按 `position` 排序，`display_number` 全局连续。
+- `question_type_snapshot` 为空时归入 `unknown / 未分类`。
+- 学生版响应层面不返回答案解析快照。
+- `PaperPanel.vue` 增加预览入口，`PaperPreview.vue` 渲染 A4 作业样式并复用 `renderMarkdown.ts`。
+
+当前边界：
+
+- 不支持自动分页；长题会撑开 A4 视觉容器。
+- 不支持 PDF / DOCX 导出。
+- 不支持用户自定义模板、模板编辑器、拖拽排序、知识点排序、难度排序或复杂答题卡。
+- 当前预览适合 MVP 验收，不等同于正式打印排版引擎。
+
 ## 2026-06-04 第十九轮性能收口：元数据后台补全
 
 当前项目在不重构 OCR / Draft / Paper 主流程、不删除 legacy recognize、不新增排序/模板/导出/答题区/智能组卷的前提下，将题型与五星难度从同步 Draft recognize 主链路拆出，改为保存入题库后后台补全。
