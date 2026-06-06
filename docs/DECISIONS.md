@@ -2,6 +2,33 @@
 
 说明：本文件按时间倒序记录决策。较早决策中的“当前主链路”等表述保留为当时历史事实；如与顶部较新决策冲突，以较新决策和 `docs/STATUS.md` 当前 checkpoint 为准。
 
+## 决策 27：Draft OCR 引擎改为 Provider 模式，百度仍为默认 provider
+
+结论：
+
+- Draft recognize 不再直接绑定百度 OCR 引擎实例，改为通过 `OCRService` 调用 `OcrProvider`。
+- Provider 内部统一返回 `OCRResult`，便于后续接入本地 OCR、云 OCR fallback 和可观测性字段。
+- 现有百度 OCR 逻辑仅封装为 `BaiduOcrProvider`，不改变 `ocr_engine.py` 的识别逻辑、错误口径或文本拼接方式。
+- `OCR_PROVIDER` 默认 `baidu`；当前实际只支持 `baidu`。
+- `OCR_FALLBACK_PROVIDER` 仅作为配置预留，本轮不启用 fallback 链。
+- legacy `/api/v1/recognize` 保持继续调用既有 `ocr_engine.ocr_service`，不纳入本轮改造。
+
+原因：
+
+- 未来部署在低配服务器时，需要为 RapidOCR / PaddleOCR / Pix2Text 等本地 OCR 和百度云 fallback 留出切换点。
+- 先抽象 Provider 可以降低供应商锁定风险，但不在本轮扩大为 OCR 引擎替换或成本优化。
+- 保持百度为默认 provider 可以保护当前 Draft 识别行为和验收基线。
+
+边界：
+
+- 不接入本地 OCR。
+- 不新增数据库字段或迁移。
+- 不修改 PaperRenderModel、PaperPreview 或前端主页面。
+- 不删除百度 OCR。
+- 不改变 legacy `/api/v1/recognize`。
+
+日期：2026-06-06
+
 ## 决策 26：PaperRenderModel 由后端生成，前端只负责展示
 
 结论：

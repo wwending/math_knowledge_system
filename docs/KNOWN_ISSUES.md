@@ -1,5 +1,25 @@
 # KNOWN_ISSUES
 
+## 0.6 本地 OCR 尚未接入，百度 OCR 成本问题仍未解决
+
+第二十一轮已完成 Draft OCR Provider 抽象：
+
+- Draft recognize 通过 `OCRService` 调用 OCR provider。
+- 当前默认 provider 仍为 `baidu`。
+- 现有百度 OCR 仅被封装为 `BaiduOcrProvider`，识别逻辑和文本处理口径未改变。
+- `OCR_FALLBACK_PROVIDER` 仅预留，当前未启用 fallback。
+
+当前限制：
+
+- 尚未接入 RapidOCR、PaddleOCR、Pix2Text 或其他本地 OCR。
+- 百度 OCR 仍是当前实际 Draft OCR provider，供应商成本和可用性风险仍存在。
+- 尚未建立本地 OCR 与百度 OCR 的质量评估集、耗时评估、资源占用评估或 fallback 策略。
+
+影响：
+
+- 本轮不能宣称已经降低 OCR 成本。
+- 下一轮应优先做本地 OCR provider 评估集或接入一个本地 provider，并用真实图片样例对比识别质量、耗时和服务器资源占用。
+
 ## 0.5 Draft LLM 空响应仍需真实复杂题复现
 
 第二十轮人工验收发现，复杂数学题 Draft 识别链路可能出现 DeepSeek empty content：

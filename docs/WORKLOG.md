@@ -2,6 +2,38 @@
 
 说明：本文件按时间倒序记录每轮工作。较早轮次中的“当前主链路”等表述保留为当时历史事实；当前状态以 `docs/STATUS.md` 最新 checkpoint 和较新的 DECISIONS 为准。
 
+## 2026-06-06 第二十一轮：OCR Provider 抽象与部署成本控制基础
+
+目标：
+
+- 让 Draft recognize 主流程不再直接依赖百度 OCR 具体实现。
+- 新增内部统一 OCRService 和 OCR Provider 接口。
+- 将现有百度 OCR 封装为默认 `BaiduOcrProvider`，但不改变识别逻辑。
+- 为后续 RapidOCR / PaddleOCR / Pix2Text / 百度 fallback 打基础。
+
+结果：
+
+- 新增 `OCRResult` 和 `OcrProvider`，作为 OCR 内部统一结果对象和 provider 协议。
+- 新增 `BaiduOcrProvider`，通过 fake legacy engine 测试确认只包装既有 `ocr_engine.py` 返回，不真实调用百度 API。
+- 新增 `OCRService`，按 `OCR_PROVIDER` 选择 provider；默认 `baidu`。
+- 未知 provider 返回明确失败：`unsupported_provider` 和 `unsupported_ocr_provider:<provider>`。
+- Draft recognize 改为调用 `draft_ocr_service`，OCRRun 记录实际 provider，日志增加 `ocr_provider`。
+- legacy `/api/v1/recognize` 保持调用既有 `ocr_engine.ocr_service`，未纳入本轮改造。
+
+验证结果：
+
+- `cd backend && python -m unittest tests.test_ocr_provider` 通过，`Ran 4 tests OK`。
+- `cd backend && python -m unittest tests.test_draft_pipeline.DraftPipelineTests.test_draft_pipeline_recognize_is_lightweight_and_save_to_bank_sets_metadata_pending` 通过。
+- `cd backend && python -m compileall app` 通过。
+- `cd backend && python -m unittest discover tests` 通过，`Ran 96 tests OK`。
+
+边界：
+
+- 未接入 RapidOCR、PaddleOCR、Pix2Text 或其他本地 OCR。
+- 未启用 OCR fallback 链。
+- 未修改数据库模型、迁移、前端、PaperRenderModel、PaperPreview 或 legacy `/api/v1/recognize`。
+- 本轮没有解决 OCR 成本问题，只建立后续切换基础。
+
 ## 2026-06-06 第二十点六轮：Draft LLM 非思考模式 + JSON 输出稳定化
 
 目标：
