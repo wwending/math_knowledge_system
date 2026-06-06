@@ -36,11 +36,13 @@ from app.models.user import User
 from app.schemas.draft import DraftCreate, DraftDetail, DraftRecognizeResponse, DraftSaveToBankResponse
 from app.schemas.ocr import OCRResponse
 from app.schemas.paper import PaperCreate, PaperListItem, PaperRead
+from app.schemas.paper_render import PaperRenderModel, PaperRenderRequest
 from app.schemas.question import KnowledgeTag, QuestionDetail, QuestionListItem, QuestionUpdate
 from app.services.draft_state import transition_draft_status
 from app.services.llm import nlp_service
 from app.services.ocr_engine import ocr_service
 from app.services.paper_service import create_paper, get_paper, list_papers
+from app.services.paper_render_service import build_paper_render_model
 from app.services.question_metadata import evaluate_question_metadata_task
 
 
@@ -808,6 +810,16 @@ def get_paper_endpoint(
     current_user: User = Depends(require_active_user),
 ):
     return get_paper(db, current_user, paper_id)
+
+
+@router.post("/papers/{paper_id}/render-model", response_model=PaperRenderModel)
+def get_paper_render_model_endpoint(
+    paper_id: int,
+    payload: PaperRenderRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_active_user),
+):
+    return build_paper_render_model(db, current_user, paper_id, payload)
 
 
 # Legacy compatibility endpoint. Keep behavior unchanged while Dashboard uses the Draft flow.

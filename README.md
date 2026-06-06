@@ -1,165 +1,320 @@
-# Math Knowledge System
+- Math Knowledge System
 
-当前项目已完成第十六轮：阶段性收口、文档去重与 release checkpoint，状态定位为：可启动、可验证、可继续开发。
+  一个面向高中数学错题管理的 OCR + LLM 知识点识别系统。
 
-当前 `Dashboard.vue` 上传主路径已初步接入 Draft 流水线：先上传素材到 `POST /api/v1/assets`，再创建 Draft，调用 `POST /api/v1/drafts/{draft_id}/recognize`，保存时调用 `POST /api/v1/drafts/{draft_id}/save-to-bank`。`POST /api/v1/recognize` 未删除、未重构，保留为 legacy / 兼容入口。
+  本项目支持用户上传数学题图片或 PDF，通过 OCR 提取题目文本，再调用大语言模型对 OCR 结果进行清洗、公式规范化和知识点标签识别，最终形成可编辑、可保存、可检索、可组卷的数学题库。
 
-Draft 主路径推荐 API smoke 验证文档见 [docs/API_SMOKE_DRAFT_FLOW.md](/d:/math_knowledge_system/docs/API_SMOKE_DRAFT_FLOW.md)。脚本化 smoke 补充说明见 [docs/API_SMOKE_DRAFT_PIPELINE.md](/d:/math_knowledge_system/docs/API_SMOKE_DRAFT_PIPELINE.md)。
+  ## 项目背景
 
-## 当前验证结果
+  在高中数学错题整理场景中，学生或老师经常需要从试卷、练习册、截图中手动录入题目，并按照知识点进行分类。传统方式存在几个问题：
 
-第十六轮后的最新已记录验证结果：
+  - 手动录入效率低，尤其是包含公式、图形和复杂排版的题目；
+  - OCR 识别结果容易出现数学符号错误、格式混乱；
+  - 错题缺少结构化知识点标签，后续复习和组卷不方便；
+  - 识别结果如果直接入库，错误数据会污染题库。
 
-| 范围 | 命令 | 结果 |
-| --- | --- | --- |
-| frontend | `npm run build` | 通过，仅有 Vite chunk size warning |
-| frontend | `npm run test:auth-contract` | 通过 |
-| frontend | `npm run test:stage3-contract` | 通过 |
-| backend | `python -m compileall app` | 通过 |
-| backend | `python -m unittest discover tests` | 通过，`Ran 53 tests OK` |
+  因此，本项目设计了一个“上传 → OCR → LLM 清洗 → 草稿确认 → 保存入题库 → 组卷”的完整流程，重点解决数学题目从非结构化图片到结构化题库数据的转换问题。
 
-## 最新已完成工作
+  ## 功能特性
 
-- 第八轮：后端 LLM LaTeX 分隔符程序级归一化。
-- 第九轮：LLM analyze 成功路径 LaTeX 归一化集成测试。
-- 第十轮：前端 Markdown / LaTeX 渲染工具抽取。
-- 第十一轮补充：确认 `Dashboard.vue` 当前上传主路径已初步接入 Draft 流水线，并接受为新的前端主路径基线。
-- 第十二轮：新增 Draft 主路径 API smoke 验证文档，未修改业务代码。
-- 第十三轮：收口 Draft 后端异常契约。
-- 第十四轮：收口 Dashboard Draft 主路径 UI 状态。
-- 第十五轮：完成 legacy recognize 引用审计与最小兼容标注。
-- 第十六轮：统一文档当前口径，明确两个 Draft smoke 文档主次关系，并形成 release checkpoint。
+  ### 题目识别流程
 
-## Draft 流水线
+  - 支持上传数学题图片；
+  - 支持 PDF 页面转图片后识别；
+  - 调用 OCR 服务提取原始题目文本；
+  - 调用 LLM 对 OCR 文本进行纠错、公式规范化和知识点识别；
+  - 支持识别结果进入 Draft 草稿态，用户确认后再保存入题库；
+  - 避免未确认的 OCR/LLM 结果直接污染正式题库。
 
-第七轮新增后端旁路正式流水线接口：
+  ### 题库管理
 
-- `POST /api/v1/drafts`
-- `GET /api/v1/drafts/{draft_id}`
-- `POST /api/v1/drafts/{draft_id}/recognize`
-- `POST /api/v1/drafts/{draft_id}/save-to-bank`
+  - 保存识别后的题目内容；
+  - 记录题目对应的知识点标签；
+  - 支持历史题目查看；
+  - 支持题目内容编辑；
+  - 为后续复习、筛选和组卷提供数据基础。
 
-状态流转：
+  ### 组卷能力
 
-- `draft_created`
-- `recognizing`
-- `draft_ready`
-- `failed`
-- `saved_to_bank`
+  - 支持从题库中选择题目生成试卷；
+  - 保存试卷题目快照，避免后续题库题目修改影响历史试卷；
+  - 为后续 Paper Preview / 试卷导出功能预留结构。
 
-落库行为：
+  ### 数学公式渲染
 
-- `DraftEvent`：创建、开始识别、识别成功/失败、保存入题库都会写入。
-- `OCRRun`：Draft 识别后写入，失败也记录错误。
-- `LLMRun`：OCR 成功后写入，LLM 失败记录错误并允许 `partial_success`。
-- `QuestionRevision`：保存入题库时创建 v1，并关联 `source_asset_id`、`ocr_run_id`、`llm_run_id`。
+  - 前端支持 Markdown + LaTeX 渲染；
+  - 对 LLM 输出中的公式分隔符进行统一规范化；
+  - 支持行内公式和块级公式展示。
 
-边界：
+  ### 鉴权与用户隔离
 
-- `Dashboard.vue` 当前上传主路径已初步接入 Draft 流水线。
-- `/api/v1/recognize` 未删除、未重构，保留为 legacy / 兼容入口。
-- `runLegacyRecognition()` 仍保留在 `Dashboard.vue` 中，但当前上传按钮和主上传流程不引用它。
-- Draft 前端接入不是完整生产级完成，已补充 API smoke 验证文档、异常契约和 UI 状态收口；legacy recognize 已完成引用审计，仍需后续退场策略执行。
-- 当前不表述为生产可用，也不表述为完整多页 PDF 或批量 draft 能力已完成。
+  - 支持用户登录与 Token 鉴权；
+  - 题目数据按用户进行隔离；
+  - 管理员账号可用于开发和调试。
 
-依赖与配置收口：
+  ## 技术栈
 
-- `backend/requirements.txt` 已补齐 `passlib[bcrypt]`。
-- `frontend/package.json` 已显式声明 `@element-plus/icons-vue`。
-- `backend/.env` 是本地文件，不应提交。
-- 示例配置使用 [backend/.env.example](/d:/math_knowledge_system/backend/.env.example)。
+  ### 前端
 
-## 启动前置
+  - Vue 3
+  - Vite
+  - Element Plus
+  - Axios
+  - markdown-it
+  - markdown-it-mathjax3
+  - PDF.js / Cropper 相关组件
 
-后端启动和管理员初始化之前，`alembic upgrade head` 是硬前置。不要依赖运行时 `create_all` 或兼容补表替代正式迁移链。
+  ### 后端
 
-后端依赖安装：
+  - FastAPI
+  - SQLAlchemy
+  - SQLite
+  - Pydantic
+  - Alembic
+  - Python-Jose / Passlib
+  - PyMuPDF
+  - OCR 服务
+  - OpenAI Compatible API / DeepSeek API
 
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r backend\requirements.txt
-```
+  ### 工程与测试
 
-创建本地后端配置：
+  - RESTful API
+  - JWT 鉴权
+  - 数据库迁移
+  - 单元测试
+  - Smoke Test
+  - 前后端契约测试
 
-```powershell
-Copy-Item backend\.env.example backend\.env
-```
+  ## 系统流程
 
-执行迁移：
+  ```text
+  用户上传图片 / PDF
+          |
+          v
+  创建 Source Asset
+          |
+          v
+  创建 Draft 草稿
+          |
+          v
+  OCR 识别原始文本
+          |
+          v
+  LLM 清洗题目、规范公式、识别知识点
+          |
+          v
+  用户检查并确认 Draft
+          |
+          v
+  保存入题库
+          |
+          v
+  题库管理 / 组卷 / 预览
+  ```
 
-```powershell
-cd backend
-..\.venv\Scripts\python.exe -m alembic upgrade head
-```
+  ## 核心设计
 
-初始化管理员：
+  ### 1. Draft 草稿机制
 
-```powershell
-cd backend
-..\.venv\Scripts\python.exe -m app.scripts.create_admin --phone 13800000000 --password "AdminPass123!" --display-name "Super Admin"
-```
+  本项目没有让 OCR 和 LLM 的输出直接进入正式题库，而是先进入 Draft 草稿态。
 
-说明：
+  这样设计的原因是：
 
-- 管理员初始化路径为 `app.scripts.create_admin`。
-- 管理员脚本会创建或升级该账号为 `super_admin`。
-- 新用户优先通过管理员界面或管理员 API 创建。
-- 公开注册只作为 demo/staging 可开能力，由 `PUBLIC_SIGNUP_ENABLED` 控制；正式环境默认不开放。
+  - OCR 结果可能存在错字、漏字、公式识别错误；
+  - LLM 输出可能为空、格式异常或知识点标签不准确；
+  - 用户需要在正式保存前确认题目内容；
+  - 正式题库应该只保存经过确认的数据。
 
-## 启动方式
+  Draft 流程使系统从“识别即入库”升级为“识别结果可审核后入库”，提高了数据质量和系统可靠性。
 
-后端：
+  ### 2. OCRRun / LLMRun 可观测记录
 
-```powershell
-cd backend
-..\.venv\Scripts\python.exe -m alembic upgrade head
-..\.venv\Scripts\python.exe -m uvicorn app.main:app --reload
-```
+  系统在识别过程中记录 OCR 和 LLM 的运行结果，方便后续定位问题。
 
-前端：
+  例如：
 
-```powershell
-cd frontend
-npm install
-npm run dev
-```
+  - OCR 是否返回空文本；
+  - LLM 是否返回空内容；
+  - LLM 输出是否符合 JSON 结构；
+  - 当前 Draft 为什么失败；
+  - 用户看到的结果来自 OCR 还是 LLM。
 
-## 最小验证
+  这使系统在面对真实外部 API 异常时更容易调试，而不是只给用户一个模糊的“识别失败”。
 
-前端：
+  ### 3. 试卷题目快照
 
-```powershell
-cd frontend
-npm run test:auth-contract
-npm run test:stage3-contract
-npm run build
-```
+  组卷功能中，试卷题目会保存当时的题目快照。
 
-后端：
+  这样即使原题库中的题目后来被修改，已经生成的试卷内容也不会被破坏。这是为了保证历史试卷的稳定性和可追溯性。
 
-```powershell
-cd backend
-..\.venv\Scripts\python.exe -m compileall app
-..\.venv\Scripts\python.exe -m unittest discover tests
-```
+  ## 本地运行
 
-后端验证必须使用已安装 `backend/requirements.txt` 的 Python 环境。
+  ### 1. 克隆项目
 
-## 当前能力边界
+  ```bash
+  git clone https://github.com/你的用户名/math_knowledge_system.git
+  cd math_knowledge_system
+  ```
 
-- 当前 `Dashboard.vue` 上传主路径已初步接入 Draft 流水线。
-- `/api/v1/recognize` 保留为 legacy / 兼容入口，不应删除。
-- Draft 前端接入尚未完成生产级收口，已补充 API smoke 验证文档、异常契约和 UI 状态收口；legacy recognize 已完成引用审计，仍需后续退场策略执行。
-- 真实第三方失败场景尚未形成系统化在线验证矩阵。
-- 当前验证证明项目可启动、可验证、可继续开发，不代表生产可用。
+  ### 2. 启动后端
 
-## 下一阶段优先级
+  ```bash
+  cd backend
+  python -m venv .venv
+  ```
 
-下一阶段不要做大重构，优先处理：
+  Windows PowerShell：
 
-- 前端中文乱码。
-- legacy recognize 后续小步退场。
-- mock/legacy 文件清理。
-- 后端测试稳定性。
+  ```powershell
+  .venv\Scripts\Activate.ps1
+  ```
+
+  Linux / macOS：
+
+  ```bash
+  source .venv/bin/activate
+  ```
+
+  安装依赖：
+
+  ```bash
+  pip install -r requirements.txt
+  ```
+
+  创建 `.env` 文件，并配置必要环境变量：
+
+  ```env
+  DATABASE_URL=sqlite:///./math_knowledge.db
+  SECRET_KEY=your-secret-key
+  DEEPSEEK_API_KEY=your-api-key
+  ```
+
+  启动 FastAPI：
+
+  ```bash
+  python -m uvicorn app.main:app --reload
+  ```
+
+  后端默认运行在：
+
+  ```text
+  http://127.0.0.1:8000
+  ```
+
+  API 文档地址：
+
+  ```text
+  http://127.0.0.1:8000/docs
+  ```
+
+  ### 3. 启动前端
+
+  ```bash
+  cd frontend
+  npm install
+  npm run dev
+  ```
+
+  前端默认运行在：
+
+  ```text
+  http://127.0.0.1:5173
+  ```
+
+  ## 常用接口
+
+  | 功能         | 方法 | 路径                                     |
+  | ------------ | ---- | ---------------------------------------- |
+  | 健康检查     | GET  | `/api/v1/healthz`                        |
+  | 用户登录     | POST | `/api/v1/auth/token`                     |
+  | 获取当前用户 | GET  | `/api/v1/auth/me`                        |
+  | 上传资源     | POST | `/api/v1/assets`                         |
+  | 创建草稿     | POST | `/api/v1/drafts`                         |
+  | 识别草稿     | POST | `/api/v1/drafts/{draft_id}/recognize`    |
+  | 查看草稿     | GET  | `/api/v1/drafts/{draft_id}`              |
+  | 保存入题库   | POST | `/api/v1/drafts/{draft_id}/save-to-bank` |
+  | 查看历史题目 | GET  | `/api/v1/history`                        |
+  | 创建试卷     | POST | `/api/v1/papers`                         |
+  | 查看试卷详情 | GET  | `/api/v1/papers/{paper_id}`              |
+
+  ## 项目结构
+
+  ```text
+  math_knowledge_system/
+  ├── backend/
+  │   ├── app/
+  │   │   ├── api/              # API 路由
+  │   │   ├── core/             # 配置、数据库、安全相关代码
+  │   │   ├── models/           # SQLAlchemy 数据模型
+  │   │   ├── schemas/          # Pydantic 请求/响应模型
+  │   │   ├── services/         # OCR、LLM 等业务服务
+  │   │   └── main.py           # FastAPI 入口
+  │   ├── tests/                # 后端测试
+  │   └── requirements.txt
+  │
+  ├── frontend/
+  │   ├── src/
+  │   │   ├── components/       # 前端组件
+  │   │   ├── views/            # 页面视图
+  │   │   ├── utils/            # Markdown / LaTeX 渲染工具
+  │   │   └── main.ts
+  │   └── package.json
+  │
+  ├── docs/                     # 项目文档
+  └── README.md
+  ```
+
+  ## 测试
+
+  后端测试：
+
+  ```bash
+  cd backend
+  python -m unittest discover tests
+  ```
+
+  前端构建：
+
+  ```bash
+  cd frontend
+  npm run build
+  ```
+
+  ## 当前状态
+
+  已完成：
+
+  - 图片上传与 OCR 识别；
+  - LLM 清洗与知识点识别；
+  - Draft 草稿流程；
+  - 识别结果保存入题库；
+  - 题目历史记录展示；
+  - Markdown / LaTeX 公式渲染；
+  - 用户鉴权与数据隔离；
+  - 组卷 MVP 后端能力；
+  - 基础测试与接口契约验证。
+
+  进行中：
+
+  - Paper Preview 前端预览体验优化；
+  - 真实 LLM 异常响应的可观测性增强；
+  - 识别失败场景的用户提示优化；
+  - 更完整的试卷导出能力。
+
+  ## 后续计划
+
+  - 支持按知识点筛选题目；
+  - 支持错题复习计划；
+  - 支持试卷导出为 PDF；
+  - 支持更精细的题目结构化字段，例如题干、选项、答案、解析；
+  - 增强 OCR 与 LLM 的异常兜底策略；
+  - 优化前端交互体验和移动端适配。
+
+  ## 项目亮点
+
+  - 将 OCR、LLM、题库和组卷流程串成完整业务闭环；
+  - 使用 Draft 状态机降低错误识别结果直接入库的风险；
+  - 对真实外部 API 异常进行可观测性设计；
+  - 支持数学公式的规范化与前端渲染；
+  - 通过题目快照保证历史试卷稳定性；
+  - 具备前后端分离、鉴权、数据库建模、接口测试等完整 Web 工程实践。

@@ -71,6 +71,76 @@ LLM 目标输出结构：
   - 返回当前登录用户自己的试卷详情。
   - 试卷不存在或不属于当前用户时返回 `404`。
 
+- `POST /api/v1/papers/{paper_id}/render-model`
+  - 返回当前登录用户自己的试卷渲染模型，用于前端 A4 作业预览，并为后续 PDF / DOCX 导出复用同一模型打基础。
+  - 当前仅支持请求体：
+
+```json
+{
+  "template_type": "homework",
+  "version": "student",
+  "paper_size": "A4",
+  "group_by": "question_type",
+  "sort_by": "position",
+  "answer_area_mode": "none"
+}
+```
+
+  - `answer_area_mode` 支持 `none` 和 `after_each_question`，默认 `none`。
+  - 非法枚举值由 Pydantic 校验返回 `422`。
+  - 试卷不存在或不属于当前用户时返回 `404`。
+  - 学生版响应不包含答案或解析快照。
+  - 题型快照为空时归入 `unknown / 未分类`。
+  - 返回示例：
+
+```json
+{
+  "template_type": "homework",
+  "version": "student",
+  "paper_size": "A4",
+  "group_by": "question_type",
+  "sort_by": "position",
+  "answer_area_mode": "after_each_question",
+  "paper": {
+    "id": 1,
+    "title": "Render Paper",
+    "description": "render model",
+    "status": "draft",
+    "item_count": 1,
+    "total_score": 5.0
+  },
+  "layout": {
+    "show_answers": false,
+    "show_analysis": false
+  },
+  "sections": [
+    {
+      "key": "unknown",
+      "title": "未分类",
+      "items": [
+        {
+          "paper_item_id": 1,
+          "question_id": 10,
+          "position": 1,
+          "display_number": 1,
+          "score": 5.0,
+          "content": "题目内容",
+          "question_type": "unknown",
+          "question_type_label": "未分类",
+          "knowledge_tags": [
+            { "label": "函数", "score": null }
+          ],
+          "answer_area": {
+            "mode": "after_each_question",
+            "lines": 4
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
 组卷快照：
 
 - `PaperItem` 创建时保存题目内容快照，避免题库后续编辑导致历史试卷内容被动变化。

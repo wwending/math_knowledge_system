@@ -64,6 +64,31 @@
             </div>
           </div>
 
+          <div class="preview-controls">
+            <div class="preview-config">
+              <span>模板：HOMEWORK</span>
+              <span>版本：学生版</span>
+              <el-radio-group v-model="answerAreaMode" size="small">
+                <el-radio-button label="none">无答题区</el-radio-button>
+                <el-radio-button label="after_each_question">每题后横线</el-radio-button>
+              </el-radio-group>
+            </div>
+            <el-button type="primary" :loading="previewLoading" @click="fetchPaperRenderModel">
+              预览作业
+            </el-button>
+          </div>
+
+          <el-alert
+            v-if="previewErrorMessage"
+            :title="previewErrorMessage"
+            type="error"
+            show-icon
+            class="state-alert"
+          />
+
+          <el-skeleton v-if="previewLoading" :rows="5" animated />
+          <paper-preview v-else-if="paperRenderModel" :render-model="paperRenderModel" />
+
           <div class="paper-items">
             <el-card
               v-for="item in currentPaper.items"
@@ -124,6 +149,7 @@ import { Refresh } from '@element-plus/icons-vue'
 
 import { API_V1_BASE_URL } from '../config/api'
 import { renderMarkdown } from '@/utils/renderMarkdown'
+import PaperPreview from './PaperPreview.vue'
 
 const API_BASE = API_V1_BASE_URL
 
@@ -132,7 +158,11 @@ const currentPaper = ref(null)
 const selectedPaperId = ref(null)
 const listLoading = ref(false)
 const detailLoading = ref(false)
+const previewLoading = ref(false)
 const errorMessage = ref('')
+const previewErrorMessage = ref('')
+const paperRenderModel = ref(null)
+const answerAreaMode = ref('none')
 
 const getErrorMessage = (error, fallback) => {
   const detail = error.response?.data?.detail
@@ -165,6 +195,8 @@ const openPaperDetail = async (paperId) => {
   selectedPaperId.value = paperId
   detailLoading.value = true
   errorMessage.value = ''
+  previewErrorMessage.value = ''
+  paperRenderModel.value = null
   try {
     const response = await axios.get(`${API_BASE}/papers/${paperId}`)
     currentPaper.value = response.data
@@ -174,6 +206,29 @@ const openPaperDetail = async (paperId) => {
     ElMessage.error(errorMessage.value)
   } finally {
     detailLoading.value = false
+  }
+}
+
+const fetchPaperRenderModel = async () => {
+  if (!selectedPaperId.value) return
+  previewLoading.value = true
+  previewErrorMessage.value = ''
+  try {
+    const response = await axios.post(`${API_BASE}/papers/${selectedPaperId.value}/render-model`, {
+      template_type: 'homework',
+      version: 'student',
+      paper_size: 'A4',
+      group_by: 'question_type',
+      sort_by: 'position',
+      answer_area_mode: answerAreaMode.value
+    })
+    paperRenderModel.value = response.data
+  } catch (error) {
+    console.error(error)
+    previewErrorMessage.value = getErrorMessage(error, '生成作业预览失败。')
+    ElMessage.error(previewErrorMessage.value)
+  } finally {
+    previewLoading.value = false
   }
 }
 
@@ -331,6 +386,27 @@ onBeforeUnmount(() => {
   font-size: 13px;
 }
 
+.preview-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  margin-bottom: 16px;
+  border: 1px solid #e5ece9;
+  border-radius: 8px;
+  background: #f8fbfa;
+}
+
+.preview-config {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  color: #536471;
+  font-size: 13px;
+}
+
 .paper-items {
   display: flex;
   flex-direction: column;
@@ -378,6 +454,11 @@ onBeforeUnmount(() => {
 
   .detail-stats {
     justify-content: flex-start;
+  }
+
+  .preview-controls {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
 </style>

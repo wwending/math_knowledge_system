@@ -426,6 +426,60 @@ class DraftPipelineTests(unittest.TestCase):
             self.assertEqual(llm_run.error_code, "timeout")
             self.assertTrue(llm_run.fallback_used)
 
+    def test_draft_recognize_records_empty_content_invalid_response(self):
+        asset_id = self._create_source_asset()
+        draft_id = self._create_draft(asset_id)
+        log_output = StringIO()
+        sink_id = logger.add(log_output, level="INFO")
+        try:
+            with patch.object(
+                endpoints.ocr_service,
+                "recognize",
+                return_value={"success": True, "content": "complex ellipse ocr text", "cost_seconds": 0.1},
+            ), patch.object(
+                endpoints.nlp_service,
+                "analyze",
+                return_value={
+                    "success": False,
+                    "error_type": "invalid_response",
+                    "error": "智能整理服务返回了空数据",
+                    "detail": (
+                        "deepseek_length_exhausted_empty_content: choices_count=1 finish_reason=length "
+                        "content_len=0 completion_tokens=22"
+                    ),
+                    "corrected_text": "complex ellipse ocr text",
+                    "knowledge_tags": [],
+                    "cost_seconds": 0.2,
+                },
+            ):
+                response = self.client.post(f"/api/v1/drafts/{draft_id}/recognize", headers=self.auth_headers)
+        finally:
+            logger.remove(sink_id)
+
+        payload = response.json()
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(payload["success"])
+        self.assertTrue(payload["partial_success"])
+        self.assertEqual(payload["warning"], "智能整理服务返回了空数据")
+        self.assertEqual(payload["error_type"], "llm_failed")
+        self.assertEqual(payload["status"], DraftStatus.DRAFT_READY)
+
+        with self.SessionLocal() as db:
+            draft = db.query(Draft).filter(Draft.id == draft_id).one()
+            self.assertTrue(draft.current_content["partial_success"])
+            self.assertEqual(draft.current_content["warning"], "智能整理服务返回了空数据")
+            llm_run = db.query(LLMRun).filter(LLMRun.draft_id == draft_id).one()
+            self.assertEqual(llm_run.error_code, "invalid_response")
+            self.assertIn("deepseek_length_exhausted_empty_content", llm_run.error_message)
+            self.assertIn("finish_reason=length", llm_run.error_message)
+            self.assertTrue(llm_run.fallback_used)
+
+        perf_log = log_output.getvalue()
+        self.assertIn("[DraftRecognizePerf]", perf_log)
+        self.assertIn("llm_fallback=True", perf_log)
+        self.assertIn("fallback_reason=invalid_response", perf_log)
+        self.assertIn("failure_stage=llm", perf_log)
+
     def test_draft_recognize_logs_perf_when_ocr_fails(self):
         asset_id = self._create_source_asset()
         draft_id = self._create_draft(asset_id)

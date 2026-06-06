@@ -2,6 +2,99 @@
 
 说明：本文件按时间倒序记录每轮工作。较早轮次中的“当前主链路”等表述保留为当时历史事实；当前状态以 `docs/STATUS.md` 最新 checkpoint 和较新的 DECISIONS 为准。
 
+## 2026-06-06 第二十点六轮：Draft LLM 非思考模式 + JSON 输出稳定化
+
+目标：
+
+- 根据 DeepSeek 官方文档调整第二十点六轮目标：不采用 `reasoning_effort="low"` 降成本，改为 Draft LLM 默认关闭 thinking 并启用 JSON output。
+- 不修改 PaperRenderModel、PaperPreview、数据库模型、前端、legacy `/api/v1/recognize` 或 Draft fallback 状态机。
+
+结果：
+
+- `NLPService.analyze()` 调用 OpenAI SDK 时传入 `extra_body={"thinking": {"type": "disabled"}}`，默认 thinking mode 为 `disabled`，可通过 `LLM_THINKING_MODE` 配置。
+- 启用 `response_format={"type": "json_object"}`，并在 system/user prompt 中明确 JSON 要求和 JSON 输出样例。
+- Prompt 角色从“高中数学助教”调整为“高中数学 OCR 文本清洗与结构化工具”，强调不解题、不证明、不分析、不输出推理过程，只修正 OCR、只规范 LaTeX、只返回 JSON。
+- max_tokens 改为 `LLM_MAX_TOKENS` 可配置，默认 `2048`；timeout 改为 `LLM_TIMEOUT_SECONDS` 可配置，默认 `45` 秒。
+- 未传入 `reasoning_effort`，避免 DeepSeek low/medium 映射为 high 带来的无效降成本方案。
+- 保留第二十点五轮安全摘要日志字段；`finish_reason=length` 且 content 为空时，错误 detail 使用 `deepseek_length_exhausted_empty_content`。
+- Draft fallback 状态机保持不变：LLM 失败仍返回 `draft_ready + partial_success=True`。
+
+验证结果：
+
+- `cd backend && python -m unittest tests.test_llm` 通过。
+- `cd backend && python -m unittest tests.test_draft_pipeline.DraftPipelineTests.test_draft_recognize_records_empty_content_invalid_response` 通过。
+- `cd backend && python -m compileall app` 通过。
+- `cd backend && python -m unittest discover tests` 通过，`Ran 92 tests OK`。
+
+边界：
+
+- 本轮未直接把 max_tokens 升到 6000。
+- 本轮未把 reasoning_content 当 corrected_text 使用。
+- 本轮未执行真实复杂椭圆题在线复测，仍建议下一步用复杂椭圆题重新验收。
+
+## 2026-06-06 第二十点五轮：Draft LLM 空响应诊断增强
+
+目标：
+
+- 暂停第二十一轮新功能，只诊断并修复 Draft 识别链路中复杂 OCR 文本触发 DeepSeek empty content 时缺少可观测性的问题。
+- 不修改 PaperRenderModel、PaperPreview、数据库模型、Alembic 迁移、前端或 legacy `/api/v1/recognize` 主流程。
+
+结果：
+
+- `NLPService.analyze()` 新增 DeepSeek 响应安全摘要，记录 response 类型、id、model、choices 数、finish_reason、message role、content 长度和截断预览、refusal、reasoning_content、tool_calls、usage token、输入长度、配置模型、timeout 和截断后的 raw response preview。
+- empty content、空 choices、缺 choices、非 JSON、缺 `corrected_text`、字段结构非法等分支改为输出安全摘要日志，不再打印完整 response、完整 non-JSON 内容或完整 result。
+- empty content 的 `detail` 增强为包含 `choices_count`、`finish_reason`、`content_len`、`completion_tokens` 的可区分错误信息。
+- Draft fallback 状态机保持不变：LLM 失败仍返回 `draft_ready + partial_success=True`，并保留 warning 与 LLMRun 错误信息。
+- 新增后端测试覆盖 DeepSeek 响应异常结构、安全摘要截断和 Draft empty content fallback 记录。
+
+验证结果：
+
+- `cd backend && python -m unittest tests.test_llm` 通过。
+- `cd backend && python -m unittest tests.test_draft_pipeline.DraftPipelineTests.test_draft_recognize_records_empty_content_invalid_response` 通过。
+- `cd backend && python -m compileall app` 通过。
+- `cd backend && python -m unittest discover tests` 通过，`Ran 90 tests OK`。
+
+边界：
+
+- 本轮未恢复 `response_format={"type": "json_object"}`，需先用复杂椭圆题复现并根据 finish_reason / usage / raw_response_preview 判断。
+- 本轮不阻止 partial_success Draft 保存入库，不改变 Draft 主流程。
+- 本轮不是对所有 DeepSeek 空响应的彻底根治，只增强诊断能力和错误区分。
+
+## 2026-06-06 第二十轮：PaperRenderModel + 作业模板预览 MVP
+
+目标：
+
+- 为已有试卷增加学生版 A4 作业预览入口。
+- 后端将 Paper / PaperItem 转换为 PaperRenderModel，前端只负责展示。
+- 仅支持内置 `homework` 模板、`student` 版本、`A4`、按 `question_type` 分组、按 `position` 排序。
+- 支持 `answer_area_mode=none` 和 `after_each_question`。
+
+结果：
+
+- 新增 `POST /api/v1/papers/{paper_id}/render-model`。
+- 新增独立 `paper_render.py` schema 和 `paper_render_service.py` service，未把渲染模型塞入既有 Paper schema/service。
+- RenderModel 归一化历史知识点数据为 `{ label, score }` 结构。
+- 学生版响应不返回答案或解析快照。
+- 题型快照为空时归入 `unknown / 未分类`。
+- 新增 `PaperPreview.vue`，以 A4 视觉样式渲染作业预览，并复用共享 `renderMarkdown.ts`。
+- `PaperPanel.vue` 仅增加预览入口、请求状态和答题区模式配置。
+- 更新 API、STATUS、DECISIONS、KNOWN_ISSUES 文档。
+
+验证结果：
+
+- `cd backend && python -m unittest tests.test_paper_render` 通过。
+- `cd backend && python -m compileall app` 通过。
+- `cd backend && python -m unittest discover tests` 通过，`Ran 82 tests OK`。
+- `cd frontend && npm run test:stage3-contract` 通过。
+- `cd frontend && npm run build` 通过，仅有 Vite chunk size warning。
+
+边界：
+
+- 未做数据库迁移、新表或 Paper / PaperItem 模型修改。
+- 未做 PDF / DOCX 导出。
+- 未做模板编辑器、自动分页、拖拽排序、知识点排序、难度排序或复杂答题卡。
+- 未修改 `/api/v1/recognize`，未切换 Draft/Paper 主流程。
+
 ## 2026-06-05 第十九轮性能收口补丁：性能日志可观测性
 
 目标：
