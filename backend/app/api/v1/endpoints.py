@@ -41,6 +41,8 @@ from app.schemas.question import KnowledgeTag, QuestionDetail, QuestionListItem,
 from app.services.draft_state import transition_draft_status
 from app.services.llm import nlp_service
 from app.services.ocr_engine import ocr_service
+from app.services.ocr_providers.base import OCRResult
+from app.services.ocr_service import ocr_service as draft_ocr_service
 from app.services.paper_service import create_paper, get_paper, list_papers
 from app.services.paper_render_service import build_paper_render_model
 from app.services.question_metadata import evaluate_question_metadata_task
@@ -171,6 +173,29 @@ def _build_recognize_response(
         partial_success=partial_success,
         warning=warning,
     )
+
+
+def _ocr_result_to_legacy_payload(result: OCRResult | dict[str, Any]) -> dict[str, Any]:
+    if isinstance(result, dict):
+        return result
+
+    payload = {
+        "success": result.success,
+        "content": result.text,
+        "cost_seconds": round(result.latency_ms / 1000, 2),
+        "provider": result.provider,
+        "latency_ms": result.latency_ms,
+        "raw_response_summary": result.raw_response_summary,
+    }
+    if not result.success:
+        payload.update(
+            {
+                "error_type": result.error_type,
+                "error": result.error,
+                "detail": result.detail or result.error,
+            }
+        )
+    return payload
 
 
 def _normalize_llm_tags(raw_tags: Any) -> list[dict[str, Any]]:
@@ -557,13 +582,14 @@ def recognize_draft(
     file_path = _asset_file_path(asset)
     ocr_started_at = time.time()
     try:
-        ocr_result = ocr_service.recognize(file_path)
+        ocr_result = _ocr_result_to_legacy_payload(draft_ocr_service.recognize(file_path))
     except Exception:
         logger.exception("Unexpected Draft OCR crash draft_id={} user_id={}", draft.id, current_user.id)
         ocr_result = {
             "success": False,
             "content": "",
             "cost_seconds": 0.0,
+            "provider": getattr(draft_ocr_service, "provider_name", "unknown"),
             "error_type": "service_error",
             "error": "\u6587\u5b57\u8bc6\u522b\u670d\u52a1\u8c03\u7528\u5931\u8d25",
             "detail": "ocr_unexpected_error",
@@ -571,14 +597,16 @@ def recognize_draft(
     ocr_ms = int((time.time() - ocr_started_at) * 1000)
 
     raw_content = (ocr_result.get("content") or "").strip()
+    ocr_provider = ocr_result.get("provider") or getattr(draft_ocr_service, "provider_name", "unknown")
+    ocr_latency_ms = int(ocr_result.get("latency_ms") or int(float(ocr_result.get("cost_seconds") or 0) * 1000))
     ocr_run = OCRRun(
         draft_id=draft.id,
-        provider="baidu",
-        endpoint=getattr(ocr_service, "ocr_url", None),
+        provider=ocr_provider,
+        endpoint=getattr(draft_ocr_service, "endpoint", None),
         request_params_redacted={"source_asset_id": asset.id, "crop_bbox": draft.crop_bbox},
         response_raw_json=ocr_result,
         parsed_blocks=[{"text": raw_content}] if raw_content else [],
-        latency_ms=int(float(ocr_result.get("cost_seconds") or 0) * 1000),
+        latency_ms=ocr_latency_ms,
         error_code=None if ocr_result.get("success") else ocr_result.get("error_type"),
         error_message=None if ocr_result.get("success") else (ocr_result.get("detail") or ocr_result.get("error")),
         text_len_estimate=len(raw_content),
@@ -604,9 +632,10 @@ def recognize_draft(
             commit=True,
         )
         logger.info(
-            "[DraftRecognizePerf] draft_id={} asset_id={} ocr_ms={} llm_text_ms={} total_ms={} model={} ocr_text_len={} corrected_text_len={} llm_fallback={} fallback_reason={} failure_stage={}",
+            "[DraftRecognizePerf] draft_id={} asset_id={} ocr_provider={} ocr_ms={} llm_text_ms={} total_ms={} model={} ocr_text_len={} corrected_text_len={} llm_fallback={} fallback_reason={} failure_stage={}",
             draft.id,
             asset.id,
+            ocr_provider,
             ocr_ms,
             0,
             int((time.time() - total_started_at) * 1000),
@@ -698,9 +727,10 @@ def recognize_draft(
     )
 
     logger.info(
-        "[DraftRecognizePerf] draft_id={} asset_id={} ocr_ms={} llm_text_ms={} total_ms={} model={} ocr_text_len={} corrected_text_len={} llm_fallback={} fallback_reason={} failure_stage={}",
+        "[DraftRecognizePerf] draft_id={} asset_id={} ocr_provider={} ocr_ms={} llm_text_ms={} total_ms={} model={} ocr_text_len={} corrected_text_len={} llm_fallback={} fallback_reason={} failure_stage={}",
         draft.id,
         asset.id,
+        ocr_provider,
         ocr_ms,
         llm_text_ms,
         int((time.time() - total_started_at) * 1000),

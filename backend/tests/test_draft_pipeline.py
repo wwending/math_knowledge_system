@@ -134,7 +134,7 @@ class DraftPipelineTests(unittest.TestCase):
 
     def _recognize_draft_successfully(self, draft_id: int):
         with patch.object(
-            endpoints.ocr_service,
+            endpoints.draft_ocr_service,
             "recognize",
             return_value={"success": True, "content": "raw math text", "cost_seconds": 0.1},
         ), patch.object(
@@ -166,7 +166,7 @@ class DraftPipelineTests(unittest.TestCase):
         draft_id = draft_payload["id"]
 
         with patch.object(
-            endpoints.ocr_service,
+            endpoints.draft_ocr_service,
             "recognize",
             return_value={"success": True, "content": "raw math text", "cost_seconds": 0.1},
         ), patch.object(
@@ -215,6 +215,7 @@ class DraftPipelineTests(unittest.TestCase):
             self.assertIsNone(draft.question_type)
             self.assertIsNone(draft.difficulty_level)
             self.assertEqual(db.query(OCRRun).filter(OCRRun.draft_id == draft_id).count(), 1)
+            self.assertEqual(db.query(OCRRun).filter(OCRRun.draft_id == draft_id).one().provider, "baidu")
             self.assertEqual(db.query(LLMRun).filter(LLMRun.draft_id == draft_id).count(), 1)
             self.assertEqual(db.query(Question).count(), 1)
             question = db.query(Question).one()
@@ -394,7 +395,7 @@ class DraftPipelineTests(unittest.TestCase):
         draft_id = create_response.json()["id"]
 
         with patch.object(
-            endpoints.ocr_service,
+            endpoints.draft_ocr_service,
             "recognize",
             return_value={"success": True, "content": "ocr only text", "cost_seconds": 0.1},
         ), patch.object(
@@ -433,7 +434,7 @@ class DraftPipelineTests(unittest.TestCase):
         sink_id = logger.add(log_output, level="INFO")
         try:
             with patch.object(
-                endpoints.ocr_service,
+                endpoints.draft_ocr_service,
                 "recognize",
                 return_value={"success": True, "content": "complex ellipse ocr text", "cost_seconds": 0.1},
             ), patch.object(
@@ -487,7 +488,7 @@ class DraftPipelineTests(unittest.TestCase):
         sink_id = logger.add(log_output, level="INFO")
         try:
             with patch.object(
-                endpoints.ocr_service,
+                endpoints.draft_ocr_service,
                 "recognize",
                 return_value={
                     "success": False,

@@ -103,6 +103,8 @@ class Settings(BaseSettings):
 
     BAIDU_API_KEY: str = ""
     BAIDU_SECRET_KEY: str = ""
+    OCR_PROVIDER: str = "baidu"
+    OCR_FALLBACK_PROVIDER: str = ""
     DEEPSEEK_API_KEY: str = ""
     DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"
     DEEPSEEK_MODEL: str = "deepseek-chat"

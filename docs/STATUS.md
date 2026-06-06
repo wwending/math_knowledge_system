@@ -1,5 +1,32 @@
 # STATUS
 
+## 2026-06-06 第二十一轮 OCR Provider 抽象与部署成本控制基础
+
+当前项目完成 Draft recognize OCR Provider 抽象基础，但不替换 OCR 引擎，不改变 legacy `/api/v1/recognize`。
+
+新增能力：
+
+- 新增内部统一 `OCRResult` 和 `OcrProvider` 接口，字段包含 text、provider、confidence、boxes、raw_response_summary、latency_ms、error 等。
+- 新增 `BaiduOcrProvider`，只封装既有 `ocr_engine.py` 行为，不改变百度 OCR 识别逻辑或文本处理口径。
+- 新增 `OCRService`，通过 `OCR_PROVIDER` 选择 provider；当前实际支持 `baidu`。
+- `OCR_PROVIDER` 默认 `baidu`，`OCR_FALLBACK_PROVIDER` 已预留但本轮未启用 fallback。
+- Draft recognize 改为调用 `OCRService`，OCRRun 记录实际 provider，性能日志增加 `ocr_provider`。
+- 未知 OCR provider 会明确返回 `unsupported_provider` / `unsupported_ocr_provider:<provider>`。
+
+当前边界：
+
+- 本轮未接入 RapidOCR、PaddleOCR、Pix2Text 或任何本地 OCR。
+- 本轮未解决百度 OCR 成本问题，只为后续切换和 fallback 打基础。
+- 本轮未修改数据库模型、Alembic 迁移、PaperRenderModel、PaperPreview、前端或 legacy `/api/v1/recognize`。
+- 自动化测试均使用 fake / mock，不真实调用百度 OCR API。
+
+验证结果：
+
+- `cd backend && python -m unittest tests.test_ocr_provider` 通过，`Ran 4 tests OK`。
+- `cd backend && python -m unittest tests.test_draft_pipeline.DraftPipelineTests.test_draft_pipeline_recognize_is_lightweight_and_save_to_bank_sets_metadata_pending` 通过。
+- `cd backend && python -m compileall app` 通过。
+- `cd backend && python -m unittest discover tests` 通过，`Ran 96 tests OK`。
+
 ## 2026-06-06 第二十点六轮 Draft LLM 非思考模式 + JSON 输出稳定化
 
 当前项目暂停第二十一轮新功能，根据 DeepSeek 官方文档将第二十点六轮目标从“单纯提高 max_tokens”调整为 Draft LLM 非思考模式和 JSON 输出稳定化。
