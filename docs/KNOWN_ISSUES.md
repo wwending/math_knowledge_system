@@ -1,5 +1,21 @@
 # KNOWN_ISSUES
 
+## 0.13 pytest 根目录历史 DeepSeek 脚本收集失败已清理
+
+第二十七点五轮已清理 `python -m pytest` 自动收集根目录历史 DeepSeek 调试脚本导致的失败。
+
+已处理：
+
+- `backend/test_deepseek.py` 确认为历史手工调试脚本，不是正式测试。
+- 已移动到 `backend/scripts/manual/deepseek_manual_check.py`。
+- 脚本改用当前 `app.services.llm.nlp_service.analyze()` 接口，不恢复旧 `correct_text`。
+- `python -m pytest` 当前已能收集并运行 `backend/tests/` 下 117 个测试。
+
+剩余注意：
+
+- 手工脚本如需真实调用 DeepSeek，仍依赖本地 `.env` 中的 DeepSeek 配置。
+- 自动化测试不得依赖真实 DeepSeek API key、外部网络或真实 LLM 响应。
+
 ## 0.12 RapidOCR 已实验接入但真实数学题效果待评估
 
 第二十七轮已接入 `RapidOcrProvider`，Draft OCR Provider 可通过 `OCR_PROVIDER=baidu` / `OCR_PROVIDER=rapidocr` 切换，默认仍为 `baidu`。

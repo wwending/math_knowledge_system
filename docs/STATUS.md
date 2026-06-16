@@ -1,5 +1,24 @@
 # STATUS
 
+## 2026-06-16 第二十七点五轮 pytest 根目录遗留测试收口
+
+当前 MVP smoke 阶段已清理 pytest 根目录遗留收集问题，后端全量 pytest 可直接运行。
+
+新增/调整：
+
+- 将根目录历史手工脚本 `backend/test_deepseek.py` 移出 pytest 自动收集范围。
+- 新位置为 `backend/scripts/manual/deepseek_manual_check.py`，并标注为手工 DeepSeek 检查脚本，不属于自动测试套件。
+- 手工脚本改用当前 `app.services.llm.nlp_service.analyze()` 接口，不恢复已废弃的 `correct_text`。
+- 自动化测试仍集中在 `backend/tests/`，不引入真实 DeepSeek API 调用到测试。
+
+验证结果：
+
+- `cd backend && python -m compileall app` 通过。
+- `cd backend && python -m unittest discover tests` 通过，`Ran 117 tests OK`。
+- `cd backend && python -m pytest tests` 通过，`117 passed`，仍有 `.pytest_cache` 权限 warning。
+- `cd backend && python -m pytest` 通过，`117 passed`，仍有 `.pytest_cache` 权限 warning。
+- `cd backend && python -m py_compile scripts/manual/deepseek_manual_check.py` 通过。
+
 ## 2026-06-16 第二十七轮 RapidOCR 本地 OCR Provider 实验接入
 
 当前 MVP smoke 阶段新增 RapidOCR 本地 OCR Provider 实验接入，用于验证 Draft OCR Provider 可配置切换能力。
@@ -24,7 +43,7 @@
 - `cd backend && python -m compileall app` 通过。
 - `cd backend && python -m unittest discover tests` 通过，`Ran 117 tests OK`。
 - `cd backend && python -m pytest tests` 通过，`117 passed`，仍有 `.pytest_cache` 权限 warning。
-- `cd backend && python -m pytest` 未通过：pytest 会额外收集根目录旧文件 `backend/test_deepseek.py`，该文件导入已不存在的 `app.services.nlp_engine.correct_text`。
+- `cd backend && python -m pytest` 在第二十七点五轮已收口通过。
 
 ## 2026-06-16 第二十六轮识别结果风险提示与保存前校验
 

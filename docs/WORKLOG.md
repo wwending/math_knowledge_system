@@ -2,6 +2,37 @@
 
 说明：本文件按时间倒序记录每轮工作。较早轮次中的“当前主链路”等表述保留为当时历史事实；当前状态以 `docs/STATUS.md` 最新 checkpoint 和较新的 DECISIONS 为准。
 
+## 2026-06-16 第二十七点五轮：pytest 根目录遗留测试收口
+
+目标：
+
+- 清理 `python -m pytest` 自动收集根目录历史脚本导致的失败。
+- 不修改 RapidOCR Provider、OCRService、Draft recognize API、前端或 LLM 服务主逻辑。
+- 不恢复旧的 `correct_text` 函数，不让自动测试依赖真实 DeepSeek API。
+
+结果：
+
+- 确认 `backend/test_deepseek.py` 是历史手工调试脚本，不是正式自动化测试。
+- 将该脚本移至 `backend/scripts/manual/deepseek_manual_check.py`，避开 pytest 默认 `test_*.py` 收集规则。
+- 新手工脚本顶部明确说明不属于自动测试套件。
+- 手工脚本改用当前 `app.services.llm.nlp_service.analyze()` 接口，未恢复废弃的 `app.services.nlp_engine.correct_text`。
+- 记录测试目录规范：自动化测试放 `backend/tests/`，手工 API/LLM 调试脚本放 `backend/scripts/manual/`。
+
+验证结果：
+
+- `cd backend && python -m pytest` 先按预期失败，错误为根目录 `test_deepseek.py` 导入不存在的 `correct_text`。
+- 移动并改写手工脚本后，`cd backend && python -m compileall app` 通过。
+- `cd backend && python -m unittest discover tests` 通过，`Ran 117 tests OK`。
+- `cd backend && python -m pytest tests` 通过，`117 passed`，仍有 `.pytest_cache` 权限 warning。
+- `cd backend && python -m pytest` 通过，`117 passed`，仍有 `.pytest_cache` 权限 warning。
+- `cd backend && python -m py_compile scripts/manual/deepseek_manual_check.py` 通过。
+
+边界：
+
+- 未修改 DeepSeek 业务逻辑。
+- 未修改 pytest 收集配置。
+- 未修改 RapidOCR、OCRService、Draft recognize API、前端或数据库模型。
+
 ## 2026-06-16 第二十七轮：RapidOCR 本地 OCR Provider 实验接入
 
 目标：
@@ -26,7 +57,7 @@
 - `cd backend && python -m compileall app` 通过。
 - `cd backend && python -m unittest discover tests` 通过，`Ran 117 tests OK`。
 - `cd backend && python -m pytest tests` 通过，`117 passed`，仍有 `.pytest_cache` 权限 warning。
-- `cd backend && python -m pytest` 未通过：pytest 会额外收集根目录旧文件 `backend/test_deepseek.py`，该文件导入已不存在的 `app.services.nlp_engine.correct_text`。
+- `cd backend && python -m pytest` 在第二十七点五轮已收口通过。
 
 边界：
 
