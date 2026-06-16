@@ -133,3 +133,24 @@ After every task, report in this format:
 - **Docs Updated** — list documentation files updated and why; for non-trivial tasks, usually include `docs/WORKLOG.md`.
 - **Docs Not Updated and Why** — explain why other project memory files were not changed.
 - **Next Suggested Step** — what to do next (optional, one line).
+
+## Code Comment Rules
+
+When modifying or adding code, add concise comments only in key places.
+
+Do comment:
+- Complex business logic or non-obvious control flow.
+- State transitions, status guards, and important error branches.
+- Data model fields whose meaning is not obvious.
+- API contracts, fallback logic, compatibility logic, and side effects.
+- Any workaround, temporary solution, or behavior that may surprise future maintainers.
+
+Do not comment:
+- Obvious syntax or simple assignments.
+- Every line of code.
+- What the code already clearly says.
+
+Comment style:
+- Prefer short English comments in production code.
+- Comments should explain "why" or "what invariant is protected", not merely repeat "what this line does".
+- If the logic is hard to explain in one short comment, consider refactoring the code first.

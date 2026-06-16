@@ -2,6 +2,34 @@
 
 说明：本文件按时间倒序记录每轮工作。较早轮次中的“当前主链路”等表述保留为当时历史事实；当前状态以 `docs/STATUS.md` 最新 checkpoint 和较新的 DECISIONS 为准。
 
+## 2026-06-16 第二十二轮：OCR 方案评估集与评估指标基础
+
+目标：
+
+- 建立轻量 OCR eval case 和 prediction JSON 结构。
+- 新增离线 OCR 文本级评估指标，用于后续比较百度、本地 OCR 和云 fallback。
+- 不调用真实 OCR，不接入 RapidOCR、PaddleOCR、Pix2Text，不修改 Draft recognize 或 legacy `/api/v1/recognize`。
+
+结果：
+
+- 新增 `backend/app/services/ocr_evaluation.py`，提供 `normalize_ocr_text()`、`evaluate_ocr_prediction()`、`evaluate_ocr_batch()`。
+- 新增 `OcrEvalMetrics`、`OcrEvalRecord`、`OcrProviderEvalSummary`、`OcrEvalSummary`，支持单条指标和按 provider 汇总。
+- 新增轻量 fixture：`ocr_eval_cases.json` 和 `ocr_eval_predictions.json`，使用占位图片路径，不依赖真实图片。
+- 新增 `backend/tests/test_ocr_evaluation.py`，覆盖空白归一化、完全匹配、轻微 OCR 差异、关键术语召回、provider 汇总、缺失 prediction 和 error prediction。
+- 新增 `docs/OCR_EVAL.md`，说明评估集格式、prediction 格式、指标、局限和后续 provider 对比方式。
+
+验证结果：
+
+- `cd backend && python -m compileall app` 通过。
+- `cd backend && python -m unittest tests.test_ocr_evaluation` 通过，`Ran 6 tests OK`。
+- `cd backend && python -m unittest discover tests` 通过，`Ran 102 tests OK`。
+
+边界：
+
+- 当前评估只是文本级初步评估，不覆盖数学公式语义、几何图结构或版面理解。
+- 未建立真实大规模数学题图片评估集。
+- 未新增外部依赖，未修改 OCRService provider 选择逻辑。
+
 ## 2026-06-06 第二十一轮：OCR Provider 抽象与部署成本控制基础
 
 目标：

@@ -1,0 +1,36 @@
+[
+  {
+    "case_id": "alg-001",
+    "image_path": "local-only/ocr_eval/alg-001.png",
+    "expected_text": "Solve x^2 - 1 = 0.",
+    "category": "algebra",
+    "difficulty": 1,
+    "required_terms": ["x^2 - 1", "= 0"],
+    "notes": "Placeholder path; no real image is required for unit tests."
+  },
+  {
+    "case_id": "geo-001",
+    "image_path": "local-only/ocr_eval/geo-001.png",
+    "expected_text": "In triangle ABC, angle A = 60 degrees.",
+    "category": "geometry",
+    "difficulty": 2,
+    "required_terms": ["triangle ABC", "angle A", "60"],
+    "notes": "Text-only geometry sample; diagram evaluation is out of scope."
+  },
+  {
+    "case_id": "fn-001",
+    "image_path": "local-only/ocr_eval/fn-001.png",
+    "expected_text": "Let f(x)=x^2+1. Find f(2).",
+    "category": "function",
+    "difficulty": 1,
+    "required_terms": ["f(x)=x^2+1", "f(2)"]
+  },
+  {
+    "case_id": "proof-001",
+    "image_path": "local-only/ocr_eval/proof-001.png",
+    "expected_text": "Prove that a^2+b^2 >= 2ab.",
+    "category": "proof",
+    "difficulty": 3,
+    "required_terms": ["a^2+b^2", "2ab"]
+  }
+]
