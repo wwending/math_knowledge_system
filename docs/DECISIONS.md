@@ -2,6 +2,31 @@
 
 说明：本文件按时间倒序记录决策。较早决策中的“当前主链路”等表述保留为当时历史事实；如与顶部较新决策冲突，以较新决策和 `docs/STATUS.md` 当前 checkpoint 为准。
 
+## 决策 30：OCR Provider 支持配置切换，RapidOCR 作为本地实验 Provider
+
+结论：
+
+- Draft OCR Provider 支持通过 `OCR_PROVIDER=baidu` / `OCR_PROVIDER=rapidocr` 切换。
+- `baidu` 仍是默认和稳定 provider，保护既有 Draft 识别流程。
+- `rapidocr` 作为本地 OCR 实验 provider 接入，不改变 Draft recognize API、前端或数据库模型。
+- RapidOCR 依赖为可选依赖，默认 requirements 不强制安装；仅当配置为 `rapidocr` 并执行识别时才延迟导入。
+- OCRService 按 provider 名称缓存 provider 实例，RapidOCR provider 内部缓存本地 engine，避免每次识别重复初始化。
+
+原因：
+
+- 百度 OCR 后续部署成本较高，需要先打通本地 OCR provider 的工程切换能力。
+- 当前目标是验证 provider 可切换，不是立即证明 RapidOCR 识别质量优于百度。
+- 可选依赖和默认 baidu 能避免未安装 rapidocr 时破坏现有稳定流程。
+
+边界：
+
+- 不删除 `BaiduOcrProvider`。
+- 不启用 OCR fallback 链。
+- 不修改 legacy `/api/v1/recognize`、前端、数据库模型或 Draft API 契约。
+- RapidOCR 的数学公式、版面和双栏选项识别能力需要后续真实题图评估。
+
+日期：2026-06-16
+
 ## 决策 29：LLM 清洗必须采用保真整理模式，并暴露 OCR/LLM 可回溯信息
 
 结论：

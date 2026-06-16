@@ -2,6 +2,38 @@
 
 说明：本文件按时间倒序记录每轮工作。较早轮次中的“当前主链路”等表述保留为当时历史事实；当前状态以 `docs/STATUS.md` 最新 checkpoint 和较新的 DECISIONS 为准。
 
+## 2026-06-16 第二十七轮：RapidOCR 本地 OCR Provider 实验接入
+
+目标：
+
+- 接入 `RapidOcrProvider`，让 Draft 主识别流程可通过 `OCR_PROVIDER=baidu` / `OCR_PROVIDER=rapidocr` 切换。
+- 默认仍使用 `baidu`，不破坏现有稳定流程。
+- RapidOCR 作为可选依赖处理，未安装时不影响 baidu 启动和测试。
+- 不修改 Draft recognize API、前端、数据库模型或 legacy `/api/v1/recognize`。
+
+结果：
+
+- 新增 `backend/app/services/ocr_providers/rapidocr.py`，延迟导入 `rapidocr.RapidOCR`，依赖缺失时提示 `pip install rapidocr`。
+- RapidOCR provider 支持懒加载并缓存 engine；`OCRService` 支持 `rapidocr` 并按 provider 名称缓存 provider 实例。
+- RapidOCR 解析函数支持对象 `txts/texts`、`boxes/scores`、旧式 `(boxes, txts, scores)`、逐行 tuple/dict 和空结果。
+- 未知 `OCR_PROVIDER` 返回清晰错误：`Unsupported OCR_PROVIDER: <value>. Supported values: ...`。
+- `backend/.env.example` 增加 OCR provider 切换示例；`backend/requirements.txt` 仅注释 RapidOCR 为可选本地 OCR 依赖。
+- 新增/扩展后端单元测试覆盖默认 baidu、rapidocr 选择、provider 缓存、缺依赖错误和 RapidOCR 解析。
+
+验证结果：
+
+- `cd backend && python -m unittest tests.test_ocr_provider` 先按预期失败，提示缺少 `app.services.ocr_providers.rapidocr`；实现后通过，`Ran 12 tests OK`。
+- `cd backend && python -m compileall app` 通过。
+- `cd backend && python -m unittest discover tests` 通过，`Ran 117 tests OK`。
+- `cd backend && python -m pytest tests` 通过，`117 passed`，仍有 `.pytest_cache` 权限 warning。
+- `cd backend && python -m pytest` 未通过：pytest 会额外收集根目录旧文件 `backend/test_deepseek.py`，该文件导入已不存在的 `app.services.nlp_engine.correct_text`。
+
+边界：
+
+- 未真实安装或调用 RapidOCR 模型。
+- 未提升 OCR 精度，未解决双栏选项漏识别。
+- 未修改前端、数据库模型、Draft API 请求/响应结构或 legacy `/api/v1/recognize`。
+
 ## 2026-06-16 第二十六轮：识别结果风险提示与保存前校验
 
 目标：
