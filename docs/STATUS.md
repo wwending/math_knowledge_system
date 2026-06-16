@@ -1,5 +1,31 @@
 # STATUS
 
+## 2026-06-16 第二十七轮 RapidOCR 本地 OCR Provider 实验接入
+
+当前 MVP smoke 阶段新增 RapidOCR 本地 OCR Provider 实验接入，用于验证 Draft OCR Provider 可配置切换能力。
+
+新增能力：
+
+- `OCR_PROVIDER` 支持 `baidu` 和 `rapidocr`，默认仍为 `baidu`。
+- 新增 `RapidOcrProvider`，通过延迟导入 `rapidocr.RapidOCR` 避免未安装 rapidocr 时影响默认 baidu 流程。
+- RapidOCR 引擎在 provider 内懒加载并缓存，`OCRService` 也按 provider 名称缓存实例，避免每次识别重复初始化。
+- RapidOCR 返回结果增加最小兼容解析，覆盖对象 `txts/texts`、`boxes/scores`、旧式 `(boxes, txts, scores)` 和逐行 tuple/dict 结构。
+- `backend/.env.example` 增加 `OCR_PROVIDER=baidu` 与 `# OCR_PROVIDER=rapidocr` 示例；`requirements.txt` 仅注释 RapidOCR 为可选依赖。
+
+当前边界：
+
+- 百度 OCR 仍是稳定默认 provider，本轮不替换百度 OCR。
+- 本轮不修改 Draft recognize API 请求/响应结构、不改前端、不改数据库模型。
+- RapidOCR 当前只是本地文本 OCR 实验 provider，真实高中数学题、公式和双栏选项效果需要后续用 smoke 图片实测对比。
+
+验证结果：
+
+- `cd backend && python -m unittest tests.test_ocr_provider` 通过，`Ran 12 tests OK`。
+- `cd backend && python -m compileall app` 通过。
+- `cd backend && python -m unittest discover tests` 通过，`Ran 117 tests OK`。
+- `cd backend && python -m pytest tests` 通过，`117 passed`，仍有 `.pytest_cache` 权限 warning。
+- `cd backend && python -m pytest` 未通过：pytest 会额外收集根目录旧文件 `backend/test_deepseek.py`，该文件导入已不存在的 `app.services.nlp_engine.correct_text`。
+
 ## 2026-06-16 第二十六轮识别结果风险提示与保存前校验
 
 当前 MVP smoke 阶段新增识别质量风险提示，用于避免疑似残缺题无感保存入题库。

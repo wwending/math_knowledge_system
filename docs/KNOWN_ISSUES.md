@@ -1,5 +1,21 @@
 # KNOWN_ISSUES
 
+## 0.12 RapidOCR 已实验接入但真实数学题效果待评估
+
+第二十七轮已接入 `RapidOcrProvider`，Draft OCR Provider 可通过 `OCR_PROVIDER=baidu` / `OCR_PROVIDER=rapidocr` 切换，默认仍为 `baidu`。
+
+当前限制：
+
+- RapidOCR 当前只是本地文本 OCR 实验 provider，不代表已经解决数学公式、几何图、版面结构或双栏选项漏识别。
+- RapidOCR 首次运行可能存在模型加载耗时，低配服务器 CPU 推理性能需要实测。
+- 当前自动化测试只覆盖 provider 选择、依赖缺失错误和返回结构解析，不调用真实 RapidOCR 模型。
+- 本地 RapidOCR 与百度 OCR 的质量差异需要用本地 smoke 题图逐题对比，尤其关注公式、选项完整性和 `recognition_debug` 中 OCR 原文。
+
+影响：
+
+- 后续不能直接把 `rapidocr` 设为默认 provider。
+- 下一步应设计真实题图对比评测，记录 baidu/rapidocr 的识别文本、耗时、风险提示和人工结论。
+
 ## 0.11 OCR 双栏选项漏识别仍未根治
 
 第二十六轮已增加识别结果风险提示和保存前确认，用于降低残缺选择题无感入库的风险。
