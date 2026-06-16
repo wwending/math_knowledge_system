@@ -1,0 +1,30 @@
+[
+  {
+    "case_id": "alg-001",
+    "provider": "baidu",
+    "predicted_text": "Solve x^2 - 1 = 0.",
+    "latency_ms": 320,
+    "error": null
+  },
+  {
+    "case_id": "geo-001",
+    "provider": "baidu",
+    "predicted_text": "In triangle ABC, angle A = 6O degrees.",
+    "latency_ms": 410,
+    "error": null
+  },
+  {
+    "case_id": "fn-001",
+    "provider": "rapidocr-placeholder",
+    "predicted_text": "Let f(x)=x^2+1. Find f(2).",
+    "latency_ms": 95,
+    "error": null
+  },
+  {
+    "case_id": "proof-001",
+    "provider": "rapidocr-placeholder",
+    "predicted_text": "",
+    "latency_ms": 90,
+    "error": "offline sample error"
+  }
+]

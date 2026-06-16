@@ -1,5 +1,32 @@
 # STATUS
 
+## 2026-06-16 第二十二轮 OCR 方案评估集与评估指标基础
+
+当前项目在第二十一轮 Draft OCR Provider 抽象之后，新增 OCR 离线评估集和文本级评估指标基础，但不接入新 OCR 引擎，不调用真实 OCR API。
+
+新增能力：
+
+- 新增轻量 OCR eval case JSON 结构，记录 `case_id`、占位 `image_path`、人工 `expected_text`、类别、难度、关键术语和说明。
+- 新增轻量 OCR prediction JSON 结构，记录 `case_id`、`provider`、`predicted_text`、`latency_ms` 和 `error`。
+- 新增 `ocr_evaluation.py`，支持文本归一化、单条 prediction 评估、批量按 provider 汇总。
+- 指标包括 exact match、normalized exact match、文本相似度、长度差、关键术语召回和错误标记。
+- 新增 `docs/OCR_EVAL.md`，说明为什么先建立评估标准，再接入本地 OCR provider。
+
+当前边界：
+
+- OCR Provider 已抽象，OCR Eval 基础已建立，本地 OCR 尚未接入。
+- 当前默认 OCR provider 仍为 `baidu`。
+- 未修改 Draft recognize 主流程，未修改 legacy `/api/v1/recognize`。
+- 未接入 RapidOCR、PaddleOCR、Pix2Text 或云 fallback。
+- 当前评估只是文本级初步评估，不覆盖数学公式语义、几何图结构或版面理解。
+- 尚未建立真实大规模高中数学题图片评估集。
+
+验证结果：
+
+- `cd backend && python -m compileall app` 通过。
+- `cd backend && python -m unittest tests.test_ocr_evaluation` 通过，`Ran 6 tests OK`。
+- `cd backend && python -m unittest discover tests` 通过，`Ran 102 tests OK`。
+
 ## 2026-06-06 第二十一轮 OCR Provider 抽象与部署成本控制基础
 
 当前项目完成 Draft recognize OCR Provider 抽象基础，但不替换 OCR 引擎，不改变 legacy `/api/v1/recognize`。

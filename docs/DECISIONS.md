@@ -2,6 +2,29 @@
 
 说明：本文件按时间倒序记录决策。较早决策中的“当前主链路”等表述保留为当时历史事实；如与顶部较新决策冲突，以较新决策和 `docs/STATUS.md` 当前 checkpoint 为准。
 
+## 决策 28：先建立 OCR 评估集，再接入本地 OCR provider
+
+结论：
+
+- 在接入 RapidOCR、PaddleOCR、Pix2Text 或其他本地 OCR provider 前，先建立 OCR eval case、prediction 和文本级评估指标。
+- 本轮评估只使用已有 `predicted_text` 离线计算，不调用真实 OCR provider。
+- 评估指标先覆盖 exact match、normalized exact match、文本相似度、长度差、关键术语召回、错误数和耗时汇总。
+- 真实图片样本后续可以放在本地或对象存储，不把大图片提交进 Git。
+
+原因：
+
+- 直接切换 OCR provider 容易变成凭感觉比较，无法稳定判断识别质量、耗时和失败率。
+- 百度 OCR 成本问题需要解决，但质量评估标准应先于 provider 替换。
+- 当前项目处理高中数学题，公式、图形和版面问题复杂，必须明确文本级指标的边界。
+
+边界：
+
+- 当前指标不是数学公式语义评估。
+- 不覆盖几何图、版面结构或 OCR 后 LLM 清洗质量。
+- 不修改 Draft recognize、legacy `/api/v1/recognize`、数据库模型、前端或 OCRService provider 选择逻辑。
+
+日期：2026-06-16
+
 ## 决策 27：Draft OCR 引擎改为 Provider 模式，百度仍为默认 provider
 
 结论：
