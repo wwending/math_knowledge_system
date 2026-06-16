@@ -38,6 +38,22 @@ if (!dashboardSource.includes('素材已存在，已复用已有素材继续录�
   failures.push('dashboard does not show a friendly reusable asset upload message')
 }
 
+if (!dashboardSource.includes('识别风险提示')) {
+  failures.push('dashboard does not display recognition quality warnings')
+}
+
+if (!dashboardSource.includes('choice_options_incomplete')) {
+  failures.push('dashboard does not handle incomplete choice option warnings')
+}
+
+if (!dashboardSource.includes('quality_warnings')) {
+  failures.push('dashboard does not read quality_warnings from Draft responses')
+}
+
+if (!dashboardSource.includes('ElMessageBox.confirm')) {
+  failures.push('dashboard does not confirm before saving risky recognition results')
+}
+
 if (dashboardSource.includes('请更换图片或重新裁剪')) {
   failures.push('dashboard still blocks duplicate asset uploads with a recrop instruction')
 }

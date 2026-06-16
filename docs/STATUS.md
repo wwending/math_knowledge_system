@@ -1,5 +1,34 @@
 # STATUS
 
+## 2026-06-16 第二十六轮识别结果风险提示与保存前校验
+
+当前 MVP smoke 阶段新增识别质量风险提示，用于避免疑似残缺题无感保存入题库。
+
+新增能力：
+
+- Draft detail / recognize / save-to-bank 响应新增 `quality_warnings`，按当前识别文本、原始 OCR 文本和 LLM 清洗文本动态计算，不新增数据库字段。
+- 新增选择题风险提示：疑似选择题选项不足 4 个时返回 `choice_options_incomplete`。
+- 新增选择题标签断档提示：如 A/C 缺 B 或 A/B/D 缺 C 时返回 `choice_options_sequence_gap`。
+- 新增保守文本质量提示：识别文本过短返回 `recognized_text_too_short`，LLM 清洗后明显短于 OCR 原文返回 `ocr_llm_text_changed_substantially`。
+- Dashboard 结果区展示“识别风险提示”，用户仍可编辑草稿。
+- Dashboard 保存入题库前如果存在 `quality_warnings`，弹出确认框；用户可取消返回编辑，也可确认继续保存。
+
+当前边界：
+
+- 本轮不解决 OCR 双栏选项漏识别本身，只提示风险。
+- 本轮不接入 RapidOCR、PaddleOCR、Pix2Text，不改 OCRService provider、BaiduOcrProvider 或 LLM prompt。
+- 本轮不阻止后端 save-to-bank，不改变 API 兼容性，不做数据库迁移。
+- 本轮不修改 legacy `/api/v1/recognize`、PaperRenderModel 或 PaperPreview 打印逻辑。
+
+验证结果：
+
+- `cd backend && python -m compileall app` 通过。
+- `cd backend && python -m unittest tests.test_recognition_quality` 通过，`Ran 6 tests OK`。
+- `cd backend && python -m unittest tests.test_draft_pipeline` 通过，`Ran 17 tests OK`。
+- `cd backend && python -m unittest discover tests` 通过，`Ran 109 tests OK`。
+- `cd frontend && npm run test:stage3-contract` 通过。
+- `cd frontend && npm run build` 通过，仍有 Vite chunk size warning。
+
 ## 2026-06-16 第二十五轮重复素材上传支持 smoke 复用
 
 当前 MVP smoke 阶段已修复同一用户重复上传同一张本地 smoke 图片时被 `Asset already exists` 卡死的问题。

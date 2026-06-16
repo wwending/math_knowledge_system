@@ -46,6 +46,7 @@ from app.services.ocr_service import ocr_service as draft_ocr_service
 from app.services.paper_service import create_paper, get_paper, list_papers
 from app.services.paper_render_service import build_paper_render_model
 from app.services.question_metadata import evaluate_question_metadata_task
+from app.services.recognition_quality import detect_quality_warnings
 
 
 router = APIRouter()
@@ -339,13 +340,19 @@ def _build_recognition_debug(draft: Draft) -> Optional[RecognitionDebug]:
 
 
 def _build_draft_detail(draft: Draft) -> DraftDetail:
+    recognition_debug = _build_recognition_debug(draft)
+    content_text = _content_text(draft.current_content)
+    has_recognition_text = bool(
+        content_text.strip()
+        or (recognition_debug and (recognition_debug.ocr_raw_text or recognition_debug.llm_cleaned_text))
+    )
     return DraftDetail(
         id=draft.id,
         source_asset_id=draft.source_asset_id,
         crop_bbox=draft.crop_bbox,
         status=draft.status,
         current_content=draft.current_content,
-        content=_content_text(draft.current_content),
+        content=content_text,
         knowledge_tags=_content_tags(draft.current_content),
         question_type=draft.question_type,
         difficulty_level=draft.difficulty_level,
@@ -354,7 +361,15 @@ def _build_draft_detail(draft: Draft) -> DraftDetail:
         difficulty_reason=draft.difficulty_reason,
         last_ocr_run_id=draft.last_ocr_run_id,
         last_llm_run_id=draft.last_llm_run_id,
-        recognition_debug=_build_recognition_debug(draft),
+        recognition_debug=recognition_debug,
+        quality_warnings=detect_quality_warnings(
+            content_text,
+            raw_ocr_text=recognition_debug.ocr_raw_text if recognition_debug else None,
+            llm_cleaned_text=recognition_debug.llm_cleaned_text if recognition_debug else None,
+            question_type=draft.question_type,
+        )
+        if has_recognition_text
+        else [],
         created_at=draft.created_at,
         updated_at=draft.updated_at,
     )

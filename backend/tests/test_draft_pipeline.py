@@ -246,6 +246,7 @@ class DraftPipelineTests(unittest.TestCase):
         self.assertEqual(recognize_payload["recognition_debug"]["ocr_provider"], "baidu")
         self.assertEqual(recognize_payload["recognition_debug"]["ocr_raw_text"], "raw math text")
         self.assertEqual(recognize_payload["recognition_debug"]["llm_cleaned_text"], "clean math text")
+        self.assertEqual(recognize_payload["quality_warnings"], [{"code": "recognized_text_too_short", "level": "warning", "message": "识别文本较短，可能存在漏识别，请核对原图和原始 OCR 文本。"}])
         self.assertIsNone(recognize_payload["recognition_debug"]["ocr_error"])
         self.assertIsNone(recognize_payload["recognition_debug"]["llm_error"])
         self.assertIsNone(recognize_payload["question_type"])
@@ -259,6 +260,7 @@ class DraftPipelineTests(unittest.TestCase):
         detail_payload = detail_response.json()
         self.assertEqual(detail_payload["recognition_debug"]["ocr_raw_text"], "raw math text")
         self.assertEqual(detail_payload["recognition_debug"]["llm_cleaned_text"], "clean math text")
+        self.assertEqual(detail_payload["quality_warnings"], recognize_payload["quality_warnings"])
 
         with patch.object(endpoints, "evaluate_question_metadata_task", return_value=None) as metadata_task:
             save_response = self.client.post(

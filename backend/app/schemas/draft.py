@@ -21,6 +21,12 @@ class RecognitionDebug(BaseModel):
     llm_error: Optional[str] = None
 
 
+class RecognitionQualityWarning(BaseModel):
+    code: str
+    level: str = "warning"
+    message: str
+
+
 class DraftDetail(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -39,6 +45,7 @@ class DraftDetail(BaseModel):
     last_ocr_run_id: Optional[int] = None
     last_llm_run_id: Optional[int] = None
     recognition_debug: Optional[RecognitionDebug] = None
+    quality_warnings: list[RecognitionQualityWarning] = Field(default_factory=list)
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
