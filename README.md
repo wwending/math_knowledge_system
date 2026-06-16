@@ -112,6 +112,13 @@
   题库管理 / 组卷 / 预览
   ```
 
+  ## MVP Demo 与 Smoke
+
+  - MVP 使用闭环 Demo 流程见：`docs/DEMO_FLOW.md`
+  - 本地手动 smoke checklist 见：`docs/MVP_SMOKE_CHECKLIST.md`
+  - 本地 smoke 图片约定放在：`data/manual_smoke/ocr_images/`
+  - 当前导出方案优先使用 PaperPreview 的浏览器打印或另存为 PDF；服务端 PDF/DOCX 导出尚未实现。
+
   ## 核心设计
 
   ### 1. Draft 草稿机制

@@ -230,6 +230,11 @@ class NLPServiceAnalyzeTest(unittest.TestCase):
         self.assertIn("不证明", system_prompt)
         self.assertIn("不分析", system_prompt)
         self.assertIn("不输出推理过程", system_prompt)
+        self.assertIn("不改变题意", combined_prompt)
+        self.assertIn("不得根据常见题型猜测原题", combined_prompt)
+        self.assertIn("不得删除选项", combined_prompt)
+        self.assertIn("AF1", user_prompt)
+        self.assertIn("AF2", user_prompt)
 
     def test_analyze_handles_empty_choices_with_invalid_response_detail(self):
         service = object.__new__(NLPService)
