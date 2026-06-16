@@ -2,6 +2,41 @@
 
 说明：本文件按时间倒序记录每轮工作。较早轮次中的“当前主链路”等表述保留为当时历史事实；当前状态以 `docs/STATUS.md` 最新 checkpoint 和较新的 DECISIONS 为准。
 
+## 2026-06-16 第二十六轮：识别结果风险提示与保存前校验
+
+目标：
+
+- 不解决 OCR 漏识别本身，只增加保存前质量风险提示。
+- 对疑似选择题 A/B/C/D 选项不完整、选项顺序断档、文本过短、OCR/LLM 长度差异过大给出 warning。
+- Dashboard 结果区展示风险提示，并在保存入题库前要求用户确认。
+- 不修改 OCR provider、BaiduOcrProvider、LLM prompt、legacy `/api/v1/recognize`、数据库模型、PaperRenderModel 或 PaperPreview。
+
+结果：
+
+- 新增 `RecognitionQualityWarning` 和 Draft 响应字段 `quality_warnings`，动态计算，不落库。
+- 新增 `backend/app/services/recognition_quality.py`，支持检测常见 `A. / A． / A、 / A）` 等选项标签。
+- Draft detail / recognize / save-to-bank 响应均可带出 `quality_warnings`。
+- Dashboard 结果区新增“识别风险提示”，保存前若存在风险提示会弹出确认框。
+- 前端确认后仍可保存，不在后端强制阻断 save-to-bank。
+- `docs/MVP_SMOKE_CHECKLIST.md` 增加选择题选项缺失、风险提示和保存确认检查项。
+
+验证结果：
+
+- `cd backend && python -m compileall app` 通过。
+- `cd backend && python -m unittest tests.test_recognition_quality` 通过，`Ran 6 tests OK`。
+- `cd backend && python -m unittest tests.test_draft_pipeline` 通过，`Ran 17 tests OK`。
+- `cd backend && python -m unittest discover tests` 通过，`Ran 109 tests OK`。
+- `cd frontend && npm run test:stage3-contract` 通过。
+- `cd frontend && npm run build` 通过，仍有 Vite chunk size warning。
+
+边界：
+
+- 未提升 OCR 准确率，未恢复漏识别选项。
+- 未接入 RapidOCR、PaddleOCR、Pix2Text。
+- 未改 OCRService provider、BaiduOcrProvider 或 LLM prompt。
+- 未改 legacy `/api/v1/recognize`。
+- 未做数据库迁移、QuestionAsset、历史记录重构、题库删除或服务端 PDF/DOCX 导出。
+
 ## 2026-06-16 第二十五轮：重复素材上传支持 smoke 复用
 
 目标：

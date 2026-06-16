@@ -183,6 +183,20 @@
             <el-card v-if="ocrResult" shadow="hover">
               <div class="markdown-body" v-html="renderedContent"></div>
             </el-card>
+            <el-alert
+              v-if="qualityWarnings.length > 0"
+              title="识别风险提示"
+              type="warning"
+              show-icon
+              :closable="false"
+              class="result-alert quality-warning-alert"
+            >
+              <ul class="quality-warning-list">
+                <li v-for="warning in qualityWarnings" :key="warning.code">
+                  {{ formatQualityWarning(warning) }}
+                </li>
+              </ul>
+            </el-alert>
             <el-collapse v-if="recognitionDebug" class="recognition-debug-collapse">
               <el-collapse-item title="识别调试信息" name="recognition-debug">
                 <div class="recognition-debug-grid">
@@ -232,7 +246,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import axios from 'axios'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Clock, Collection, DataAnalysis, Document, UploadFilled, UserFilled } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import 'vue-cropper/dist/index.css'
@@ -278,6 +292,7 @@ const saveLoading = ref(false)
 const saveBlocked = ref(false)
 const saveResult = ref(null)
 const recognitionDebug = ref(null)
+const qualityWarnings = ref([])
 
 const currentUser = computed(() => authState.currentUser)
 const adminMode = computed(() => isAdminUser(currentUser.value))
@@ -424,6 +439,7 @@ const resetDraftState = () => {
   saveBlocked.value = false
   saveResult.value = null
   recognitionDebug.value = null
+  qualityWarnings.value = []
 }
 
 const setStageMessage = (stage) => {
@@ -441,6 +457,13 @@ const extractId = (payload, fields) => {
 
 const getDraftContent = (payload) => payload?.content || payload?.current_content?.text || ''
 const getRecognitionDebug = (payload) => payload?.recognition_debug || null
+const getQualityWarnings = (payload) => Array.isArray(payload?.quality_warnings) ? payload.quality_warnings : []
+const formatQualityWarning = (warning) => {
+  if (warning?.code === 'choice_options_incomplete') {
+    return warning.message || '疑似选择题选项不完整，请核对 A/B/C/D 是否齐全。'
+  }
+  return warning?.message || '识别结果存在风险，请保存前核对。'
+}
 
 const isDraftBusy = computed(() => ocrLoading.value || draftStatus.value === 'recognizing')
 const canSaveDraft = computed(
@@ -633,6 +656,7 @@ const runRecognition = async (file) => {
     if (draftStatus.value === 'draft_ready' && payload.success !== false) {
       ocrResult.value = getDraftContent(payload)
       recognitionDebug.value = getRecognitionDebug(payload)
+      qualityWarnings.value = getQualityWarnings(payload)
       step.value = 'result'
       if (payload.partial_success) {
         recognizeWarning.value =
@@ -646,6 +670,7 @@ const runRecognition = async (file) => {
 
     draftStatus.value = 'failed'
     recognitionDebug.value = getRecognitionDebug(payload)
+    qualityWarnings.value = getQualityWarnings(payload)
     draftError.value = getRecognizeErrorMessage(payload)
     ElMessage.error(draftError.value)
     step.value = 'result'
@@ -705,6 +730,22 @@ const runLegacyRecognition = async (file) => {
 const saveDraftToBank = async () => {
   if (!canSaveDraft.value) {
     return
+  }
+
+  if (qualityWarnings.value.length > 0) {
+    try {
+      await ElMessageBox.confirm(
+        '当前识别结果存在风险提示。建议先核对原图、原始 OCR 文本和 LLM 清洗文本，确认题干与选项完整后再保存。',
+        '保存前确认',
+        {
+          confirmButtonText: '仍然保存',
+          cancelButtonText: '返回编辑',
+          type: 'warning'
+        }
+      )
+    } catch {
+      return
+    }
   }
 
   saveLoading.value = true
@@ -1047,6 +1088,13 @@ onMounted(async () => {
 
 .result-alert {
   margin-bottom: 4px;
+}
+
+.quality-warning-list {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  color: #7a4d00;
+  line-height: 1.7;
 }
 
 .result-actions {
