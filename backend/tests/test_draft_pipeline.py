@@ -132,6 +132,57 @@ class DraftPipelineTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         return response.json()["id"]
 
+    def _tiny_png_bytes(self) -> bytes:
+        return (
+            b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
+            b"\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00"
+            b"\x00\x00\x0cIDATx\x9cc\xf8\xff\xff?\x00\x05\xfe"
+            b"\x02\xfeA\xe2!\xbc\x00\x00\x00\x00IEND\xaeB`\x82"
+        )
+
+    def test_repeated_asset_upload_reuses_existing_asset_and_allows_new_draft(self):
+        image_bytes = self._tiny_png_bytes()
+
+        first_response = self.client.post(
+            "/api/v1/assets",
+            headers=self.auth_headers,
+            files={"file": ("smoke.png", image_bytes, "image/png")},
+        )
+        self.assertEqual(first_response.status_code, 200)
+        first_payload = first_response.json()
+        first_asset_id = first_payload["asset_id"]
+        self.assertFalse(first_payload.get("deduplicated", False))
+
+        second_response = self.client.post(
+            "/api/v1/assets",
+            headers=self.auth_headers,
+            files={"file": ("smoke.png", image_bytes, "image/png")},
+        )
+        self.assertEqual(second_response.status_code, 200)
+        second_payload = second_response.json()
+        self.assertEqual(second_payload["asset_id"], first_asset_id)
+        self.assertTrue(second_payload["deduplicated"])
+        self.assertEqual(second_payload["existing_asset_id"], first_asset_id)
+        self.assertIn("using existing asset", second_payload["message"])
+
+        first_draft = self.client.post(
+            "/api/v1/drafts",
+            headers=self.auth_headers,
+            json={"source_asset_id": first_asset_id},
+        )
+        second_draft = self.client.post(
+            "/api/v1/drafts",
+            headers=self.auth_headers,
+            json={"source_asset_id": second_payload["asset_id"]},
+        )
+        self.assertEqual(first_draft.status_code, 200)
+        self.assertEqual(second_draft.status_code, 200)
+        self.assertNotEqual(first_draft.json()["id"], second_draft.json()["id"])
+
+        with self.SessionLocal() as db:
+            self.assertEqual(db.query(SourceAsset).count(), 1)
+            self.assertEqual(db.query(Draft).filter(Draft.source_asset_id == first_asset_id).count(), 2)
+
     def _recognize_draft_successfully(self, draft_id: int):
         with patch.object(
             endpoints.draft_ocr_service,
@@ -192,11 +243,22 @@ class DraftPipelineTests(unittest.TestCase):
         self.assertEqual(recognize_payload["status"], DraftStatus.DRAFT_READY)
         self.assertEqual(recognize_payload["content"], "clean math text")
         self.assertEqual([tag["label"] for tag in recognize_payload["knowledge_tags"]], ["函数", "代数"])
+        self.assertEqual(recognize_payload["recognition_debug"]["ocr_provider"], "baidu")
+        self.assertEqual(recognize_payload["recognition_debug"]["ocr_raw_text"], "raw math text")
+        self.assertEqual(recognize_payload["recognition_debug"]["llm_cleaned_text"], "clean math text")
+        self.assertIsNone(recognize_payload["recognition_debug"]["ocr_error"])
+        self.assertIsNone(recognize_payload["recognition_debug"]["llm_error"])
         self.assertIsNone(recognize_payload["question_type"])
         self.assertIsNone(recognize_payload["difficulty_level"])
         self.assertIsNone(recognize_payload["difficulty_label"])
         self.assertIsNone(recognize_payload["difficulty_confidence"])
         self.assertIsNone(recognize_payload["difficulty_reason"])
+
+        detail_response = self.client.get(f"/api/v1/drafts/{draft_id}", headers=self.auth_headers)
+        self.assertEqual(detail_response.status_code, 200)
+        detail_payload = detail_response.json()
+        self.assertEqual(detail_payload["recognition_debug"]["ocr_raw_text"], "raw math text")
+        self.assertEqual(detail_payload["recognition_debug"]["llm_cleaned_text"], "clean math text")
 
         with patch.object(endpoints, "evaluate_question_metadata_task", return_value=None) as metadata_task:
             save_response = self.client.post(

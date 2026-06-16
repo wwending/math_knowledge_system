@@ -98,4 +98,5 @@ secrets.json
 check_gpu.py
 reset_admin.py
 
-
+data/manual_smoke/ocr_images/
+data/manual_smoke/predictions/

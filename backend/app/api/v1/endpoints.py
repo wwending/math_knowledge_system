@@ -33,7 +33,7 @@ from app.models.question import Question
 from app.models.question_revision import QuestionRevision
 from app.models.source_asset import SourceAsset
 from app.models.user import User
-from app.schemas.draft import DraftCreate, DraftDetail, DraftRecognizeResponse, DraftSaveToBankResponse
+from app.schemas.draft import DraftCreate, DraftDetail, DraftRecognizeResponse, DraftSaveToBankResponse, RecognitionDebug
 from app.schemas.ocr import OCRResponse
 from app.schemas.paper import PaperCreate, PaperListItem, PaperRead
 from app.schemas.paper_render import PaperRenderModel, PaperRenderRequest
@@ -71,6 +71,9 @@ class SourceAssetResponse(BaseModel):
     width: Optional[int] = None
     height: Optional[int] = None
     sha256: str
+    deduplicated: bool = False
+    existing_asset_id: Optional[int] = None
+    message: Optional[str] = None
 
 
 def normalize_tags(raw_tags: Any) -> List[KnowledgeTag]:
@@ -283,6 +286,58 @@ def _content_tags(current_content: Any) -> list[KnowledgeTag]:
     return normalize_tags(current_content.get("knowledge_tags") or current_content.get("knowledge"))
 
 
+def _extract_ocr_raw_text(draft: Draft, ocr_run: Optional[OCRRun]) -> Optional[str]:
+    if isinstance(draft.current_content, dict) and isinstance(draft.current_content.get("ocr_text"), str):
+        return draft.current_content["ocr_text"]
+    if not ocr_run:
+        return None
+    if isinstance(ocr_run.parsed_blocks, list):
+        block_texts = [str(block.get("text") or "") for block in ocr_run.parsed_blocks if isinstance(block, dict)]
+        joined_text = "\n".join(text for text in block_texts if text).strip()
+        if joined_text:
+            return joined_text
+    if isinstance(ocr_run.response_raw_json, dict) and isinstance(ocr_run.response_raw_json.get("content"), str):
+        return ocr_run.response_raw_json["content"]
+    return None
+
+
+def _extract_llm_cleaned_text(draft: Draft, llm_run: Optional[LLMRun]) -> Optional[str]:
+    if llm_run and isinstance(llm_run.parsed_output, dict):
+        corrected_text = llm_run.parsed_output.get("corrected_text")
+        if isinstance(corrected_text, str):
+            return corrected_text
+    if llm_run and isinstance(llm_run.raw_output, str):
+        try:
+            raw_output = json.loads(llm_run.raw_output)
+        except json.JSONDecodeError:
+            raw_output = None
+        if isinstance(raw_output, dict) and isinstance(raw_output.get("corrected_text"), str):
+            return raw_output["corrected_text"]
+    if llm_run:
+        return _content_text(draft.current_content) or None
+    return None
+
+
+def _run_error(error_code: Optional[str], error_message: Optional[str]) -> Optional[str]:
+    if error_code and error_message:
+        return f"{error_code}: {error_message}"
+    return error_message or error_code
+
+
+def _build_recognition_debug(draft: Draft) -> Optional[RecognitionDebug]:
+    ocr_run = draft.last_ocr_run
+    llm_run = draft.last_llm_run
+    if not ocr_run and not llm_run:
+        return None
+    return RecognitionDebug(
+        ocr_provider=ocr_run.provider if ocr_run else None,
+        ocr_raw_text=_extract_ocr_raw_text(draft, ocr_run),
+        llm_cleaned_text=_extract_llm_cleaned_text(draft, llm_run),
+        ocr_error=_run_error(ocr_run.error_code, ocr_run.error_message) if ocr_run else None,
+        llm_error=_run_error(llm_run.error_code, llm_run.error_message) if llm_run else None,
+    )
+
+
 def _build_draft_detail(draft: Draft) -> DraftDetail:
     return DraftDetail(
         id=draft.id,
@@ -299,6 +354,7 @@ def _build_draft_detail(draft: Draft) -> DraftDetail:
         difficulty_reason=draft.difficulty_reason,
         last_ocr_run_id=draft.last_ocr_run_id,
         last_llm_run_id=draft.last_llm_run_id,
+        recognition_debug=_build_recognition_debug(draft),
         created_at=draft.created_at,
         updated_at=draft.updated_at,
     )
@@ -499,7 +555,25 @@ def upload_asset(
     except IntegrityError:
         db.rollback()
         _safe_remove_file(file_path)
-        raise HTTPException(status_code=409, detail="Asset already exists")
+        existing_asset = (
+            db.query(SourceAsset)
+            .filter(SourceAsset.user_id == current_user.id, SourceAsset.sha256 == sha256_digest)
+            .first()
+        )
+        if not existing_asset:
+            raise HTTPException(status_code=409, detail="Asset already exists")
+        return SourceAssetResponse(
+            asset_id=existing_asset.id,
+            kind=existing_asset.kind,
+            mime=existing_asset.mime,
+            size_bytes=existing_asset.size_bytes,
+            width=existing_asset.width,
+            height=existing_asset.height,
+            sha256=existing_asset.sha256,
+            deduplicated=True,
+            existing_asset_id=existing_asset.id,
+            message="Asset already exists, using existing asset.",
+        )
     db.refresh(asset)
 
     return SourceAssetResponse(

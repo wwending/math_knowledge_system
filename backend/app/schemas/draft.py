@@ -13,6 +13,14 @@ class DraftCreate(BaseModel):
     crop_bbox: Optional[Any] = None
 
 
+class RecognitionDebug(BaseModel):
+    ocr_provider: Optional[str] = None
+    ocr_raw_text: Optional[str] = None
+    llm_cleaned_text: Optional[str] = None
+    ocr_error: Optional[str] = None
+    llm_error: Optional[str] = None
+
+
 class DraftDetail(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -30,6 +38,7 @@ class DraftDetail(BaseModel):
     difficulty_reason: Optional[str] = None
     last_ocr_run_id: Optional[int] = None
     last_llm_run_id: Optional[int] = None
+    recognition_debug: Optional[RecognitionDebug] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

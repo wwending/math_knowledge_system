@@ -5,7 +5,13 @@
         <strong>作业预览</strong>
         <span>{{ renderModel.paper.item_count }} 题 / {{ renderModel.paper.total_score }} 分</span>
       </div>
-      <el-tag size="small" effect="plain">{{ renderModel.template_type }}</el-tag>
+      <div class="preview-actions">
+        <el-tag size="small" effect="plain">{{ renderModel.template_type }}</el-tag>
+        <el-button type="primary" size="small" @click="handlePrint">
+          <el-icon><Printer /></el-icon>
+          <span>打印/导出 PDF</span>
+        </el-button>
+      </div>
     </div>
 
     <div class="a4-page">
@@ -63,6 +69,7 @@
 </template>
 
 <script setup>
+import { Printer } from '@element-plus/icons-vue'
 import { renderMarkdown } from '@/utils/renderMarkdown'
 
 defineProps({
@@ -73,6 +80,10 @@ defineProps({
 })
 
 const renderContent = (content) => content ? renderMarkdown(content) : '<span style="color:#999">暂无内容</span>'
+
+const handlePrint = () => {
+  window.print()
+}
 </script>
 
 <style scoped>
@@ -94,6 +105,12 @@ const renderContent = (content) => content ? renderMarkdown(content) : '<span st
   margin-right: 10px;
   color: #1f3442;
   font-size: 15px;
+}
+
+.preview-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .a4-page {
@@ -189,6 +206,47 @@ const renderContent = (content) => content ? renderMarkdown(content) : '<span st
   .student-line {
     justify-content: flex-start;
     gap: 12px;
+  }
+}
+
+@media print {
+  @page {
+    size: A4;
+    margin: 0;
+  }
+
+  .preview-toolbar,
+  :global(.paper-container .header-row),
+  :global(.paper-list),
+  :global(.detail-header),
+  :global(.preview-controls),
+  :global(.paper-items),
+  :global(.el-menu),
+  :global(.el-aside),
+  :global(.el-header) {
+    display: none !important;
+  }
+
+  .preview-shell {
+    margin-top: 0;
+  }
+
+  :global(.paper-layout),
+  :global(.paper-detail) {
+    display: block !important;
+    border: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: #fff !important;
+  }
+
+  .a4-page {
+    width: 210mm;
+    min-height: 297mm;
+    margin: 0;
+    padding: 18mm;
+    border: 0;
+    box-shadow: none;
   }
 }
 </style>

@@ -2,6 +2,115 @@
 
 说明：本文件按时间倒序记录每轮工作。较早轮次中的“当前主链路”等表述保留为当时历史事实；当前状态以 `docs/STATUS.md` 最新 checkpoint 和较新的 DECISIONS 为准。
 
+## 2026-06-16 第二十五轮：重复素材上传支持 smoke 复用
+
+目标：
+
+- 解决同一用户反复上传同一张本地 smoke 图片时 `Asset already exists` 阻断流程的问题。
+- 保留 asset 去重，不重复保存同一份图片文件。
+- 重复上传时返回已有 asset 信息，让前端继续创建新的 Draft 并 recognize。
+- 不做历史记录重构、题库删除、OCR provider 修改或 LLM prompt 修改。
+
+结果：
+
+- `POST /api/v1/assets` 在 `SourceAsset.sha256` 唯一约束冲突后，会删除本次临时保存的重复文件，并查询当前用户自己的同 hash asset。
+- 如果找到当前用户已有 asset，返回 `200` 和原 asset 信息，并附带 `deduplicated=true`、`existing_asset_id`、`message="Asset already exists, using existing asset."`。
+- 如果冲突 asset 不属于当前用户，仍返回通用 `409 Asset already exists`，不暴露其他用户 asset id。
+- Dashboard 收到去重复用响应时显示“素材已存在，已复用已有素材继续录入。”，并继续 Draft 创建和识别。
+- 已验证 `Draft.source_asset_id` 没有唯一约束，同一 asset 可以创建多个 Draft，支持 smoke 反复测试 OCR/LLM 效果。
+- `docs/MVP_SMOKE_CHECKLIST.md` 增加重复上传复用检查项。
+
+验证结果：
+
+- `cd backend && python -m unittest tests.test_draft_pipeline.DraftPipelineTests.test_repeated_asset_upload_reuses_existing_asset_and_allows_new_draft` 先按预期失败，提示重复上传仍返回 409；实现后通过。
+- `cd frontend && npm run test:stage3-contract` 先按预期失败，提示 Dashboard 未处理重复 asset 复用；实现后通过。
+- `cd backend && python -m compileall app` 通过。
+- `cd backend && python -m unittest discover tests` 通过，`Ran 103 tests OK`。
+- `cd frontend && npm run test:auth-contract` 通过。
+- `cd frontend && npm run test:stage3-contract` 通过。
+- `cd frontend && npm run build` 通过，仍有 Vite chunk size warning。
+
+边界：
+
+- 未修改数据库模型或 Alembic 迁移。
+- 未新增 QuestionAsset 表。
+- 未做完整历史记录重构或历史记录重新编辑。
+- 未做题库删除功能。
+- 未接入 RapidOCR、PaddleOCR、Pix2Text。
+- 未修改 OCRService provider 选择逻辑、BaiduOcrProvider、LLM prompt、legacy `/api/v1/recognize`、PaperRenderModel 或 PaperPreview 打印逻辑。
+- 自动化测试不调用真实 OCR 或 LLM API。
+
+## 2026-06-16 第二十四轮：OCR/LLM 保真与可回溯修复
+
+目标：
+
+- 区分 OCR 错误和 LLM 清洗错误。
+- Draft detail 和 Dashboard 结果区能查看原始 OCR 文本与 LLM 清洗文本。
+- 将 Draft LLM prompt 调整为保真整理模式，禁止猜题、补题、改题意。
+- 不追求 OCR 准确率提升，不接入新 OCR provider，不做数据库迁移。
+
+结果：
+
+- `DraftDetail` 新增可选 `recognition_debug`，字段包含 `ocr_provider`、`ocr_raw_text`、`llm_cleaned_text`、`ocr_error`、`llm_error`。
+- `_build_draft_detail()` 复用 `Draft.current_content`、`OCRRun.parsed_blocks/response_raw_json`、`LLMRun.parsed_output/raw_output` 组装调试信息。
+- Dashboard 识别结果区新增默认折叠的“识别调试信息”，展示“原始 OCR 文本”和“LLM 清洗文本”。
+- LLM prompt 增加保真规则：不改变题意，不根据常见题型猜测原题，不删除选项，不替换变量/点名/线段名/焦点编号，不改写数学表达式，并加入 AF1/AF2、`|F1A|·|F1B|/|AB|`、`m^2y + 6` 等防篡改示例。
+- 后端测试覆盖 prompt 保真规则和 Draft detail 调试信息；前端契约测试覆盖调试展示文案。
+- STATUS、DECISIONS、KNOWN_ISSUES 同步本轮保真与可回溯口径。
+
+验证结果：
+
+- `cd backend && python -m compileall app` 通过。
+- `cd backend && python -m unittest tests.test_llm` 通过，`Ran 23 tests OK`。
+- `cd backend && python -m unittest tests.test_draft_pipeline` 通过，`Ran 16 tests OK`。
+- `cd backend && python -m unittest discover tests` 通过，`Ran 102 tests OK`。
+- `cd frontend && npm run test:auth-contract` 通过。
+- `cd frontend && npm run test:stage3-contract` 通过。
+- `cd frontend && npm run build` 通过，仍有 Vite chunk size warning。
+
+边界：
+
+- 未接入 RapidOCR、PaddleOCR、Pix2Text 或其他本地 OCR。
+- 未修改 OCRService provider 选择逻辑、BaiduOcrProvider 或 legacy `/api/v1/recognize`。
+- 未修改数据库模型、Alembic 迁移、QuestionAsset、PaperRenderModel 或 PaperPreview 打印逻辑。
+- 未调用真实百度 OCR 或真实 LLM API。
+
+## 2026-06-16 第二十三轮：MVP 使用闭环与本地 smoke 样例收口
+
+目标：
+
+- 明确本地 smoke 样例图片放置位置。
+- 使用 3 张 PDF 截图数学题作为手动 smoke 样例，不提交真实图片。
+- 新增 MVP 手动 smoke checklist 和 Demo 使用流程文档。
+- 如 PaperPreview 缺少打印入口，则增加最小浏览器打印入口。
+- 不接入新 OCR，不扩展评估集，不修改主流程。
+
+结果：
+
+- `.gitignore` 已忽略 `data/manual_smoke/ocr_images/` 和 `data/manual_smoke/predictions/`。
+- 新增 `docs/DEMO_FLOW.md`，说明后端启动、前端启动、登录、上传 smoke 图片、创建 Draft、recognize、编辑草稿、保存题库、创建试卷、预览和浏览器打印/另存 PDF。
+- 新增 `docs/MVP_SMOKE_CHECKLIST.md`，记录 `smoke_ocr_001_interval_choice.png`、`smoke_ocr_002_parallel_line_blank.png`、`smoke_ocr_003_ellipse_solution.png` 的元信息和人工检查项。
+- `PaperPreview.vue` 新增“打印/导出 PDF”按钮，点击后调用 `window.print()`。
+- `PaperPreview.vue` 新增最小 print CSS，打印时隐藏不必要按钮、列表和导航，保留 A4 预览内容。
+- `frontend/tests/paper-mvp-contract.test.mjs` 增加打印入口契约断言。
+- README 增加 Demo 和 smoke 文档入口。
+- STATUS 和 KNOWN_ISSUES 同步 MVP 闭环收口、OCR Eval 暂停扩展、本地 OCR 未接入、浏览器打印导出和当前样本局限。
+
+验证结果：
+
+- `cd frontend && node ./tests/paper-mvp-contract.test.mjs` 先按预期失败，提示缺少打印导出能力；实现后通过。
+- `cd backend && python -m compileall app` 通过。
+- `cd backend && python -m unittest discover tests` 通过，`Ran 102 tests OK`。
+- `cd frontend && npm run build` 通过，仍有 Vite chunk size warning。
+
+边界：
+
+- 未接入 RapidOCR、PaddleOCR、Pix2Text 或其他本地 OCR。
+- 未扩展 OCR 评估集，未读取真实 smoke 图片做自动化测试。
+- 未调用真实 OCR API 做自动化测试。
+- 未修改 OCRService provider 选择逻辑、Draft recognize 主流程或 legacy `/api/v1/recognize`。
+- 未做数据库迁移、QuestionAsset 表、服务端 PDF/DOCX 导出或 PaperRenderModel 核心结构修改。
+
 ## 2026-06-16 第二十二轮：OCR 方案评估集与评估指标基础
 
 目标：

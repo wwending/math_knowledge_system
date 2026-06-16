@@ -183,6 +183,20 @@
             <el-card v-if="ocrResult" shadow="hover">
               <div class="markdown-body" v-html="renderedContent"></div>
             </el-card>
+            <el-collapse v-if="recognitionDebug" class="recognition-debug-collapse">
+              <el-collapse-item title="识别调试信息" name="recognition-debug">
+                <div class="recognition-debug-grid">
+                  <section class="recognition-debug-block">
+                    <h4>原始 OCR 文本</h4>
+                    <pre>{{ recognitionDebug.ocr_raw_text || '暂无原始 OCR 文本' }}</pre>
+                  </section>
+                  <section class="recognition-debug-block">
+                    <h4>LLM 清洗文本</h4>
+                    <pre>{{ recognitionDebug.llm_cleaned_text || '暂无 LLM 清洗文本' }}</pre>
+                  </section>
+                </div>
+              </el-collapse-item>
+            </el-collapse>
             <div v-if="draftStatus === 'draft_ready'" class="result-actions">
               <el-button type="primary" :loading="saveLoading" :disabled="!canSaveDraft" @click="saveDraftToBank">
                 {{ saveLoading ? '正在保存...' : '保存入题库' }}
@@ -263,6 +277,7 @@ const draftError = ref('')
 const saveLoading = ref(false)
 const saveBlocked = ref(false)
 const saveResult = ref(null)
+const recognitionDebug = ref(null)
 
 const currentUser = computed(() => authState.currentUser)
 const adminMode = computed(() => isAdminUser(currentUser.value))
@@ -408,6 +423,7 @@ const resetDraftState = () => {
   saveLoading.value = false
   saveBlocked.value = false
   saveResult.value = null
+  recognitionDebug.value = null
 }
 
 const setStageMessage = (stage) => {
@@ -424,6 +440,7 @@ const extractId = (payload, fields) => {
 }
 
 const getDraftContent = (payload) => payload?.content || payload?.current_content?.text || ''
+const getRecognitionDebug = (payload) => payload?.recognition_debug || null
 
 const isDraftBusy = computed(() => ocrLoading.value || draftStatus.value === 'recognizing')
 const canSaveDraft = computed(
@@ -581,10 +598,15 @@ const runRecognition = async (file) => {
     const assetFormData = new FormData()
     assetFormData.append('file', file)
     const assetResponse = await axios.post(`${API_V1_BASE_URL}/assets`, assetFormData)
-    const uploadedAssetId = extractId(assetResponse.data, ['source_asset_id', 'asset_id', 'id'])
+    const assetPayload = assetResponse.data || {}
+    const uploadedAssetId = extractId(assetPayload, ['source_asset_id', 'asset_id', 'existing_asset_id', 'id'])
 
     if (!uploadedAssetId) {
       throw new Error('素材上传成功，但响应中缺少 source_asset_id。')
+    }
+
+    if (assetPayload.deduplicated || assetPayload.existing_asset_id) {
+      ElMessage.info('素材已存在，已复用已有素材继续录入。')
     }
 
     sourceAssetId.value = uploadedAssetId
@@ -610,6 +632,7 @@ const runRecognition = async (file) => {
 
     if (draftStatus.value === 'draft_ready' && payload.success !== false) {
       ocrResult.value = getDraftContent(payload)
+      recognitionDebug.value = getRecognitionDebug(payload)
       step.value = 'result'
       if (payload.partial_success) {
         recognizeWarning.value =
@@ -622,6 +645,7 @@ const runRecognition = async (file) => {
     }
 
     draftStatus.value = 'failed'
+    recognitionDebug.value = getRecognitionDebug(payload)
     draftError.value = getRecognizeErrorMessage(payload)
     ElMessage.error(draftError.value)
     step.value = 'result'
@@ -629,9 +653,7 @@ const runRecognition = async (file) => {
     console.error(error)
     draftStatus.value = 'failed'
     draftError.value = getRequestErrorMessage(error)
-    if (error.response?.status === 409 && error.response?.data?.detail === 'Asset already exists') {
-      draftError.value = '素材上传失败：Asset already exists，请更换图片或重新裁剪后再试。'
-    } else if (!error.response && !error.isAxiosError && error.message) {
+    if (!error.response && !error.isAxiosError && error.message) {
       draftError.value = error.message
     }
     ElMessage.error(draftError.value)
@@ -1033,6 +1055,41 @@ onMounted(async () => {
   gap: 10px;
 }
 
+.recognition-debug-collapse {
+  border: 1px solid #dbe7e2;
+  border-radius: 8px;
+  background: #fbfdfc;
+  overflow: hidden;
+}
+
+.recognition-debug-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.recognition-debug-block h4 {
+  margin: 0 0 8px;
+  color: #1f3d35;
+  font-size: 14px;
+}
+
+.recognition-debug-block pre {
+  min-height: 120px;
+  max-height: 280px;
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  border-radius: 8px;
+  background: #eef5f2;
+  color: #253a35;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
 @media (max-width: 1180px) {
   .dashboard-layout {
     grid-template-columns: 1fr;
@@ -1050,6 +1107,10 @@ onMounted(async () => {
 @media (max-width: 900px) {
   .topbar {
     flex-direction: column;
+  }
+
+  .recognition-debug-grid {
+    grid-template-columns: 1fr;
   }
 
   .topbar-actions {

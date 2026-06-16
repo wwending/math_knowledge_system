@@ -2,6 +2,29 @@
 
 说明：本文件按时间倒序记录决策。较早决策中的“当前主链路”等表述保留为当时历史事实；如与顶部较新决策冲突，以较新决策和 `docs/STATUS.md` 当前 checkpoint 为准。
 
+## 决策 29：LLM 清洗必须采用保真整理模式，并暴露 OCR/LLM 可回溯信息
+
+结论：
+
+- Draft LLM 文本清洗定位为“高中数学 OCR 文本保真整理器”，不是解题老师、题目改写器或补题工具。
+- LLM prompt 必须明确禁止猜题、补题、改题意、替换变量/点名/线段名/焦点编号、删除看似残缺的选项或将一个数学表达式改写成另一个数学表达式。
+- Draft detail 响应应提供可选 `recognition_debug`，让用户能比较 OCR 原文和 LLM 清洗文本。
+- `recognition_debug` 优先复用已有 `OCRRun`、`LLMRun`、`Draft.current_content`，不为了调试字段新增迁移。
+
+原因：
+
+- 本地 smoke 暴露了公式可能被误改、选项可能丢失、椭圆题命题可能被 LLM 改写的问题。
+- 在无法确定错误来自 OCR 还是 LLM 前，继续切换 OCR provider 会扩大变量，不能稳定定位根因。
+- 高中数学题中变量、焦点编号、线段名、选项和表达式都是题意的一部分，LLM 自行“合理化”会造成严重题意篡改。
+
+边界：
+
+- 本决策不表示 OCR 准确率已提升。
+- 本决策不接入 RapidOCR、PaddleOCR、Pix2Text 或云 fallback。
+- 本决策不改变 legacy `/api/v1/recognize`、OCRService provider 选择逻辑、BaiduOcrProvider 或数据库模型。
+
+日期：2026-06-16
+
 ## 决策 28：先建立 OCR 评估集，再接入本地 OCR provider
 
 结论：

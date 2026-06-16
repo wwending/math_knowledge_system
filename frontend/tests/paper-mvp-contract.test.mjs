@@ -18,6 +18,30 @@ if (!dashboardSource.includes('<paper-panel')) {
   failures.push('dashboard does not render PaperPanel')
 }
 
+if (!dashboardSource.includes('识别调试信息')) {
+  failures.push('dashboard does not expose recognition debug information')
+}
+
+if (!dashboardSource.includes('原始 OCR 文本')) {
+  failures.push('dashboard does not display raw OCR text')
+}
+
+if (!dashboardSource.includes('LLM 清洗文本')) {
+  failures.push('dashboard does not display LLM cleaned text')
+}
+
+if (!dashboardSource.includes('deduplicated') || !dashboardSource.includes('existing_asset_id')) {
+  failures.push('dashboard does not handle reusable duplicate asset upload responses')
+}
+
+if (!dashboardSource.includes('素材已存在，已复用已有素材继续录入。')) {
+  failures.push('dashboard does not show a friendly reusable asset upload message')
+}
+
+if (dashboardSource.includes('请更换图片或重新裁剪')) {
+  failures.push('dashboard still blocks duplicate asset uploads with a recrop instruction')
+}
+
 if (!bankPanelSource.includes('selectedQuestionIds')) {
   failures.push('bank panel does not track selected questions')
 }
@@ -105,6 +129,18 @@ if (!existsSync(paperPreviewPath)) {
 
   if (paperPreviewSource.includes('answer_snapshot') || paperPreviewSource.includes('analysis_snapshot')) {
     failures.push('PaperPreview renders answer or analysis snapshot fields')
+  }
+
+  if (!paperPreviewSource.includes('window.print()')) {
+    failures.push('PaperPreview does not expose browser print export')
+  }
+
+  if (!paperPreviewSource.includes('打印/导出 PDF')) {
+    failures.push('PaperPreview is missing the print/export PDF button text')
+  }
+
+  if (!paperPreviewSource.includes('@media print')) {
+    failures.push('PaperPreview is missing print CSS')
   }
 }
 
