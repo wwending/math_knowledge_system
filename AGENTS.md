@@ -154,3 +154,54 @@ Comment style:
 - Prefer short English comments in production code.
 - Comments should explain "why" or "what invariant is protected", not merely repeat "what this line does".
 - If the logic is hard to explain in one short comment, consider refactoring the code first.
+
+
+
+## Python Environment Rules
+
+This project must use the backend local virtual environment.
+
+Before running any backend Python command, first enter:
+
+```powershell
+cd D:\math_knowledge_system\backend
+.\venv\Scripts\Activate.ps1
+```
+
+If PowerShell blocks activation, use:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\venv\Scripts\Activate.ps1
+```
+
+After activation, verify the Python executable:
+
+```powershell
+python -c "import sys; print(sys.executable); print(sys.prefix)"
+python -m pip -V
+```
+
+The expected Python executable is:
+
+```text
+D:\math_knowledge_system\backend\venv\Scripts\python.exe
+```
+
+Do not use:
+
+```text
+F:\conda\python.exe
+```
+
+Do not install project dependencies into the global Conda environment.
+
+All package operations must use:
+
+```powershell
+python -m pip ...
+```
+
+not plain `pip`.
+
+If `python` does not point to the backend venv, stop immediately and report the environment mismatch instead of modifying code, installing packages, or running tests.
