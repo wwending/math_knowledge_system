@@ -1,5 +1,22 @@
 # KNOWN_ISSUES
 
+## 0.14 OCR A/B smoke 机制已建立，但真实样本结论尚未形成
+
+第二十八轮已新增 `backend/scripts/evaluation/compare_ocr_providers.py`，可以用同一批题图对比 `baidu` 和 `rapidocr`，并输出 Markdown / JSON 结果。
+
+已处理：
+
+- 可以记录每张图每个 provider 的成功状态、错误信息、耗时、OCR 原文、文本长度和 `quality_warnings`。
+- 可选 `--with-llm` 用于记录 LLM 清洗结果和知识点标签；默认不调用 LLM。
+- 单个 provider、单张图片或 LLM 调用失败不会中断整批评测。
+- `backend/reports/ocr_ab/` 已加入 `.gitignore`，真实评测报告默认不提交。
+
+剩余注意：
+
+- 本轮只建立评测机制，没有真实跑完并解释 baidu / rapidocr 质量差异。
+- RapidOCR 的数学公式、双栏选项、几何图题和 CPU 耗时仍需要用真实 smoke 图片评估。
+- 如果报告包含真实题图路径、OCR 原文或第三方响应摘要，提交前需要人工判断是否适合入库。
+
 ## 0.13 pytest 根目录历史 DeepSeek 脚本收集失败已清理
 
 第二十七点五轮已清理 `python -m pytest` 自动收集根目录历史 DeepSeek 调试脚本导致的失败。
@@ -25,12 +42,12 @@
 - RapidOCR 当前只是本地文本 OCR 实验 provider，不代表已经解决数学公式、几何图、版面结构或双栏选项漏识别。
 - RapidOCR 首次运行可能存在模型加载耗时，低配服务器 CPU 推理性能需要实测。
 - 当前自动化测试只覆盖 provider 选择、依赖缺失错误和返回结构解析，不调用真实 RapidOCR 模型。
-- 本地 RapidOCR 与百度 OCR 的质量差异需要用本地 smoke 题图逐题对比，尤其关注公式、选项完整性和 `recognition_debug` 中 OCR 原文。
+- 本地 RapidOCR 与百度 OCR 的质量差异需要用本地 smoke 题图逐题对比，尤其关注公式、选项完整性、`quality_warnings` 和 OCR 原文。
 
 影响：
 
 - 后续不能直接把 `rapidocr` 设为默认 provider。
-- 下一步应设计真实题图对比评测，记录 baidu/rapidocr 的识别文本、耗时、风险提示和人工结论。
+- 下一步应运行第二十八轮 A/B smoke 脚本，记录 baidu/rapidocr 的识别文本、耗时、风险提示和人工结论。
 
 ## 0.11 OCR 双栏选项漏识别仍未根治
 

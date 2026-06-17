@@ -77,3 +77,77 @@
 5. 再结合人工抽检决定 provider 默认值和 fallback 策略。
 
 真实评估图片后续可以放在本地目录或对象存储中，Git 仓库只保留轻量 JSON、脚本和文档。
+
+## OCR Provider A/B Smoke 脚本
+
+第二十八轮新增手工评测脚本：
+
+`backend/scripts/evaluation/compare_ocr_providers.py`
+
+用途：
+
+- 用同一批图片分别运行 `baidu`、`rapidocr` 或指定 provider。
+- 输出 Markdown 报告，必要时额外输出 JSON 结果。
+- 默认只运行 OCR 和 `quality_warnings`，不调用 LLM。
+- 只有显式传入 `--with-llm` 时才调用现有 LLM 清洗服务。
+- 某个 provider、某张图片或 LLM 调用失败时，只记录失败信息，不中断整批评测。
+
+从 `backend/` 目录运行：
+
+```bash
+python scripts/evaluation/compare_ocr_providers.py \
+  --input static/uploads_test \
+  --providers baidu,rapidocr \
+  --output reports/ocr_ab/ocr_ab_smoke.md
+```
+
+Windows PowerShell 示例：
+
+```powershell
+python scripts/evaluation/compare_ocr_providers.py `
+  --input static/uploads_test `
+  --providers baidu,rapidocr `
+  --output reports/ocr_ab/ocr_ab_smoke.md
+```
+
+可选 JSON 输出：
+
+```bash
+python scripts/evaluation/compare_ocr_providers.py \
+  --input static/uploads_test \
+  --providers baidu,rapidocr \
+  --output reports/ocr_ab/ocr_ab_smoke.md \
+  --json-output reports/ocr_ab/ocr_ab_smoke.json
+```
+
+只评测单个 provider：
+
+```bash
+python scripts/evaluation/compare_ocr_providers.py \
+  --input static/uploads_test \
+  --providers rapidocr \
+  --output reports/ocr_ab/rapidocr_smoke.md
+```
+
+带 LLM 清洗：
+
+```bash
+python scripts/evaluation/compare_ocr_providers.py \
+  --input static/uploads_test \
+  --providers baidu,rapidocr \
+  --output reports/ocr_ab/ocr_ab_smoke_with_llm.md \
+  --with-llm
+```
+
+输入规则：
+
+- `--input` 可以是单张图片，也可以是目录。
+- 目录模式只收集 `.jpg`、`.jpeg`、`.png`、`.webp`。
+- 图片按文件名排序后执行，保证结果可复跑。
+
+报告规则：
+
+- Markdown 报告包含运行信息、汇总表和每张图片的 provider 详情。
+- 每条结果保留 `manual_conclusion` 和 `notes` 空字段，供人工复核后填写。
+- `manual_conclusion` 建议值：`usable`、`partially_usable`、`unusable`、`need_crop`、`need_manual_fix`。
+- `backend/reports/ocr_ab/` 已加入 `.gitignore`，真实 smoke 报告默认不提交；如后续需要入库，应先人工确认图片、文本和第三方输出中没有敏感内容。

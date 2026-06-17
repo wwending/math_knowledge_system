@@ -100,3 +100,4 @@ reset_admin.py
 
 data/manual_smoke/ocr_images/
 data/manual_smoke/predictions/
+backend/reports/ocr_ab/

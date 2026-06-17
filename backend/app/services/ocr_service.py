@@ -20,16 +20,16 @@ class OCRService:
 
     @property
     def provider_name(self) -> str:
-        return (settings.OCR_PROVIDER or "baidu").strip().lower()
+        return self._normalize_provider_name()
 
     @property
     def endpoint(self) -> str | None:
         provider = self._get_provider()
         return getattr(provider, "endpoint", None) if provider else None
 
-    def recognize(self, image_path: str) -> OCRResult:
-        provider_name = self.provider_name
-        provider = self._get_provider()
+    def recognize(self, image_path: str, provider_name: str | None = None) -> OCRResult:
+        provider_name = self._normalize_provider_name(provider_name)
+        provider = self._get_provider(provider_name)
         if provider is None:
             logger.warning("Unsupported OCR provider configured: {}", provider_name)
             supported_values = ", ".join(sorted(self.provider_factories))
@@ -44,8 +44,11 @@ class OCRService:
             )
         return provider.recognize(image_path)
 
-    def _get_provider(self) -> OcrProvider | None:
-        provider_name = self.provider_name
+    def _normalize_provider_name(self, provider_name: str | None = None) -> str:
+        return (provider_name or settings.OCR_PROVIDER or "baidu").strip().lower()
+
+    def _get_provider(self, provider_name: str | None = None) -> OcrProvider | None:
+        provider_name = self._normalize_provider_name(provider_name)
         factory = self.provider_factories.get(provider_name)
         if factory is None:
             return None
