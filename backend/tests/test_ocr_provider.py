@@ -133,6 +133,29 @@ class OcrProviderTests(unittest.TestCase):
         self.assertEqual(result.text, "rapid text")
         self.assertIsNone(result.error)
 
+    def test_ocr_service_can_override_provider_per_recognize_call(self):
+        old_provider = settings.OCR_PROVIDER
+        settings.OCR_PROVIDER = "baidu"
+        try:
+            service = OCRService(provider_factories={
+                "baidu": lambda: BaiduOcrProvider(engine=FakeLegacyOcrEngine({
+                    "success": True,
+                    "content": "default baidu text",
+                    "cost_seconds": 0.01,
+                })),
+                "rapidocr": lambda: RapidOcrProvider(engine=FakeRapidOcrEngine([
+                    ([[0, 0], [1, 0], [1, 1], [0, 1]], "override rapid text", 0.9),
+                ])),
+            })
+
+            result = service.recognize("sample.png", provider_name="rapidocr")
+        finally:
+            settings.OCR_PROVIDER = old_provider
+
+        self.assertEqual(result.provider, "rapidocr")
+        self.assertEqual(result.text, "override rapid text")
+        self.assertIsNone(result.error)
+
     def test_ocr_service_caches_selected_provider_instance(self):
         old_provider = settings.OCR_PROVIDER
         settings.OCR_PROVIDER = "rapidocr"

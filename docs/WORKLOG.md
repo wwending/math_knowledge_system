@@ -2,6 +2,44 @@
 
 说明：本文件按时间倒序记录每轮工作。较早轮次中的“当前主链路”等表述保留为当时历史事实；当前状态以 `docs/STATUS.md` 最新 checkpoint 和较新的 DECISIONS 为准。
 
+## 2026-06-17 第二十八轮：OCR Provider A/B smoke 评测机制
+
+目标：
+
+- 新增一个可重复运行的手工评测脚本，用同一批题图分别跑 `baidu` 和 `rapidocr`。
+- 输出结构化结果和 Markdown 报告，便于记录 OCR 文本、耗时、质量风险和人工结论。
+- 默认不调用 LLM；只有显式 `--with-llm` 才调用现有 LLM 清洗服务。
+- 不修改默认 OCR provider、不修改 Draft recognize API、不修改前端、不修改数据库模型。
+- 自动化测试不依赖真实 OCR/LLM/API key/网络。
+
+结果：
+
+- 新增 `backend/scripts/evaluation/compare_ocr_providers.py`。
+- 脚本支持 `--input` 单图或目录，目录只收集 `.jpg`、`.jpeg`、`.png`、`.webp` 并按文件名排序。
+- 脚本支持 `--providers`、`--output`、`--json-output`、`--with-llm`。
+- 每张图片每个 provider 记录 `image_path`、`image_name`、`provider`、`success`、`error_message`、`elapsed_ms`、`raw_text`、`raw_text_length`、`quality_warnings`、LLM 字段、`manual_conclusion` 和 `notes`。
+- Provider 或 LLM 异常会写入对应结果，不中断其他 provider 或图片。
+- `OCRService.recognize()` 增加可选 `provider_name` 单次覆盖参数；默认仍读取 `OCR_PROVIDER`，默认仍为 `baidu`。
+- `.gitignore` 忽略 `backend/reports/ocr_ab/`，避免真实评测报告默认入库。
+- `docs/OCR_EVAL.md` 增加脚本用法、PowerShell 示例、JSON 输出和报告入库边界。
+
+验证结果：
+
+- `cd backend && python -m unittest tests.test_ocr_provider.OcrProviderTests.test_ocr_service_can_override_provider_per_recognize_call` 先按预期失败，错误为 `OCRService.recognize()` 不支持 `provider_name`；实现后通过。
+- `cd backend && python -m unittest tests.test_ocr_ab_evaluation` 先按预期失败，错误为缺少 `scripts.evaluation` 模块；实现后通过，`Ran 5 tests OK`。
+- `cd backend && python -m compileall app` 通过。
+- `cd backend && python -m py_compile scripts/evaluation/compare_ocr_providers.py` 通过。
+- `cd backend && python -m unittest tests.test_ocr_provider tests.test_ocr_ab_evaluation` 通过，`Ran 18 tests OK`。
+- `cd backend && python -m unittest discover tests` 首次 120 秒超时未取得最终结论；提高超时后通过，`Ran 123 tests OK`。
+
+边界：
+
+- 未真实调用百度 OCR、RapidOCR 模型或 DeepSeek API。
+- 未把 RapidOCR 设为默认 provider。
+- 未修改 Draft recognize API、前端、数据库模型或 legacy `/api/v1/recognize`。
+- 未优化 OCR 精度，未解决公式、双栏和选项漏识别问题。
+- 真实 smoke 报告需要人工判断是否适合提交。
+
 ## 2026-06-16 第二十七点五轮：pytest 根目录遗留测试收口
 
 目标：
