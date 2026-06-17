@@ -1,5 +1,71 @@
 # STATUS
 
+## 2026-06-17 第二十八点七轮 RapidOCR 3.8.4 返回结构适配
+
+当前 MVP smoke 阶段已修复 `RapidOcrProvider` 对 RapidOCR 3.8.4 返回对象的解析兼容问题，`unsupported result format` 不再误伤当前版本。
+
+本轮结果：
+
+- 项目 venv 使用 `D:\math_knowledge_system\backend\venv\Scripts\python.exe`。
+- 项目 venv 中 `rapidocr` 已升级到 `3.8.4`，`onnxruntime 1.27.0` 已安装。
+- 探测确认 RapidOCR 3.8.4 返回 `rapidocr.utils.output.RapidOCROutput`。
+- 关键字段为 `txts`、`boxes`、`scores`，其中 `txts` 是 tuple，`boxes` 是 numpy ndarray，并提供 `to_json()`。
+- 解析器已优先支持 `txts/texts`，避免对 numpy/array-like `boxes` 做布尔判断，并增加 `to_dict()` / `model_dump()` / `to_json()` 兜底解析。
+- 空 `txts` 视为合法空文本，不再误报 unsupported；真正 unsupported 时错误信息包含类型、属性摘要和截断 repr。
+- 新增 `backend/scripts/__init__.py` 与 `backend/scripts/evaluation/__init__.py`，避免第三方 `scripts` 包遮蔽项目脚本导致 pytest 收集失败。
+- RapidOCR-only smoke 对 3 张图片均成功返回文本。
+- 完整 baidu vs rapidocr A/B 已重跑，双方均 3 张成功。
+
+Smoke 摘要：
+
+- RapidOCR-only：3/3 成功，耗时约 2029-2811 ms，文本长度分别为 43、87、95；第二张触发 `choice_options_incomplete`。
+- 完整 A/B 中 Baidu：3/3 成功，耗时约 930-1430 ms，文本长度分别为 74、326、291；3 张均触发 `choice_options_incomplete`。
+- 完整 A/B 中 RapidOCR：3/3 成功，耗时约 2134-2824 ms，文本长度分别为 43、87、95；第二张触发 `choice_options_incomplete`。
+
+当前边界：
+
+- RapidOCR 已能完成本地 OCR smoke，但质量仍需人工判断。
+- RapidOCR 文本长度明显短于 Baidu，可能存在漏题、漏选项或版面识别不足。
+- 本轮不修改默认 `OCR_PROVIDER`，默认仍为 `baidu`。
+- 本轮不修改 Draft recognize API、不修改前端、不修改数据库模型、不修改 BaiduOcrProvider、不修改 legacy `/api/v1/recognize`。
+- 本地完整报告和 JSON 位于 `backend/reports/ocr_ab/`，该目录已被 `.gitignore` 忽略，不作为提交内容。
+
+验证结果：
+
+- `cd backend && python -m pytest tests/test_ocr_provider.py` 通过，`15 passed`，仍有 `.pytest_cache` 权限 warning。
+- `cd backend && python -m pytest tests/test_ocr_ab_evaluation.py` 通过，`5 passed`，仍有 `.pytest_cache` 权限 warning。
+- `cd backend && python -m pytest` 通过，`125 passed`，仍有 `.pytest_cache` 权限 warning。
+- `cd backend && python -m compileall app` 通过。
+- `cd backend && python -m unittest discover tests` 通过，`Ran 125 tests OK`。
+- `cd backend && python scripts/evaluation/compare_ocr_providers.py --input "D:\math_knowledge_system\data\manual_smoke\ocr_images" --providers rapidocr --output reports/ocr_ab/rapidocr_smoke_after_parser_fix.md --json-output reports/ocr_ab/rapidocr_smoke_after_parser_fix.json` 通过。
+- `cd backend && python scripts/evaluation/compare_ocr_providers.py --input "D:\math_knowledge_system\data\manual_smoke\ocr_images" --providers baidu,rapidocr --output reports/ocr_ab/ocr_ab_first_smoke_parser_fixed.md --json-output reports/ocr_ab/ocr_ab_first_smoke_parser_fixed.json` 通过。
+
+## 2026-06-17 第二十八点五轮 OCR A/B first smoke 实跑
+
+当前 MVP smoke 阶段已使用本地 3 张 smoke 图片运行 OCR Provider A/B 评测，输入目录明确为 `D:\math_knowledge_system\data\manual_smoke\ocr_images`。
+
+本轮结果：
+
+- 评测命令从 `backend/` 目录运行，providers 为 `baidu,rapidocr`。
+- 本轮未带 `--with-llm`，未调用 LLM。
+- Baidu OCR 对 3 张图片均成功返回文本。
+- 3 张图片均触发 `choice_options_incomplete` 风险提示。
+- RapidOCR 包已安装，但运行依赖 `onnxruntime` 缺失，3 张图片均失败并记录 `onnxruntime is not installed.`。
+- 本地完整报告和 JSON 已生成在 `backend/reports/ocr_ab/`，该目录已被 `.gitignore` 忽略，不作为提交内容。
+- 新增 `docs/OCR_AB_FIRST_SMOKE.md` 作为提交用摘要，不粘贴完整 OCR 原文。
+
+当前边界：
+
+- 本轮不能形成 RapidOCR 识别质量结论，只确认失败原因和脚本容错行为。
+- 本轮不修改默认 `OCR_PROVIDER`，默认仍为 `baidu`。
+- 本轮不修改 Draft recognize API、不修改前端、不修改数据库模型、不修改 legacy `/api/v1/recognize`。
+
+验证结果：
+
+- `cd backend && python scripts/evaluation/compare_ocr_providers.py --input "D:\math_knowledge_system\data\manual_smoke\ocr_images" --providers baidu,rapidocr --output reports/ocr_ab/ocr_ab_first_smoke.md --json-output reports/ocr_ab/ocr_ab_first_smoke.json` 通过。
+- `cd backend && python -m pip show rapidocr` 显示已安装 `rapidocr 3.8.4`。
+- `cd backend && python -m pip show onnxruntime` 显示未安装。
+
 ## 2026-06-17 第二十八轮 OCR Provider A/B smoke 评测机制
 
 当前 MVP smoke 阶段新增 OCR Provider A/B 手工评测入口，用于对比 `baidu` 和 `rapidocr` 在同一批题图上的 OCR 文本、耗时、失败信息和识别质量风险。

@@ -35,6 +35,32 @@ class FakeRapidOcrObjectResult:
     scores = [0.98]
 
 
+class FakeArrayLikeBoxes:
+    def __bool__(self):
+        raise ValueError("array truth value is ambiguous")
+
+    def __iter__(self):
+        return iter([[[0, 0], [10, 0], [10, 10], [0, 10]]])
+
+
+class FakeRapidOcr384Result:
+    txts = ("第一行", "", "第二行")
+    boxes = FakeArrayLikeBoxes()
+    scores = (0.99, 0.98)
+
+    def to_json(self):
+        return [
+            {"box": [[0, 0], [10, 0], [10, 10], [0, 10]], "txt": "第一行", "score": 0.99},
+            {"box": [[0, 20], [10, 20], [10, 30], [0, 30]], "txt": "第二行", "score": 0.98},
+        ]
+
+
+class FakeRapidOcrEmptyTxtsResult:
+    txts = ()
+    boxes = FakeArrayLikeBoxes()
+    scores = ()
+
+
 class OcrProviderTests(unittest.TestCase):
     def test_baidu_provider_wraps_legacy_engine_success_result(self):
         legacy_result = {
@@ -212,6 +238,20 @@ class OcrProviderTests(unittest.TestCase):
         self.assertEqual(parsed.boxes, FakeRapidOcrObjectResult.boxes)
         self.assertEqual(parsed.scores, FakeRapidOcrObjectResult.scores)
 
+    def test_parse_rapidocr_384_output_object_with_array_boxes(self):
+        parsed = parse_rapidocr_result(FakeRapidOcr384Result())
+
+        self.assertEqual(parsed.text, "第一行\n第二行")
+        self.assertEqual(len(parsed.boxes), 1)
+        self.assertEqual(parsed.scores, [0.99, 0.98])
+
+    def test_parse_rapidocr_empty_txts_returns_empty_text(self):
+        parsed = parse_rapidocr_result(FakeRapidOcrEmptyTxtsResult())
+
+        self.assertEqual(parsed.text, "")
+        self.assertEqual(parsed.boxes, [])
+        self.assertEqual(parsed.scores, [])
+
     def test_parse_rapidocr_empty_result_returns_empty_text(self):
         parsed = parse_rapidocr_result([])
 
@@ -220,7 +260,7 @@ class OcrProviderTests(unittest.TestCase):
         self.assertEqual(parsed.scores, [])
 
     def test_parse_rapidocr_unrecognized_shape_raises_clear_error(self):
-        with self.assertRaisesRegex(ValueError, "Unsupported RapidOCR result format"):
+        with self.assertRaisesRegex(ValueError, "Unsupported RapidOCR result format: type=dict"):
             parse_rapidocr_result({"unexpected": "shape"})
 
     def test_ocr_service_returns_clear_failure_for_unknown_provider(self):
