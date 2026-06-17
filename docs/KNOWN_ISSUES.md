@@ -1,8 +1,12 @@
 # KNOWN_ISSUES
 
-## 0.14 OCR A/B smoke 机制已建立，但真实样本结论尚未形成
+## 0.14 RapidOCR 已能完成本地 smoke，但质量结论尚未形成
 
 第二十八轮已新增 `backend/scripts/evaluation/compare_ocr_providers.py`，可以用同一批题图对比 `baidu` 和 `rapidocr`，并输出 Markdown / JSON 结果。
+
+第二十八点五轮已使用 `D:\math_knowledge_system\data\manual_smoke\ocr_images` 中 3 张 smoke 图片真实运行 first smoke，未带 `--with-llm`。
+
+第二十八点七轮已探测并适配 RapidOCR 3.8.4 返回结构，修复 `unsupported result format` 误判，并重新运行 rapidocr-only smoke 与完整 baidu vs rapidocr A/B。
 
 已处理：
 
@@ -10,11 +14,19 @@
 - 可选 `--with-llm` 用于记录 LLM 清洗结果和知识点标签；默认不调用 LLM。
 - 单个 provider、单张图片或 LLM 调用失败不会中断整批评测。
 - `backend/reports/ocr_ab/` 已加入 `.gitignore`，真实评测报告默认不提交。
+- Baidu OCR 在 3 张 smoke 图片上均成功返回文本。
+- RapidOCR 3.8.4 返回对象类型为 `rapidocr.utils.output.RapidOCROutput`，关键字段为 `txts`、`boxes`、`scores`，并提供 `to_json()`。
+- `RapidOcrProvider` 已兼容 `txts/texts`、array-like `boxes/scores`、`to_dict()` / `model_dump()` / `to_json()`、旧 tuple/list/dict 结构和合法空文本。
+- RapidOCR-only smoke 对 3 张图片均成功返回文本。
+- 完整 A/B 重跑中 Baidu 与 RapidOCR 均 3 张成功。
 
 剩余注意：
 
-- 本轮只建立评测机制，没有真实跑完并解释 baidu / rapidocr 质量差异。
-- RapidOCR 的数学公式、双栏选项、几何图题和 CPU 耗时仍需要用真实 smoke 图片评估。
+- `unsupported result format` 已解决；当前剩余问题转为识别质量判断。
+- RapidOCR 文本长度明显短于 Baidu：本轮完整 A/B 中 RapidOCR 3 张文本长度为 43、87、95，Baidu 为 74、326、291。
+- RapidOCR 耗时约 2.1-2.8 秒，Baidu 约 0.9-1.4 秒；低配服务器 CPU 耗时仍需继续观察。
+- RapidOCR 的数学公式、双栏选项、几何图题和版面结构仍需人工逐题核对，不能直接认定可替代 Baidu。
+- 第二张 RapidOCR 结果触发 `choice_options_incomplete`，仍需关注选项漏识别。
 - 如果报告包含真实题图路径、OCR 原文或第三方响应摘要，提交前需要人工判断是否适合入库。
 
 ## 0.13 pytest 根目录历史 DeepSeek 脚本收集失败已清理

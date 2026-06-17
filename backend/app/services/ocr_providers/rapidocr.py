@@ -33,6 +33,26 @@ def _append_line(lines: list[str], boxes: list[Any], scores: list[float], text: 
             pass
 
 
+def _as_list(value: Any) -> list[Any]:
+    if value is None:
+        return []
+    try:
+        return list(value)
+    except TypeError:
+        return []
+
+
+def _as_float_list(value: Any) -> list[float]:
+    items = _as_list(value)
+    scores: list[float] = []
+    for item in items:
+        try:
+            scores.append(float(item))
+        except (TypeError, ValueError):
+            pass
+    return scores
+
+
 def _summary(line_count: int, boxes: list[Any], scores: list[float], shape: str) -> dict[str, Any]:
     return {
         "provider": "rapidocr",
@@ -42,6 +62,48 @@ def _summary(line_count: int, boxes: list[Any], scores: list[float], shape: str)
         "box_count": len(boxes),
         "scores": scores,
     }
+
+
+def _unsupported_result_error(result: Any) -> ValueError:
+    visible_attrs = [name for name in dir(result) if not name.startswith("__")][:20]
+    preview = repr(result)[:500]
+    return ValueError(
+        "Unsupported RapidOCR result format: "
+        f"type={type(result).__name__}; attrs={visible_attrs}; repr={preview}"
+    )
+
+
+def _parse_dict_item(item: dict[str, Any], lines: list[str], boxes: list[Any], scores: list[float]) -> None:
+    text = item.get("text", item.get("txt", item.get("words", "")))
+    _append_line(lines, boxes, scores, text, item.get("box"), item.get("score"))
+
+
+def _parse_line_sequence(result: Any, shape: str) -> RapidOcrParsedResult | None:
+    lines: list[str] = []
+    boxes: list[Any] = []
+    scores: list[float] = []
+    parsed_any = False
+    for item in result:
+        if isinstance(item, dict):
+            _parse_dict_item(item, lines, boxes, scores)
+            parsed_any = True
+            continue
+        if isinstance(item, (list, tuple)) and len(item) >= 2:
+            box = item[0]
+            text = item[1]
+            score = item[2] if len(item) >= 3 else None
+            _append_line(lines, boxes, scores, text, box, score)
+            parsed_any = True
+
+    if not parsed_any:
+        return None
+
+    return RapidOcrParsedResult(
+        text="\n".join(lines),
+        boxes=boxes,
+        scores=scores,
+        raw_response_summary=_summary(len(lines), boxes, scores, shape),
+    )
 
 
 def parse_rapidocr_result(result: Any) -> RapidOcrParsedResult:
@@ -54,9 +116,9 @@ def parse_rapidocr_result(result: Any) -> RapidOcrParsedResult:
     if txts is not None:
         if not _is_text_sequence(txts):
             raise ValueError("Unsupported RapidOCR result format: txts/texts is not a text list")
-        boxes = list(getattr(result, "boxes", []) or [])
-        scores = [float(item) for item in (getattr(result, "scores", []) or [])]
         lines = [item.strip() for item in txts if item.strip()]
+        boxes = _as_list(getattr(result, "boxes", None)) if lines else []
+        scores = _as_float_list(getattr(result, "scores", None)) if lines else []
         return RapidOcrParsedResult(
             text="\n".join(lines),
             boxes=boxes,
@@ -64,14 +126,37 @@ def parse_rapidocr_result(result: Any) -> RapidOcrParsedResult:
             raw_response_summary=_summary(len(lines), boxes, scores, "object_attrs"),
         )
 
+    for method_name in ("to_dict", "model_dump", "to_json"):
+        method = getattr(result, method_name, None)
+        if not callable(method):
+            continue
+        converted = method()
+        if isinstance(converted, dict):
+            for key in ("txts", "texts"):
+                converted_txts = converted.get(key)
+                if converted_txts is not None and _is_text_sequence(converted_txts):
+                    lines = [item.strip() for item in converted_txts if item.strip()]
+                    boxes = _as_list(converted.get("boxes")) if lines else []
+                    scores = _as_float_list(converted.get("scores")) if lines else []
+                    return RapidOcrParsedResult(
+                        text="\n".join(lines),
+                        boxes=boxes,
+                        scores=scores,
+                        raw_response_summary=_summary(len(lines), boxes, scores, method_name),
+                    )
+        if isinstance(converted, (list, tuple)):
+            parsed = _parse_line_sequence(converted, method_name)
+            if parsed is not None:
+                return parsed
+
     if isinstance(result, (list, tuple)):
         if not result:
             return RapidOcrParsedResult(text="", raw_response_summary=_summary(0, [], [], "empty_sequence"))
 
         if len(result) >= 3 and _is_text_sequence(result[1]):
-            boxes = list(result[0] or [])
-            scores = [float(item) for item in (result[2] or [])]
             lines = [item.strip() for item in result[1] if item.strip()]
+            boxes = _as_list(result[0]) if lines else []
+            scores = _as_float_list(result[2]) if lines else []
             return RapidOcrParsedResult(
                 text="\n".join(lines),
                 boxes=boxes,
@@ -79,32 +164,11 @@ def parse_rapidocr_result(result: Any) -> RapidOcrParsedResult:
                 raw_response_summary=_summary(len(lines), boxes, scores, "tuple_boxes_txts_scores"),
             )
 
-        lines: list[str] = []
-        boxes: list[Any] = []
-        scores: list[float] = []
-        parsed_any = False
-        for item in result:
-            if isinstance(item, dict):
-                text = item.get("text", item.get("txt", item.get("words", "")))
-                _append_line(lines, boxes, scores, text, item.get("box"), item.get("score"))
-                parsed_any = True
-                continue
-            if isinstance(item, (list, tuple)) and len(item) >= 2:
-                box = item[0]
-                text = item[1]
-                score = item[2] if len(item) >= 3 else None
-                _append_line(lines, boxes, scores, text, box, score)
-                parsed_any = True
+        parsed = _parse_line_sequence(result, "line_sequence")
+        if parsed is not None:
+            return parsed
 
-        if parsed_any:
-            return RapidOcrParsedResult(
-                text="\n".join(lines),
-                boxes=boxes,
-                scores=scores,
-                raw_response_summary=_summary(len(lines), boxes, scores, "line_sequence"),
-            )
-
-    raise ValueError(f"Unsupported RapidOCR result format: {type(result).__name__}")
+    raise _unsupported_result_error(result)
 
 
 class RapidOcrProvider:
