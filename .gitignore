@@ -102,7 +102,4 @@ data/manual_smoke/ocr_images/
 data/manual_smoke/predictions/
 backend/reports/ocr_ab/
 
-backend/.venv_paddle_ocr_test/
 .claude/settings.local.json
-data/manual_smoke/test_paddleocr_heavy.py
-data/manual_smoke/paddleocr_heavy_result.txt
