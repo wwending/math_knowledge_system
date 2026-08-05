@@ -1,0 +1,13 @@
+.git/
+.github/
+.env
+.env.*
+!.env.example
+backend/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+data/
+test_data/
+test_system/
+*.log

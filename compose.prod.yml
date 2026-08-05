@@ -1,0 +1,44 @@
+name: math-knowledge
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: math-knowledge-backend:${IMAGE_TAG:-v0.1}
+    restart: unless-stopped
+    env_file:
+      - ./deploy/.env
+    environment:
+      DATABASE_URL: sqlite:////data/math_knowledge.db
+      STATIC_DIR: /data/static
+      UPLOAD_DIR: /data/static/uploads
+      PDF_TEMP_DIR: /data/pdf_temp
+      ALLOW_RUNTIME_SCHEMA_MUTATIONS: "false"
+      AUTO_CREATE_TABLES: "false"
+      AUTO_APPLY_LEGACY_QUESTION_COMPAT: "false"
+    volumes:
+      - ${DATA_ROOT:-/srv/math-knowledge/data}:/data
+      - ${BACKUP_ROOT:-/srv/math-knowledge/backups}:/backups
+    expose:
+      - "8000"
+    networks:
+      - app
+
+  web:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    image: math-knowledge-web:${IMAGE_TAG:-v0.1}
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${HTTP_PORT:-8080}:80"
+    networks:
+      - app
+
+networks:
+  app:
+    driver: bridge
