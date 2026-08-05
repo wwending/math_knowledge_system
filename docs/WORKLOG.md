@@ -2,6 +2,39 @@
 
 说明：本文件按时间倒序记录每轮工作。较早轮次中的“当前主链路”等表述保留为当时历史事实；当前状态以 `docs/STATUS.md` 最新 checkpoint 和较新的 DECISIONS 为准。
 
+### PaddleOCR heavy 本地实验
+
+- 在独立环境 `backend/.venv_paddle_ocr_test/` 中安装并验证：
+  - `paddleocr`
+  - `paddlepaddle 3.3.1`
+- `paddle.utils.run_check()` 验证通过，PaddlePaddle 可在当前 Windows CPU 环境运行。
+- PaddleOCR 成功加载以下模型：
+  - `PP-LCNet_x1_0_doc_ori`
+  - `UVDoc`
+  - `PP-LCNet_x1_0_textline_ori`
+  - `PP-OCRv6_medium_det`
+  - `PP-OCRv6_medium_rec`
+- 在第一张 smoke 图片进入文本检测推理时失败，错误为：
+
+```text
+NotImplementedError:
+ConvertPirAttribute2RuntimeAttribute not support
+[pir::ArrayAttribute<pir::DoubleAttribute>]
+```
+
+- 尝试设置以下环境变量后问题仍然存在：
+
+```text
+FLAGS_use_mkldnn=0
+FLAGS_enable_pir_api=0
+```
+
+- 日志仍显示执行路径进入 oneDNN，因此判断为当前 `PaddleOCR / PaddlePaddle / Windows CPU` 组合的推理兼容问题。
+- 本轮没有取得 PaddleOCR OCR 文本结果，无法评价其识别精度。
+- 未将 PaddleOCR 接入正式 Provider，也未修改正式后端环境和默认 `OCR_PROVIDER=baidu`。
+
+PaddleOCR heavy 在当前 Windows CPU 实验环境中模型能够初始化，但 PP-OCRv6 medium 推理阶段存在 oneDNN/PIR 兼容问题，因此本轮无法评价识别质量。该方案暂缓接入，不代表 PaddleOCR 本身识别效果差。
+
 ## 2026-06-17 第二十八点七轮：RapidOCR 3.8.4 返回结构适配
 
 目标：
