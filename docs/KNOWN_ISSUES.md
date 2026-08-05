@@ -1,5 +1,13 @@
 # KNOWN_ISSUES
 
+## v0.1 Release Candidate 范围说明
+
+- 生产默认 OCR 固定为百度 OCR，`OCR_PROVIDER=baidu`。
+- RapidOCR 只作为历史实验代码保留，不属于 v0.1 交付范围。下文 RapidOCR / PaddleOCR 记录是历史事实，不代表仍在迁移或评估。
+- 除非真实客户需求或成本数据要求重新评估，否则不再继续比较或迁移 RapidOCR、PaddleOCR、Pix2Text。
+- 当前发布阻塞项是至少 5 张真实数学题图片的百度 OCR + LLM 人工 smoke；自动化测试不调用真实外部服务。
+- Vite 大 chunk warning 与受限 Windows 环境中的 pytest cache warning 当前为非阻塞问题。
+
 ### PaddleOCR heavy Windows CPU 推理兼容问题
 
 当前实验组合：

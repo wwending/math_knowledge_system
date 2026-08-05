@@ -1,5 +1,48 @@
 # STATUS
 
+## 2026-08-05 v0.1 MVP 交付收尾
+
+当前项目状态已收口为 `v0.1 Release Candidate`。本轮目标是建立可重复的自动门禁与人工发布验收标准，完成后停止无边界开发，只根据真实客户需求迭代。
+
+生产路线冻结：
+
+- 主流程固定为“上传 → 百度 OCR → LLM 清洗 → Draft 确认 → 保存题库 → 组卷 → Paper Preview”。
+- 生产默认固定为 `OCR_PROVIDER=baidu`，LLM 使用 DeepSeek 或兼容 OpenAI API 的服务。
+- RapidOCR 只保留为历史实验代码，不属于 v0.1 交付范围；除非客户需求或成本数据要求重新评估，否则不再继续迁移或比较 RapidOCR、PaddleOCR、Pix2Text。
+- 不修改 Draft 主流程，不新增题库删除/回收站、Draft 历史恢复、私有/共享/群组题库、服务端 PDF/DOCX 导出，不做大范围 UI 重构或无关依赖升级。
+
+本轮交付内容：
+
+- 新增 `.github/workflows/ci.yml`，在 main push、面向 main 的 PR 和手工触发时分别运行后端与前端 job。
+- 后端 CI 使用 Python 3.11，安装正式依赖与 pytest，执行 `python -m compileall app` 和 `python -m pytest`；测试环境密钥为空或明确为 CI 占位值，不调用真实外部 API。
+- 前端 CI 使用 Node.js 22 LTS、合法 lockfile 和 `npm ci`，执行 `npm run test:stage3-contract` 与 `npm run build`。
+- 新增 `docs/MVP_RELEASE_CHECKLIST.md`，覆盖环境、启动、自动检查、至少 5 题真实 smoke、失败路径、保护机制、数据隔离、组卷快照、打印与发布签字。
+- README 已改为 v0.1 RC 交付口径，并明确真实 smoke 完成前不能视为正式发布。
+
+修改前基线（2026-08-05 实跑）：
+
+- 后端解释器：`D:\math_knowledge_system\backend\venv\Scripts\python.exe`，Python 3.11.7。
+- `python -m compileall app` 通过。
+- `python -m pytest` 通过，`125 passed`，有 1 个 `.pytest_cache` 权限 warning。
+- `python -m unittest discover tests` 通过，`Ran 125 tests OK`。
+- `npm run test:stage3-contract` 通过，3 个契约脚本全部通过。
+- `npm run build` 通过，仍有 Vite chunk size warning。
+
+修改后验证（2026-08-05 实跑，百度/DeepSeek Key 显式为空）：
+
+- `python -m compileall app` 通过。
+- `python -m pytest` 通过，`125 passed`，有 1 个 `.pytest_cache` 权限 warning。
+- `python -m unittest discover tests` 通过，`Ran 125 tests OK`。
+- `npm run test:stage3-contract` 通过，3 个契约脚本全部通过。
+- `npm run build` 通过，1601 个模块完成转换，仍有 Vite chunk size warning。
+- 测试日志明确显示百度 OCR 与 DeepSeek 凭据未配置，全部自动测试仍通过，证明本轮自动门禁不依赖真实第三方调用。
+
+发布门禁：
+
+- 自动检查通过后仍需发布负责人按 `docs/MVP_RELEASE_CHECKLIST.md` 人工执行至少 5 张真实数学题图片的百度 OCR + LLM smoke。
+- OCR/LLM 失败、风险提示与二次确认、重复保存保护、用户数据隔离、组卷快照、Paper Preview 浏览器打印/另存 PDF 均需人工确认。
+- 人工 smoke 未完成前不创建 `v0.1.0` 标签，不把当前状态表述为正式发布或生产可用。
+
 ## 2026-06-17 第二十八点七轮 RapidOCR 3.8.4 返回结构适配
 
 当前 MVP smoke 阶段已修复 `RapidOcrProvider` 对 RapidOCR 3.8.4 返回对象的解析兼容问题，`unsupported result format` 不再误伤当前版本。

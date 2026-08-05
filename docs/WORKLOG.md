@@ -2,6 +2,54 @@
 
 说明：本文件按时间倒序记录每轮工作。较早轮次中的“当前主链路”等表述保留为当时历史事实；当前状态以 `docs/STATUS.md` 最新 checkpoint 和较新的 DECISIONS 为准。
 
+## 2026-08-05 v0.1 MVP 交付收尾
+
+目标：
+
+- 将项目状态收口为 `v0.1 Release Candidate`，建立 GitHub Actions 自动门禁和人工发布验收清单。
+- 固定生产路线为“百度 OCR + DeepSeek/兼容 LLM + Draft 人工确认”。
+- 停止 RapidOCR、PaddleOCR、Pix2Text 比较或迁移，以及其他未获真实客户需求确认的范围扩张。
+- 不修改 Draft 主流程、业务代码、数据库模型或前端页面。
+
+结果：
+
+- 新增 `.github/workflows/ci.yml`，包含独立 backend/frontend job，在 main push、面向 main 的 PR 和手工触发时运行。
+- backend job 使用 Ubuntu + Python 3.11，安装 `backend/requirements.txt` 与 pytest，执行 compileall 和 125 项 pytest；第三方 Key 为空或为明确 CI 占位值。
+- frontend job 使用 Ubuntu + Node.js 22 LTS，基于现有 `package-lock.json` 执行 `npm ci`、Stage 3 契约测试和 Vite build。
+- 新增 `docs/MVP_RELEASE_CHECKLIST.md`，覆盖本地启动、环境变量、至少 5 张真实题图 smoke、OCR/LLM 失败、风险二次确认、重复保存、用户隔离、组卷快照、Paper Preview 打印和发布签字。
+- README、STATUS、KNOWN_ISSUES、`.env.example` 与 requirements 注释已统一 v0.1 RC、百度 OCR 默认和 RapidOCR 历史实验口径。
+- 未提交 `.env`、真实密钥、运行数据库、用户上传图片、完整 OCR 报告、虚拟环境、node_modules、前端构建产物或本机工具配置。
+
+修改前基线验证：
+
+- 后端解释器为 `D:\math_knowledge_system\backend\venv\Scripts\python.exe`，Python 3.11.7，pip 位于同一 venv。
+- `python -m compileall app` 通过。
+- `python -m pytest` 通过，`125 passed`，有 1 个 `.pytest_cache` 权限 warning。
+- `python -m unittest discover tests` 通过，`Ran 125 tests OK`。
+- `npm run test:stage3-contract` 通过，3 个契约脚本全部通过。
+- `npm run build` 通过，仍有 Vite chunk size warning。
+
+修改后验证：
+
+- 显式设置空 `BAIDU_API_KEY`、`BAIDU_SECRET_KEY`、`DEEPSEEK_API_KEY`，确认自动测试不调用真实外部服务。
+- `python -m compileall app` 通过。
+- `python -m pytest` 通过，`125 passed`，有 1 个 `.pytest_cache` 权限 warning。
+- `python -m unittest discover tests` 通过，`Ran 125 tests OK`。
+- `npm run test:stage3-contract` 通过，3 个契约脚本全部通过。
+- `npm run build` 通过，1601 个模块完成转换，仍有 Vite chunk size warning。
+
+尚待人工完成：
+
+- 至少 5 张真实数学题图片的百度 OCR + LLM + Draft + 题库 + 组卷 + Paper Preview smoke。
+- OCR/LLM 失败、风险提示及二次确认、重复保存、用户数据隔离、组卷快照和浏览器打印/另存 PDF 验收。
+- 人工通过后才可合并发布 PR 并创建 `v0.1.0` 标签。
+
+延期到客户反馈后评估：
+
+- RapidOCR/PaddleOCR/Pix2Text 迁移或比较。
+- 题库删除/回收站、Draft 历史恢复、私有/共享/群组题库。
+- 服务端 PDF/DOCX 导出、复杂排版、大范围 UI 重构及其他未确认需求。
+
 ### PaddleOCR heavy 本地实验
 
 - 在独立环境 `backend/.venv_paddle_ocr_test/` 中安装并验证：
