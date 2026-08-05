@@ -2,6 +2,39 @@
 
 说明：本文件按时间倒序记录每轮工作。较早轮次中的“当前主链路”等表述保留为当时历史事实；当前状态以 `docs/STATUS.md` 最新 checkpoint 和较新的 DECISIONS 为准。
 
+## 2026-08-05 v0.1 单机部署能力
+
+目标：
+
+- 为 v0.1 RC 增加 Nginx + FastAPI + SQLite 的可重复单机部署、显式迁移、健康检查和备份能力。
+- 只做部署相关改动，不修改 OCR、LLM、Draft、题库和组卷业务逻辑。
+
+结果：
+
+- 新增后端 Python 3.11 slim 镜像，使用非 root 用户、1 个 Uvicorn worker 和 `/healthz` healthcheck。
+- 新增 Vue 多阶段构建与 Nginx 镜像，支持 SPA fallback、API/静态资源/健康检查代理、20MB 上传和 120 秒业务请求超时。
+- 新增 `compose.prod.yml`；后端 `8000` 只在内部网络暴露，`/srv/math-knowledge/data` 持久化 SQLite、uploads 和 pdf_temp。
+- 新增占位环境示例、部署说明、失败即退出的部署脚本和基于 SQLite Backup API 的备份脚本。
+- 前端生产默认 API 地址改为当前页面同源，开发默认仍为 localhost，并新增生产地址契约测试。
+- CI 新增 Shell 语法、Compose config 和 Linux 镜像构建检查。
+
+验证结果：
+
+- 后端 venv 解释器为 `D:\math_knowledge_system\backend\venv\Scripts\python.exe`，Python 3.11.7。
+- `python -m compileall app` 通过。
+- `python -m pytest` 通过，`125 passed`，有 1 个既有 `.pytest_cache` 权限 warning。
+- `python -m unittest discover tests` 通过，`Ran 125 tests OK`。
+- `npm ci` 通过，报告 12 个依赖审计问题（2 moderate、10 high）。
+- `npm run test:stage3-contract` 通过，新增 production API contract 同时通过。
+- `npm run build` 通过，1601 个模块完成转换，仍有既有 chunk size warning。
+- 生产 dist 扫描通过，未发现 `http://127.0.0.1:8000`。
+- `git diff --check` 通过。
+
+尚待验证：
+
+- 当前 Windows 环境没有 Docker 命令，本机无法运行 Compose config 或构建 Linux 镜像；相关检查已加入 PR CI。
+- 目标 Linux 服务器仍需执行部署、迁移、备份、健康检查和真实业务 smoke。
+
 ## 2026-08-05 v0.1 MVP 交付收尾
 
 目标：

@@ -2,6 +2,29 @@
 
 说明：本文件按时间倒序记录决策。较早决策中的“当前主链路”等表述保留为当时历史事实；如与顶部较新决策冲突，以较新决策和 `docs/STATUS.md` 当前 checkpoint 为准。
 
+## 决策 32：v0.1 采用 Nginx + 单 FastAPI 容器的单机部署
+
+结论：
+
+- 浏览器只访问 Nginx Web 容器；Nginx 提供 Vue dist，并代理 `/api/`、`/static/` 和 `/healthz`。
+- FastAPI 容器不向公网映射 `8000`，使用 Python 3.11 slim、非 root 用户和 1 个 Uvicorn worker。
+- SQLite、上传文件和 PDF 临时目录通过 `/data` 映射到 `/srv/math-knowledge/data`，不依赖临时容器层。
+- schema 只由部署脚本显式运行 `alembic upgrade head`；生产运行时 schema 变更开关保持关闭。
+- 第一阶段只支持 IP + 指定 HTTP 端口的 RC smoke；正式 HTTPS 由外部可信 TLS 终止层提供，不在仓库中保存证书。
+- 数据库备份使用 SQLite Backup API，不用普通文件复制假设在线数据库一致。
+
+原因：
+
+- v0.1 需要在不扩大业务与基础设施范围的前提下获得可重复部署、迁移、健康检查和备份能力。
+- 单机 SQLite 与单 worker 符合当前负载和状态边界，也避免引入 PostgreSQL、Redis、Celery 或 Kubernetes。
+
+边界：
+
+- 不改变 OCR、LLM、Draft、题库、组卷或 legacy recognize 业务逻辑。
+- 不宣称已完成目标 Linux 服务器、真实外部服务或正式 HTTPS 验收。
+
+日期：2026-08-05
+
 ## 决策 31：自动化测试与手工调试脚本分目录管理
 
 结论：
