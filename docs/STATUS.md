@@ -68,15 +68,7 @@ Smoke 摘要：
 OCR 当前状态：
 
 - RapidOCR 已完成 Provider 接入和真实 smoke，但当前数学题图识别完整性明显弱于百度 OCR。
-- PaddleOCR heavy 已进行独立环境手工实验：
-  - 模型能够下载并初始化；
-  - PaddlePaddle CPU 自检通过；
-  - PP-OCRv6 medium 在 Windows CPU 推理阶段触发 oneDNN/PIR `NotImplementedError`；
-  - 当前未获得可用于质量比较的 PaddleOCR 输出。
 - 当前默认 OCR 继续使用 Baidu。
-- PaddleOCR 暂不进入正式 Provider 接入阶段。
-
-PaddleOCR heavy 在当前 Windows CPU 实验环境中模型能够初始化，但 PP-OCRv6 medium 推理阶段存在 oneDNN/PIR 兼容问题，因此本轮无法评价识别质量。该方案暂缓接入，不代表 PaddleOCR 本身识别效果差。
 
 当前边界：
 
