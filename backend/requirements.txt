@@ -15,5 +15,5 @@ bcrypt>=3.2.0,<4
 Pillow>=10.0.0
 PyMuPDF>=1.26.7
 
-# Optional local OCR provider:
+# Historical experiment only; excluded from the v0.1 production delivery:
 # rapidocr==3.8.4

@@ -2,6 +2,8 @@
 
   一个面向高中数学错题管理的 OCR + LLM 知识点识别系统。
 
+  当前状态：**v0.1 Release Candidate**。自动化检查已建立，真实百度 OCR + LLM 的至少 5 题人工 smoke 完成前，不视为正式发布。
+
   本项目支持用户上传数学题图片或 PDF，通过 OCR 提取题目文本，再调用大语言模型对 OCR 结果进行清洗、公式规范化和知识点标签识别，最终形成可编辑、可保存、可检索、可组卷的数学题库。
 
   ## 项目背景
@@ -88,7 +90,7 @@
   ## 系统流程
 
   ```text
-  用户上传图片 / PDF
+  用户上传图片 / PDF 单页
           |
           v
   创建 Source Asset
@@ -97,7 +99,7 @@
   创建 Draft 草稿
           |
           v
-  OCR 识别原始文本
+  百度 OCR 识别原始文本
           |
           v
   LLM 清洗题目、规范公式、识别知识点
@@ -116,8 +118,11 @@
 
   - MVP 使用闭环 Demo 流程见：`docs/DEMO_FLOW.md`
   - 本地手动 smoke checklist 见：`docs/MVP_SMOKE_CHECKLIST.md`
+  - v0.1 发布验收与签字清单见：`docs/MVP_RELEASE_CHECKLIST.md`
   - 本地 smoke 图片约定放在：`data/manual_smoke/ocr_images/`
   - 当前导出方案优先使用 PaperPreview 的浏览器打印或另存为 PDF；服务端 PDF/DOCX 导出尚未实现。
+
+  生产路线固定使用“百度 OCR + DeepSeek/兼容 LLM + Draft 人工确认”。`OCR_PROVIDER=baidu` 是生产默认值。RapidOCR 代码只作为历史实验能力保留，不属于 v0.1 交付范围；除非真实客户需求或成本数据要求重新评估，否则不再继续迁移或比较本地 OCR。
 
   ## 核心设计
 
@@ -159,7 +164,7 @@
   ### 1. 克隆项目
 
   ```bash
-  git clone https://github.com/你的用户名/math_knowledge_system.git
+  git clone https://github.com/wwending/math_knowledge_system.git
   cd math_knowledge_system
   ```
 
@@ -167,33 +172,41 @@
 
   ```bash
   cd backend
-  python -m venv .venv
+  python -m venv venv
   ```
 
   Windows PowerShell：
 
   ```powershell
-  .venv\Scripts\Activate.ps1
+  .\venv\Scripts\Activate.ps1
+  python -c "import sys; print(sys.executable); print(sys.prefix)"
+  python -m pip -V
   ```
 
   Linux / macOS：
 
   ```bash
-  source .venv/bin/activate
+  source venv/bin/activate
   ```
 
   安装依赖：
 
   ```bash
-  pip install -r requirements.txt
+  python -m pip install -r requirements.txt
   ```
 
-  创建 `.env` 文件，并配置必要环境变量：
+  从示例创建本地 `.env`：
 
-  ```env
-  DATABASE_URL=sqlite:///./math_knowledge.db
-  SECRET_KEY=your-secret-key
-  DEEPSEEK_API_KEY=your-api-key
+  ```powershell
+  Copy-Item .env.example .env
+  ```
+
+  Linux / macOS 使用 `cp .env.example .env`。随后编辑 `.env`，至少替换 `SECRET_KEY`，配置百度 OCR 与 DeepSeek/兼容 LLM 的真实密钥，并保持 `OCR_PROVIDER=baidu`。`.env.example` 中的占位值只用于说明字段，不能直接用于生产；`.env` 不得提交到 Git。
+
+  执行数据库迁移：
+
+  ```bash
+  alembic upgrade head
   ```
 
   启动 FastAPI：
@@ -218,7 +231,7 @@
 
   ```bash
   cd frontend
-  npm install
+  npm ci
   npm run dev
   ```
 
@@ -273,23 +286,28 @@
 
   ## 测试
 
-  后端测试：
+  后端测试必须使用 `backend/venv`：
 
-  ```bash
+  ```powershell
   cd backend
+  .\venv\Scripts\Activate.ps1
+  python -m compileall app
+  python -m pytest
   python -m unittest discover tests
   ```
 
-  前端构建：
+  前端契约测试与构建：
 
   ```bash
   cd frontend
+  npm ci
+  npm run test:stage3-contract
   npm run build
   ```
 
   ## 当前状态
 
-  已完成：
+  当前为 `v0.1 Release Candidate`，已具备：
 
   - 图片上传与 OCR 识别；
   - LLM 清洗与知识点识别；
@@ -299,23 +317,23 @@
   - Markdown / LaTeX 公式渲染；
   - 用户鉴权与数据隔离；
   - 组卷 MVP 后端能力；
-  - 基础测试与接口契约验证。
+  - 基础测试、前端契约验证与 GitHub Actions CI。
 
-  进行中：
+  发布前仍需人工完成：
 
-  - Paper Preview 前端预览体验优化；
-  - 真实 LLM 异常响应的可观测性增强；
-  - 识别失败场景的用户提示优化；
-  - 更完整的试卷导出能力。
+  - 至少 5 张真实数学题图片的百度 OCR + LLM 全流程 smoke；
+  - OCR/LLM 失败、风险二次确认、重复保存保护、用户数据隔离与组卷快照核对；
+  - Paper Preview 浏览器打印或另存 PDF 验收；
+  - 发布负责人在 `docs/MVP_RELEASE_CHECKLIST.md` 中签字确认。
 
-  ## 后续计划
+  ## 客户反馈后评估
 
-  - 支持按知识点筛选题目；
-  - 支持错题复习计划；
-  - 支持试卷导出为 PDF；
-  - 支持更精细的题目结构化字段，例如题干、选项、答案、解析；
-  - 增强 OCR 与 LLM 的异常兜底策略；
-  - 优化前端交互体验和移动端适配。
+  v0.1 交付后停止无边界开发。以下方向不处于开发中，只有收到真实客户需求和优先级确认后才评估：
+
+  - 按知识点筛选、错题复习计划和更精细的题目结构化字段；
+  - 题库删除/回收站、Draft 历史恢复以及私有/共享/群组题库；
+  - 服务端 PDF/DOCX 导出、复杂排版和移动端体验优化；
+  - RapidOCR、PaddleOCR、Pix2Text 或其他 OCR 方案重新评估。
 
   ## 项目亮点
 
