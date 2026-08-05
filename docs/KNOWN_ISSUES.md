@@ -1,5 +1,20 @@
 # KNOWN_ISSUES
 
+## 0.15 单机部署仍需 Linux 服务器验证
+
+v0.1 已增加 Docker Compose、Nginx、显式 migration、健康检查和安全 SQLite 备份脚本，但当前 Windows 验证环境没有 Docker 命令，无法在本机执行 `docker compose config` 或构建 Linux 镜像。
+
+已做缓解：
+
+- GitHub Actions 新增部署 job，执行 Shell 语法检查、Compose 配置解析和两个生产镜像构建。
+- 本地后端与前端检查通过，且生产 dist 未包含 localhost API 地址。
+
+剩余注意：
+
+- 合并前必须确认 PR 的 deployment job 通过。
+- 仍需在目标 Linux 服务器验证目录权限、Alembic migration、SQLite 在线备份、容器健康状态、20MB 上传限制、OCR/LLM 超时和 IP + HTTP smoke。
+- `npm ci` 当前报告 12 个依赖审计问题（2 moderate、10 high）；本轮不做无关依赖升级，需另行评估实际可利用性和升级兼容性。
+
 ## v0.1 Release Candidate 范围说明
 
 - 生产默认 OCR 固定为百度 OCR，`OCR_PROVIDER=baidu`。

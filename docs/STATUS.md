@@ -1,5 +1,17 @@
 # STATUS
 
+## 2026-08-05 v0.1 单机部署候选栈
+
+当前 `v0.1 Release Candidate` 已增加可重复的单机容器部署能力，不改变 OCR、LLM、Draft、题库或组卷业务逻辑。
+
+- Nginx Web 容器提供 Vue dist，并反向代理 `/api/`、`/static/`、`/healthz`；FastAPI 的 `8000` 不映射到宿主机。
+- FastAPI 使用 Python 3.11 slim、非 root 用户和单 Uvicorn worker；SQLite、上传文件与 PDF 临时目录统一持久化到宿主机 `/srv/math-knowledge/data/`。
+- 部署脚本在启动前显式执行 Alembic migration，不允许应用启动时自动修改 schema。
+- 备份脚本通过 SQLite Backup API 生成一致快照，同时保存上传文件、部署 commit 和不含值的环境字段清单。
+- 前端开发默认地址仍为 `http://127.0.0.1:8000`；生产默认改为同源 `/api/v1` 与 `/static`，仍支持 `VITE_API_BASE_URL` 覆盖。
+- 本地后端 125 项 pytest、125 项 unittest、前端 Stage 3 契约和生产构建通过；生产 dist 不包含 localhost API 地址。
+- 当前 Windows 环境没有 Docker 命令，Compose 解析和 Linux 镜像构建已加入 GitHub Actions，仍需等待 PR CI 与目标服务器 smoke 验证。
+
 ## 2026-08-05 v0.1 MVP 交付收尾
 
 当前项目状态已收口为 `v0.1 Release Candidate`。本轮目标是建立可重复的自动门禁与人工发布验收标准，完成后停止无边界开发，只根据真实客户需求迭代。

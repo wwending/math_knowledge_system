@@ -1,4 +1,4 @@
-const DEFAULT_API_BASE_URL = 'http://127.0.0.1:8000'
+const DEFAULT_DEV_API_BASE_URL = 'http://127.0.0.1:8000'
 const DEFAULT_API_V1_PREFIX = '/api/v1'
 const DEFAULT_STATIC_URL_PREFIX = '/static'
 
@@ -15,9 +15,10 @@ const normalizePrefix = (value, fallback) => {
   return normalized.startsWith('/') ? normalized.replace(/\/+$/, '') : `/${normalized.replace(/\/+$/, '')}`
 }
 
-export const API_BASE_URL = stripTrailingSlash(
-  import.meta.env.VITE_API_BASE_URL || DEFAULT_API_BASE_URL
-)
+const explicitApiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim()
+const defaultApiBaseUrl = import.meta.env.PROD ? '' : DEFAULT_DEV_API_BASE_URL
+
+export const API_BASE_URL = stripTrailingSlash(explicitApiBaseUrl || defaultApiBaseUrl)
 
 export const API_V1_PREFIX = normalizePrefix(
   import.meta.env.VITE_API_V1_PREFIX,
