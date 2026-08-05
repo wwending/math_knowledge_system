@@ -3,48 +3,10 @@
 ## v0.1 Release Candidate 范围说明
 
 - 生产默认 OCR 固定为百度 OCR，`OCR_PROVIDER=baidu`。
-- RapidOCR 只作为历史实验代码保留，不属于 v0.1 交付范围。下文 RapidOCR / PaddleOCR 记录是历史事实，不代表仍在迁移或评估。
+- RapidOCR 只作为历史实验代码保留，不属于 v0.1 交付范围。下文 RapidOCR 记录是历史事实，不代表仍在迁移或评估。
 - 除非真实客户需求或成本数据要求重新评估，否则不再继续比较或迁移 RapidOCR、PaddleOCR、Pix2Text。
 - 当前发布阻塞项是至少 5 张真实数学题图片的百度 OCR + LLM 人工 smoke；自动化测试不调用真实外部服务。
 - Vite 大 chunk warning 与受限 Windows 环境中的 pytest cache warning 当前为非阻塞问题。
-
-### PaddleOCR heavy Windows CPU 推理兼容问题
-
-当前实验组合：
-
-```text
-Windows
-Python 3.11
-PaddlePaddle 3.3.1
-PaddleOCR 3.x
-PP-OCRv6 medium
-CPU inference
-```
-
-模型加载成功，但文本检测推理阶段失败：
-
-```text
-ConvertPirAttribute2RuntimeAttribute not support
-[pir::ArrayAttribute<pir::DoubleAttribute>]
-```
-
-关闭 `FLAGS_use_mkldnn` 和 `FLAGS_enable_pir_api` 后仍然进入 oneDNN 执行路径并报相同错误。
-
-当前影响：
-
-- 无法获得 PaddleOCR OCR 文本；
-- 暂时无法与 Baidu / RapidOCR 做识别质量比较；
-- 不适合作为当前 MVP 的直接本地替代方案。
-
-当前处理：
-
-- PaddleOCR 保留为后续实验候选；
-- 不接入正式 OCR Provider；
-- 不加入正式后端 requirements；
-- 默认继续使用 Baidu OCR；
-- 后续只有在明确需要时，再考虑 Linux 环境验证、兼容版本组合或独立 OCR 服务部署。
-
-PaddleOCR heavy 在当前 Windows CPU 实验环境中模型能够初始化，但 PP-OCRv6 medium 推理阶段存在 oneDNN/PIR 兼容问题，因此本轮无法评价识别质量。该方案暂缓接入，不代表 PaddleOCR 本身识别效果差。
 
 ## 0.14 RapidOCR 已能完成本地 smoke，但质量结论尚未形成
 
