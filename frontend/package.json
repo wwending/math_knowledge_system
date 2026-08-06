@@ -9,11 +9,11 @@
     "preview": "vite preview",
     "security:list-install-scripts": "node ./scripts/list-install-scripts.mjs",
     "test:auth-contract": "node ./tests/login-page-auth-contract.test.mjs",
-    "test:stage3-contract": "node ./tests/auth-session-contract.test.mjs && node ./tests/admin-user-management-contract.test.mjs && node ./tests/paper-mvp-contract.test.mjs && node ./tests/production-api-contract.test.mjs"
+    "test:stage3-contract": "node ./tests/auth-session-contract.test.mjs && node ./tests/admin-user-management-contract.test.mjs && node ./tests/paper-mvp-contract.test.mjs && node ./tests/production-api-contract.test.mjs && node ./tests/markdown-security-contract.test.mjs"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.2",
-    "axios": "^1.13.2",
+    "axios": "^1.19.0",
     "cropperjs": "^1.6.2",
     "element-plus": "^2.13.0",
     "katex": "^0.16.27",

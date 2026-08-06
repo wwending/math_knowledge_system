@@ -1,5 +1,17 @@
 # STATUS
 
+## 2026-08-06 前端运行时安全加固
+
+当前前端已收紧所有共用 Markdown 渲染入口，并将直接生产依赖 Axios 在现有 major 内升级；不改变 OCR、LLM、Draft、题库、组卷流程，也不升级 Vite、Sass 或其他构建工具链。
+
+- 不可信 Markdown 的原始 HTML 已禁用，`<script>`、事件处理属性和 SVG 载荷只会作为转义文本显示；自动裸链接转换已关闭。
+- MarkdownIt 默认危险协议检查继续生效，并额外拒绝全部 `data:` URL；显式 HTTPS 链接、标题、列表、加粗、换行及 MathJax 公式仍正常渲染。
+- 新增共享生产 renderer 工厂和真实安全合同测试，覆盖原始 HTML、`javascript:`、`vbscript:`、`file:`、`data:`、裸 URL、安全 HTTPS 链接及数学公式，并纳入 `test:stage3-contract`。
+- Axios 从 `1.13.2` 升级到 npm 当前 stable `1.19.0`；`follow-redirects` 从 `1.15.11` 升至 `1.16.0`，`form-data` 从 `4.0.5` 升至 `4.0.6`。
+- 本轮现场 `npm audit` 从 12 项（2 moderate、10 high）降至 9 项（1 moderate、8 high），Axios、`follow-redirects` 和 `form-data` 相关公告已消失；未运行 `npm audit fix`。
+- 剩余公告涉及 Markdown 运行时依赖和 Vite、Rollup、PostCSS 等构建链，留待后续独立 PR；当前不宣称 npm 漏洞已清零。
+- 干净 `npm ci --ignore-scripts`、生命周期脚本清单、5 组前端合同测试、Markdown 安全测试、Node 语法检查和生产构建均通过；仍保留既有 Vite chunk size warning。
+
 ## 2026-08-06 npm 供应链安全加固
 
 当前前端安装、CI 与生产镜像构建已默认禁止 npm 生命周期脚本，不升级业务依赖、不改变 OCR、LLM、Draft、题库、组卷或前端功能。
