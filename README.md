@@ -231,7 +231,7 @@
 
   ```bash
   cd frontend
-  npm ci
+  npm ci --ignore-scripts
   npm run dev
   ```
 
@@ -300,7 +300,7 @@
 
   ```bash
   cd frontend
-  npm ci
+  npm ci --ignore-scripts
   npm run test:stage3-contract
   npm run build
   ```
