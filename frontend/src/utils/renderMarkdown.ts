@@ -1,12 +1,10 @@
 import {
-  createMarkdownRenderer,
-  normalizeLatexDelimiters as normalizeSharedLatexDelimiters
+  normalizeLatexDelimiters as normalizeSharedLatexDelimiters,
+  renderMarkdown as renderSharedMarkdown
 } from './markdownRenderer.mjs'
-
-const md = createMarkdownRenderer()
 
 export const normalizeLatexDelimiters = (text: string): string => {
   return normalizeSharedLatexDelimiters(text)
 }
 
-export const renderMarkdown = (content: string): string => md.render(normalizeLatexDelimiters(content))
+export const renderMarkdown = (content: string): string => renderSharedMarkdown(content)

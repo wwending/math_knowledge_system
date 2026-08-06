@@ -1,14 +1,15 @@
 # KNOWN_ISSUES
 
-## 0.16 前端依赖审计仍有 9 项未清零
+## 0.16 前端依赖审计仍有 25 项未清零
 
-前端运行时安全加固已禁用 Markdown 原始 HTML 和自动裸链接转换，并将 Axios 从 `1.13.2` 升级到 npm 当前 stable `1.19.0`。本轮现场 audit 从 12 项（2 moderate、10 high）降至 9 项（1 moderate、8 high），Axios、`follow-redirects` 和 `form-data` 相关公告已消失。
+前端运行时安全加固已禁用 Markdown 原始 HTML 和自动裸链接转换，将 Axios 从 `1.13.2` 升级到 `1.19.0`，并以 `katex 0.16.27` 替换不安全的 `markdown-it-mathjax3` / `mathxyjax3` 公式链。2026-08-06 本次 registry 实时 audit 在 KaTeX 迁移前后均为 25 项（15 moderate、10 high、0 critical）；这取代较早同日 9 项的快照。KaTeX 不在公告链中，本次迁移没有新增 high/critical。
 
 剩余注意：
 
 - `markdown-it` 仍有 moderate ReDoS 公告，`linkify-it` 仍在依赖树中并有 high 复杂度公告；关闭 `linkify` 降低了业务入口攻击面，但不等于依赖公告已修复。
 - Vite、Rollup、PostCSS、Picomatch、Immutable、Lodash 等构建链或传递依赖仍有 high 公告。
 - Vite、Sass 和相关构建工具链升级必须在后续独立 PR 中评估，不运行 `npm audit fix` 或 `npm audit fix --force`。
+- KaTeX renderer 支持仓库当前常用的上下标、分数、根号、`aligned`、`cases`、矩阵和中文 `\text{}`，但不支持动态 `\require`、Xy-pic、bussproofs 或任意完整 LaTeX；若未来引入这些核心公式，必须先做兼容性评估。
 - 当前仍有既有 Vite chunk size warning；本轮不宣称所有 npm 漏洞已清零。
 
 ## 0.15 单机部署仍需 Linux 服务器验证
