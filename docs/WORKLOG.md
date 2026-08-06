@@ -2,6 +2,31 @@
 
 说明：本文件按时间倒序记录每轮工作。较早轮次中的“当前主链路”等表述保留为当时历史事实；当前状态以 `docs/STATUS.md` 最新 checkpoint 和较新的 DECISIONS 为准。
 
+## 2026-08-06 KaTeX 不可信公式渲染迁移
+
+目标：
+
+- 在现有安全加固分支和 Draft PR 中移除会输出危险 TeX 属性的 `markdown-it-mathjax3`，不修补其私有 MathJax handler。
+- 使用项目已经直接依赖的 KaTeX 实现本地 MarkdownIt 数学规则，不新增依赖、不升级 KaTeX、不修改后端业务。
+- 对正常公式、Markdown 边界、危险命令、尺寸和宏展开建立真实 renderer 合同测试。
+
+结果：
+
+- `npm uninstall --ignore-scripts markdown-it-mathjax3` 更新 package manifest 与 lockfile；移除 `markdown-it-mathjax3 5.2.0`、`mathxyjax3 0.8.3` 及其 `@se-oss/deasync` / `type-fest` 平台链，已安装依赖树从 122 降到 117 个 `npm ls --all --parseable` 条目。
+- `markdownRenderer.mjs` 新增无超大正则的 inline/block 分隔符规则，支持 `$...$`、`$$...$$` 及归一化后的 `\(...\)`、`\[...\]`；行内最多扫描 10,000 字符，块级最多 100,000 字符/200 行，未闭合内容按普通文本处理。
+- inline/block 统一调用 KaTeX 安全函数，选项为 `throwOnError: false`、`trust: false`、`strict: 'warn'`、`maxSize: 10`、`maxExpand: 1000`、`globalGroup: false`、`output: 'htmlAndMathml'`；无共享可变宏，也不允许 `\require` 动态加载扩展。
+- 安全合同继续调用生产共享 `renderMarkdown()`，保留普通 Markdown 攻击测试，并新增危险 href/url/file/data、远程图片、HTML class/id/style/data、动态扩展、500em、`\Huge` 和递归宏测试。
+- 正常公式回归覆盖上下标、分数、根号、`aligned`、`cases`、`pmatrix`、中文 `\text{}`；仓库审计未发现 mhchem、Xy-pic 或 bussproofs 的核心使用，不宣称支持任意完整 LaTeX。
+- 真实入口 `src/main.js` 引入一次 `katex.min.css`，生产构建输出 1 个合并 CSS 与 59 个本地 KaTeX 字体资源，无运行时 CDN。
+
+验证结果：
+
+- KaTeX 锁定版本为 `0.16.27`，查询时 registry stable 为 `0.18.1`；当前版本未命中 high/critical 公告，因此按范围不升级。
+- 迁移前后实时 `npm audit` 均为 25 项（15 moderate、10 high、0 critical），未新增 high/critical；这些剩余项来自 MarkdownIt、Vite、Sass、Rollup、PostCSS、Lodash 等既有链路。
+- `npm ci --ignore-scripts` 通过，安装 116 个 package；生命周期脚本仍为 `@parcel/watcher`、`esbuild`、`vue-demi`，总数 3，未变化。
+- `node tests/markdown-security-contract.test.mjs`、`npm run test:stage3-contract`、Node 语法检查、`npm run build` 和 `git diff --check` 通过；构建仍有既有 chunk size warning。
+- dist 扫描确认 KaTeX CSS/字体存在，未发现 `mjx-container`、MathJax CDN、`mathxyjax3` 或测试攻击载荷形成的危险属性。
+
 ## 2026-08-06 前端运行时安全加固
 
 目标：
