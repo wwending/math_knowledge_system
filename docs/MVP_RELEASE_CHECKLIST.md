@@ -36,7 +36,7 @@ python -m unittest discover tests
 
 ```powershell
 cd frontend
-npm ci
+npm ci --ignore-scripts
 npm run test:stage3-contract
 npm run build
 ```
@@ -65,7 +65,7 @@ python -m uvicorn app.main:app --reload
 
 ```powershell
 cd frontend
-npm ci
+npm ci --ignore-scripts
 npm run dev
 ```
 
