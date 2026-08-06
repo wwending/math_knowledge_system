@@ -1,5 +1,16 @@
 # STATUS
 
+## 2026-08-06 npm 供应链安全加固
+
+当前前端安装、CI 与生产镜像构建已默认禁止 npm 生命周期脚本，不升级业务依赖、不改变 OCR、LLM、Draft、题库、组卷或前端功能。
+
+- Docker 与 CI 使用 `npm ci --ignore-scripts`；干净安装、Stage 3 合同测试和生产构建通过。
+- 当前依赖树中 `@parcel/watcher 2.5.1`、`esbuild 0.27.2`、`vue-demi 0.14.10` 声明安装生命周期脚本；跳过这些脚本后现有验证仍通过，无需增加例外。
+- GitHub Actions checkout 不再持久化仓库凭据；全部第三方 Actions 已固定到官方版本标签对应的完整 SHA。
+- pull request 新增 Dependency Review 检查；CI 会输出只读生命周期脚本依赖清单。
+- 2026-08-06 重新查询 npm audit 得到 28 项（16 moderate、12 high）；直接 production 依赖 `axios 1.13.2` 存在同一 major 的修复版本，依赖升级需单独评估，本轮不自动升级。
+- 当前 Windows 环境没有 Docker，且 WSL Bash 服务已禁用，因此 Compose config 与 Shell 语法检查仍需由 GitHub Actions 验证。
+
 ## 2026-08-05 v0.1 单机部署候选栈
 
 当前 `v0.1 Release Candidate` 已增加可重复的单机容器部署能力，不改变 OCR、LLM、Draft、题库或组卷业务逻辑。

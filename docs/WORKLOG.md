@@ -2,6 +2,33 @@
 
 说明：本文件按时间倒序记录每轮工作。较早轮次中的“当前主链路”等表述保留为当时历史事实；当前状态以 `docs/STATUS.md` 最新 checkpoint 和较新的 DECISIONS 为准。
 
+## 2026-08-06 npm 供应链安全加固
+
+目标：
+
+- 禁止前端依赖安装默认执行 npm 生命周期脚本，不升级业务依赖、不改变前后端功能。
+- 缩小 GitHub Actions 仓库凭据暴露面，并把第三方 Actions 固定到经官方仓库核验的完整 commit SHA。
+- 为依赖变更增加 PR Dependency Review，并提供只读的安装脚本依赖清单。
+
+结果：
+
+- Docker 与 CI 改用 `npm ci --ignore-scripts`；CI 在安装后输出声明安装生命周期脚本的依赖清单。
+- README 与发布检查清单中的实际前端安装命令同步改用 `npm ci --ignore-scripts`，避免人工验证绕过安全默认值。
+- 所有 checkout 步骤设置 `persist-credentials: false`，既有顶层 `permissions: contents: read` 保持不变。
+- checkout、setup-python、setup-node 与 dependency-review-action 均固定到官方版本标签对应的 40 位 SHA，并保留版本注释。
+- 新增仅在 pull request 运行的 Dependency Review workflow。
+- 新增 `SECURITY.md`，记录生命周期脚本例外、锁文件审查、Action 固定及凭据保护规则。
+
+验证结果：
+
+- 删除既有 `node_modules` 后，`npm ci --ignore-scripts` 通过；安装 117 个包。
+- 2026-08-06 重新查询 npm audit 得到 28 项（16 moderate、12 high）；`axios 1.13.2` 是直接 production high 风险依赖，存在同一 major 的修复版本，因此按发布规则暂停提交并留待独立依赖升级评估。未运行 `npm audit fix`。
+- `npm run security:list-install-scripts` 通过，列出 `@parcel/watcher 2.5.1`、`esbuild 0.27.2`、`vue-demi 0.14.10`。
+- `npm run test:stage3-contract` 通过，4 个合同检查全部通过。
+- `npm run build` 通过，1601 个模块完成转换，保留既有 chunk size warning。
+- 本机 WSL Bash 服务已禁用，`bash -n` 无法启动；本机没有 Docker 命令，Compose config 无法执行，仍需 GitHub Actions 验证。
+- 未提交、未推送或创建 PR。
+
 ## 2026-08-05 v0.1 单机部署能力
 
 目标：
