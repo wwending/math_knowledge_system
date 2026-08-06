@@ -1,5 +1,9 @@
 # KNOWN_ISSUES
 
+## 0.17 KaTeX 块公式资源限制边界已加固
+
+块公式闭合行长度漏计和大量伪 `$$` 候选导致的重复尾部扫描已修复。长度检查发生在 KaTeX 调用前，结束符扫描为最多 200 行内的有界线性扫描；同行/末行超长、201 行和复杂度回归已覆盖。KaTeX 仍只支持既有文档所列常用公式，不扩大为完整 LaTeX 支持。
+
 ## 0.16 前端依赖审计仍有 25 项未清零
 
 前端运行时安全加固已禁用 Markdown 原始 HTML 和自动裸链接转换，将 Axios 从 `1.13.2` 升级到 `1.19.0`，并以 `katex 0.16.27` 替换不安全的 `markdown-it-mathjax3` / `mathxyjax3` 公式链。2026-08-06 本次 registry 实时 audit 在 KaTeX 迁移前后均为 25 项（15 moderate、10 high、0 critical）；这取代较早同日 9 项的快照。KaTeX 不在公告链中，本次迁移没有新增 high/critical。
