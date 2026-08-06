@@ -1,5 +1,34 @@
 # STATUS
 
+## 2026-08-06 KaTeX 块公式解析限制加固
+
+- 已修复块公式在同行或最后一行闭合时未计入闭合符前内容、从而绕过 `MAX_BLOCK_MATH_LENGTH` 的问题；所有片段及片段间换行现在都会在 KaTeX 调用前计数。
+- 块结束符查找改为从行尾跳过有限空白后只检查唯一可能的 `$$`，不再为每个伪候选重复 `slice().trim()`；扫描保持有界线性复杂度。
+- 新增同行超长、最后一行超长、大量伪结束符 2 秒硬超时、201 行上限和正常块公式回归；超长且有合法闭合符的块会作为 HTML 转义的普通文本输出，不再进入 inline KaTeX 解析。
+
+## 2026-08-06 KaTeX 不可信公式渲染迁移
+
+前端已停用会把不可信 TeX URL、style、class 和 id 输出到 HTML 的 `markdown-it-mathjax3` / `mathxyjax3` 链路，改用项目既有的 `katex 0.16.27`，不新增数学渲染依赖，不改变 OCR、LLM 或后端业务。
+
+- MarkdownIt 本地 inline/block 规则支持 `$...$`、`$$...$$`，并继续把 `\(...\)`、`\[...\]` 归一化后交给同一 renderer；转义美元、code span、fenced code 和未闭合分隔符保持普通文本。
+- KaTeX 明确使用 `throwOnError: false`、`trust: false`、`strict: 'warn'`、`maxSize: 10`、`maxExpand: 1000`、`globalGroup: false`、`output: 'htmlAndMathml'`；不传入共享 `macros`，不动态加载 package。
+- 安全合同覆盖危险 TeX URL、`includegraphics`、HTML class/id/style/data 扩展、动态 `require`、500em 尺寸和递归宏；危险属性未生成，递归宏在有 2 秒硬超时的子进程中安全结束。
+- 常规上下标、分数、根号、`aligned`、`cases`、`pmatrix` 和中文 `\text{}` 已通过回归；仓库未发现 mhchem、Xy-pic、bussproofs 等核心业务依赖。当前不宣称支持任意完整 LaTeX，动态 `\require` 和 KaTeX 未实现扩展不受支持。
+- 生产入口只加载一次本地 KaTeX CSS；Vite 构建产物包含 1 个合并 CSS 和 59 个 KaTeX 字体文件，不依赖 CDN，未发现 MathJax runtime 或 `mathxyjax3`。
+- 实时 `npm audit` 在迁移前后均为 25 项（15 moderate、10 high、0 critical），没有由本次迁移新增 high/critical，KaTeX 不在公告链中；Vite、Sass、MarkdownIt 传递链等剩余风险需后续独立处理。
+
+## 2026-08-06 前端运行时安全加固
+
+当前前端已收紧所有共用 Markdown 渲染入口，并将直接生产依赖 Axios 在现有 major 内升级；不改变 OCR、LLM、Draft、题库、组卷流程，也不升级 Vite、Sass 或其他构建工具链。
+
+- 不可信 Markdown 的原始 HTML 已禁用，`<script>`、事件处理属性和 SVG 载荷只会作为转义文本显示；自动裸链接转换已关闭。
+- MarkdownIt 默认危险协议检查继续生效，并额外拒绝全部 `data:` URL；显式 HTTPS 链接、标题、列表、加粗、换行及数学公式仍正常渲染。该 checkpoint 当时使用 MathJax，现已由上方 KaTeX 迁移替代。
+- 新增共享生产 renderer 工厂和真实安全合同测试，覆盖原始 HTML、`javascript:`、`vbscript:`、`file:`、`data:`、裸 URL、安全 HTTPS 链接及数学公式，并纳入 `test:stage3-contract`。
+- Axios 从 `1.13.2` 升级到 npm 当前 stable `1.19.0`；`follow-redirects` 从 `1.15.11` 升至 `1.16.0`，`form-data` 从 `4.0.5` 升至 `4.0.6`。
+- 本轮现场 `npm audit` 从 12 项（2 moderate、10 high）降至 9 项（1 moderate、8 high），Axios、`follow-redirects` 和 `form-data` 相关公告已消失；未运行 `npm audit fix`。
+- 剩余公告涉及 Markdown 运行时依赖和 Vite、Rollup、PostCSS 等构建链，留待后续独立 PR；当前不宣称 npm 漏洞已清零。
+- 干净 `npm ci --ignore-scripts`、生命周期脚本清单、5 组前端合同测试、Markdown 安全测试、Node 语法检查和生产构建均通过；仍保留既有 Vite chunk size warning。
+
 ## 2026-08-06 npm 供应链安全加固
 
 当前前端安装、CI 与生产镜像构建已默认禁止 npm 生命周期脚本，不升级业务依赖、不改变 OCR、LLM、Draft、题库、组卷或前端功能。

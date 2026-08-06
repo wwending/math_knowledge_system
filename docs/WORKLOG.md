@@ -2,6 +2,68 @@
 
 说明：本文件按时间倒序记录每轮工作。较早轮次中的“当前主链路”等表述保留为当时历史事实；当前状态以 `docs/STATUS.md` 最新 checkpoint 和较新的 DECISIONS 为准。
 
+## 2026-08-06 KaTeX 块公式解析限制加固
+
+结果：
+
+- 修复 `mathBlockRule()` 在找到闭合 `$$` 后提前退出、未把同行或最后一行内容计入 100,000 字符上限的问题；开始行、中间行、闭合行内容及连接换行现在统一累计，并在任何 KaTeX 渲染前拒绝超限输入。
+- 结束符扫描改为从行末反向跳过空格和 Tab，再检查末尾未转义 `$$`，去除针对大量伪候选的重复尾部切片和扫描。
+- 超长且已闭合的块以 HTML 转义普通段落输出，避免回退到 inline 阶段后被内部 `$` 再次解析。
+- 安全合同新增同行超长、最后一行超长、限内/超限大量伪结束符 2 秒子进程超时、201 行限制和合法块公式测试。
+
+## 2026-08-06 KaTeX 不可信公式渲染迁移
+
+目标：
+
+- 在现有安全加固分支和 Draft PR 中移除会输出危险 TeX 属性的 `markdown-it-mathjax3`，不修补其私有 MathJax handler。
+- 使用项目已经直接依赖的 KaTeX 实现本地 MarkdownIt 数学规则，不新增依赖、不升级 KaTeX、不修改后端业务。
+- 对正常公式、Markdown 边界、危险命令、尺寸和宏展开建立真实 renderer 合同测试。
+
+结果：
+
+- `npm uninstall --ignore-scripts markdown-it-mathjax3` 更新 package manifest 与 lockfile；移除 `markdown-it-mathjax3 5.2.0`、`mathxyjax3 0.8.3` 及其 `@se-oss/deasync` / `type-fest` 平台链，已安装依赖树从 122 降到 117 个 `npm ls --all --parseable` 条目。
+- `markdownRenderer.mjs` 新增无超大正则的 inline/block 分隔符规则，支持 `$...$`、`$$...$$` 及归一化后的 `\(...\)`、`\[...\]`；行内最多扫描 10,000 字符，块级最多 100,000 字符/200 行，未闭合内容按普通文本处理。
+- inline/block 统一调用 KaTeX 安全函数，选项为 `throwOnError: false`、`trust: false`、`strict: 'warn'`、`maxSize: 10`、`maxExpand: 1000`、`globalGroup: false`、`output: 'htmlAndMathml'`；无共享可变宏，也不允许 `\require` 动态加载扩展。
+- 安全合同继续调用生产共享 `renderMarkdown()`，保留普通 Markdown 攻击测试，并新增危险 href/url/file/data、远程图片、HTML class/id/style/data、动态扩展、500em、`\Huge` 和递归宏测试。
+- 正常公式回归覆盖上下标、分数、根号、`aligned`、`cases`、`pmatrix`、中文 `\text{}`；仓库审计未发现 mhchem、Xy-pic 或 bussproofs 的核心使用，不宣称支持任意完整 LaTeX。
+- 真实入口 `src/main.js` 引入一次 `katex.min.css`，生产构建输出 1 个合并 CSS 与 59 个本地 KaTeX 字体资源，无运行时 CDN。
+
+验证结果：
+
+- KaTeX 锁定版本为 `0.16.27`，查询时 registry stable 为 `0.18.1`；当前版本未命中 high/critical 公告，因此按范围不升级。
+- 迁移前后实时 `npm audit` 均为 25 项（15 moderate、10 high、0 critical），未新增 high/critical；这些剩余项来自 MarkdownIt、Vite、Sass、Rollup、PostCSS、Lodash 等既有链路。
+- `npm ci --ignore-scripts` 通过，安装 116 个 package；生命周期脚本仍为 `@parcel/watcher`、`esbuild`、`vue-demi`，总数 3，未变化。
+- `node tests/markdown-security-contract.test.mjs`、`npm run test:stage3-contract`、Node 语法检查、`npm run build` 和 `git diff --check` 通过；构建仍有既有 chunk size warning。
+- dist 扫描确认 KaTeX CSS/字体存在，未发现 `mjx-container`、MathJax CDN、`mathxyjax3` 或测试攻击载荷形成的危险属性。
+
+## 2026-08-06 前端运行时安全加固
+
+目标：
+
+- 关闭不可信 Markdown 原始 HTML 与自动裸链接转换，保留安全 Markdown 和数学公式渲染。
+- 增加实际 renderer 安全回归测试，并将 Axios 升级到 npm 当前 stable 1.x。
+- 精确审查 lockfile、audit 和生命周期脚本变化，不升级构建工具链。
+
+结果：
+
+- 共用 renderer 改为 `html: false`、`linkify: false`，沿用 MarkdownIt 危险协议校验并额外拒绝全部 `data:` URL；没有增加 sanitizer 依赖或修改现有 `v-html` 组件。
+- 新增生产与 Node 测试共享的 renderer 工厂；安全合同覆盖 `<script>`、`<img onerror>`、`<svg onload>`、原始危险链接、Markdown `javascript:` / `vbscript:` / `file:` / `data:` 链接、裸 URL、HTTPS 链接和正常 Markdown/MathJax。
+- `test:stage3-contract` 已纳入 Markdown 安全合同。
+- npm registry 现场确认 Axios stable 为 `1.19.0`，从 `1.13.2` 同 major 升级；`follow-redirects` 更新为 `1.16.0`，`form-data` 更新为 `4.0.6`。
+- lockfile 新增内容仅为 Axios 1.19.0 声明的 `https-proxy-agent` 依赖链及相关版本更新，全部来自 npm registry；没有 Git、本地路径、HTTP tarball、未知 registry 或新增安装脚本。
+- 生命周期脚本清单仍为 `@parcel/watcher 2.5.1`、`esbuild 0.27.2`、`vue-demi 0.14.10`，与 main 相同。
+- 本轮现场 audit 从 12 项（2 moderate、10 high）降至 9 项（1 moderate、8 high），Axios 相关公告消失；未运行 `npm audit fix` 或强制修复。
+
+验证结果：
+
+- 删除 `frontend/node_modules` 后，`npm ci --ignore-scripts` 通过，安装 121 个包。
+- `npm run security:list-install-scripts` 通过，清单未变化。
+- `npm run test:stage3-contract` 通过，5 个合同检查全部通过。
+- `node tests/markdown-security-contract.test.mjs` 与 `node --check tests/markdown-security-contract.test.mjs` 通过。
+- `npm run build` 通过，1605 个模块完成转换，保留既有 chunk size warning。
+- 生产 dist 扫描未发现测试攻击载荷对应的可执行 HTML。
+- Vite、Sass、Rollup、PostCSS 与其余 Markdown 依赖风险未在本轮升级，留待后续独立 PR。
+
 ## 2026-08-06 npm 供应链安全加固
 
 目标：
