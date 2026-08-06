@@ -97,6 +97,38 @@ assert.equal(macroResult.status, 0)
 assert.match(macroResult.stdout, /katex-error/)
 assertNoExecutableHtml(macroResult.stdout, recursiveMacro)
 
+const oversizedSingleLineBlock = `$$${'x'.repeat(100_001)}$$`
+const oversizedSingleLineHtml = renderMarkdown(oversizedSingleLineBlock)
+assert.doesNotMatch(oversizedSingleLineHtml, /class="katex/)
+assert.match(oversizedSingleLineHtml.slice(0, 10), /^<p>\$\$/)
+assert.match(oversizedSingleLineHtml.slice(-10), /\$\$<\/p>\n$/)
+
+const oversizedFinalLineBlock = `$$\nx\n${'x'.repeat(100_000)}$$`
+const oversizedFinalLineHtml = renderMarkdown(oversizedFinalLineBlock)
+assert.doesNotMatch(oversizedFinalLineHtml, /class="katex/)
+assert.match(oversizedFinalLineHtml.slice(0, 10), /^<p>\$\$/)
+
+const validLimitedBlock = renderMarkdown('$$\nx^2+y^2\n$$')
+assert.match(validLimitedBlock, /class="katex-display"/)
+assert.doesNotMatch(validLimitedBlock, /katex-error/)
+
+const delimiterStressResult = spawnSync(
+  process.execPath,
+  [
+    '--input-type=module',
+    '--eval',
+    "import { renderMarkdown } from './src/utils/markdownRenderer.mjs'; const withinLimit = `$$${'$$x'.repeat(10_000)}$$`; const overLimit = `$$${'$$x'.repeat(34_000)}$$`; const withinHtml = renderMarkdown(withinLimit); const overHtml = renderMarkdown(overLimit); if (!withinHtml.includes('class=\"katex-error\"') || overHtml.includes('class=\"katex')) process.exit(1)"
+  ],
+  { cwd: new URL('..', import.meta.url), encoding: 'utf8', timeout: 2_000 }
+)
+assert.equal(delimiterStressResult.error, undefined, 'block delimiter scanning must finish before timeout')
+assert.equal(delimiterStressResult.status, 0)
+
+const overLineLimitBlock = ['$$', ...Array.from({ length: 199 }, () => 'x'), '$$'].join('\n')
+const overLineLimitHtml = renderMarkdown(overLineLimitBlock)
+assert.doesNotMatch(overLineLimitHtml, /class="katex-display"/)
+assert.match(overLineLimitHtml.slice(0, 10), /^<p>\$\$/)
+
 const validFormulae = [
   ['$x^2+y^2$', false],
   [String.raw`$$

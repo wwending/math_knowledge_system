@@ -67,16 +67,24 @@ const mathInlineRule = (state, silent) => {
 }
 
 const findBlockClosingDelimiter = (source, from, to) => {
-  for (let index = from; index < to - 1; index += 1) {
-    if (
-      source[index] === '$' &&
-      source[index + 1] === '$' &&
-      !isEscaped(source, index) &&
-      source.slice(index + 2, to).trim() === ''
-    ) {
-      return index
-    }
+  let trimmedEnd = to
+  while (
+    trimmedEnd > from &&
+    (source[trimmedEnd - 1] === ' ' || source[trimmedEnd - 1] === '\t')
+  ) {
+    trimmedEnd -= 1
   }
+
+  const delimiterStart = trimmedEnd - 2
+  if (
+    delimiterStart >= from &&
+    source[delimiterStart] === '$' &&
+    source[delimiterStart + 1] === '$' &&
+    !isEscaped(source, delimiterStart)
+  ) {
+    return delimiterStart
+  }
+
   return -1
 }
 
@@ -92,22 +100,30 @@ const mathBlockRule = (state, startLine, endLine, silent) => {
   let line = startLine
   let contentStart = start + 2
   let closingPosition = -1
+  let exceedsLength = false
 
   while (line < endLine && line - startLine < MAX_BLOCK_MATH_LINES) {
     const lineEnd = line === startLine ? firstLineEnd : state.eMarks[line]
     closingPosition = findBlockClosingDelimiter(state.src, contentStart, lineEnd)
 
+    if (!exceedsLength) {
+      const contentEnd = closingPosition >= 0 ? closingPosition : lineEnd
+      const separatorLength = contentParts.length > 0 ? 1 : 0
+      const nextContentLength = contentLength + separatorLength + contentEnd - contentStart
+
+      if (nextContentLength > MAX_BLOCK_MATH_LENGTH) {
+        exceedsLength = true
+        contentParts.length = 0
+      } else {
+        contentLength = nextContentLength
+        contentParts.push(state.src.slice(contentStart, contentEnd))
+      }
+    }
+
     if (closingPosition >= 0) {
-      contentParts.push(state.src.slice(contentStart, closingPosition))
       break
     }
 
-    const lineContent = state.src.slice(contentStart, lineEnd)
-    contentLength += lineContent.length + 1
-    if (contentLength > MAX_BLOCK_MATH_LENGTH) {
-      return false
-    }
-    contentParts.push(lineContent)
     line += 1
     if (line < endLine) {
       contentStart = state.bMarks[line] + state.tShift[line]
@@ -121,9 +137,11 @@ const mathBlockRule = (state, startLine, endLine, silent) => {
     return true
   }
 
-  const token = state.push('math_block', 'math', 0)
+  const token = state.push(exceedsLength ? 'math_block_fallback' : 'math_block', 'math', 0)
   token.block = true
-  token.content = contentParts.join('\n')
+  token.content = exceedsLength
+    ? state.src.slice(start, state.eMarks[line])
+    : contentParts.join('\n')
   token.map = [startLine, line + 1]
   token.markup = '$$'
   state.line = line + 1
@@ -142,6 +160,9 @@ const markdownItKatex = (md) => {
   })
   md.renderer.rules.math_inline = (tokens, index) => renderMath(tokens[index].content, false)
   md.renderer.rules.math_block = (tokens, index) => `${renderMath(tokens[index].content, true)}\n`
+  md.renderer.rules.math_block_fallback = (tokens, index) => {
+    return `<p>${md.utils.escapeHtml(tokens[index].content)}</p>\n`
+  }
 }
 
 export const createMarkdownRenderer = () => {
