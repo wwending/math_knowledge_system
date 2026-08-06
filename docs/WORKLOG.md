@@ -2,6 +2,34 @@
 
 说明：本文件按时间倒序记录每轮工作。较早轮次中的“当前主链路”等表述保留为当时历史事实；当前状态以 `docs/STATUS.md` 最新 checkpoint 和较新的 DECISIONS 为准。
 
+## 2026-08-06 前端运行时安全加固
+
+目标：
+
+- 关闭不可信 Markdown 原始 HTML 与自动裸链接转换，保留安全 Markdown 和数学公式渲染。
+- 增加实际 renderer 安全回归测试，并将 Axios 升级到 npm 当前 stable 1.x。
+- 精确审查 lockfile、audit 和生命周期脚本变化，不升级构建工具链。
+
+结果：
+
+- 共用 renderer 改为 `html: false`、`linkify: false`，沿用 MarkdownIt 危险协议校验并额外拒绝全部 `data:` URL；没有增加 sanitizer 依赖或修改现有 `v-html` 组件。
+- 新增生产与 Node 测试共享的 renderer 工厂；安全合同覆盖 `<script>`、`<img onerror>`、`<svg onload>`、原始危险链接、Markdown `javascript:` / `vbscript:` / `file:` / `data:` 链接、裸 URL、HTTPS 链接和正常 Markdown/MathJax。
+- `test:stage3-contract` 已纳入 Markdown 安全合同。
+- npm registry 现场确认 Axios stable 为 `1.19.0`，从 `1.13.2` 同 major 升级；`follow-redirects` 更新为 `1.16.0`，`form-data` 更新为 `4.0.6`。
+- lockfile 新增内容仅为 Axios 1.19.0 声明的 `https-proxy-agent` 依赖链及相关版本更新，全部来自 npm registry；没有 Git、本地路径、HTTP tarball、未知 registry 或新增安装脚本。
+- 生命周期脚本清单仍为 `@parcel/watcher 2.5.1`、`esbuild 0.27.2`、`vue-demi 0.14.10`，与 main 相同。
+- 本轮现场 audit 从 12 项（2 moderate、10 high）降至 9 项（1 moderate、8 high），Axios 相关公告消失；未运行 `npm audit fix` 或强制修复。
+
+验证结果：
+
+- 删除 `frontend/node_modules` 后，`npm ci --ignore-scripts` 通过，安装 121 个包。
+- `npm run security:list-install-scripts` 通过，清单未变化。
+- `npm run test:stage3-contract` 通过，5 个合同检查全部通过。
+- `node tests/markdown-security-contract.test.mjs` 与 `node --check tests/markdown-security-contract.test.mjs` 通过。
+- `npm run build` 通过，1605 个模块完成转换，保留既有 chunk size warning。
+- 生产 dist 扫描未发现测试攻击载荷对应的可执行 HTML。
+- Vite、Sass、Rollup、PostCSS 与其余 Markdown 依赖风险未在本轮升级，留待后续独立 PR。
+
 ## 2026-08-06 npm 供应链安全加固
 
 目标：
