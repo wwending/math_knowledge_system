@@ -35,7 +35,7 @@ services:
       backend:
         condition: service_healthy
     ports:
-      - "${HTTP_PORT:-8080}:80"
+      - "${HTTP_BIND_ADDR:-0.0.0.0}:${HTTP_PORT:-8080}:80"
     networks:
       - app
 
