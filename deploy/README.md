@@ -27,7 +27,7 @@ sudo ./deploy/scripts/deploy.sh
 
 脚本依次创建持久化目录、构建镜像、备份已有数据、显式执行 Alembic migration、启动服务、等待健康检查，并输出容器状态与 Git commit。任何步骤失败都会返回非零退出码。它不会运行 `docker system prune`、删除 volume 或删除历史备份。
 
-默认访问地址为 `http://SERVER_IP:8080`。修改 `HTTP_PORT` 可使用其他宿主机端口。前端生产构建默认使用当前页面同源地址，因此 API 请求为 `/api/v1/*`，上传资源为 `/static/*`；如有特殊需求仍可在构建时设置 `VITE_API_BASE_URL`。
+默认公网或普通 RC 使用 `HTTP_BIND_ADDR=0.0.0.0` 和 `HTTP_PORT=8080`，访问地址为 `http://SERVER_IP:8080`。SSH tunnel/private RC 推荐使用 `HTTP_BIND_ADDR=127.0.0.1` 和 `HTTP_PORT=8000`，以避免 Web 端口直接暴露到公网。访问链路为 `Windows localhost:8000` → SSH local forwarding → `Server 127.0.0.1:8000` → Web/Nginx → `backend:8000` (Docker internal only)。后端 `8000` 始终只在 Compose 内部网络中暴露，不映射到宿主机；DNS 和 HTTPS 可在正式上线阶段再配置。前端生产构建默认使用当前页面同源地址，因此 API 请求为 `/api/v1/*`，上传资源为 `/static/*`；如有特殊需求仍可在构建时设置 `VITE_API_BASE_URL`。
 
 如需创建初始管理员，可在部署后显式执行：
 
