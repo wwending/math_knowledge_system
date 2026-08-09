@@ -132,6 +132,14 @@ class DraftPipelineTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         return response.json()["id"]
 
+    def _set_draft_state(self, draft_id: int, status: str, current_content: dict | None = None) -> None:
+        with self.SessionLocal() as db:
+            draft = db.query(Draft).filter(Draft.id == draft_id).one()
+            draft.status = status
+            if current_content is not None:
+                draft.current_content = current_content
+            db.commit()
+
     def _tiny_png_bytes(self) -> bytes:
         return (
             b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
@@ -202,6 +210,166 @@ class DraftPipelineTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["status"], DraftStatus.DRAFT_READY)
         return response
+
+    def test_manual_edit_preserves_recognition_context_rechecks_warnings_and_saves_updated_content(self):
+        asset_id = self._create_source_asset()
+        draft_id = self._create_draft(asset_id)
+        self._recognize_draft_successfully(draft_id)
+        initial_content = "题干：请选择正确答案。\nA. 选项一\nB. 选项二"
+        manual_content = "题干：请选择正确答案。\nA. 选项一\nB. 选项二\nC. 选项三\nD. 选项四"
+
+        with self.SessionLocal() as db:
+            draft = db.query(Draft).filter(Draft.id == draft_id).one()
+            last_ocr_run_id = draft.last_ocr_run_id
+            last_llm_run_id = draft.last_llm_run_id
+            draft.current_content = {
+                "text": initial_content,
+                "ocr_text": "raw math text",
+                "knowledge_tags": [{"label": "函数", "score": 1.0}],
+                "partial_success": False,
+                "warning": None,
+                "recognition_debug": {"pipeline": "original"},
+            }
+            db.commit()
+
+        initial_response = self.client.get(f"/api/v1/drafts/{draft_id}", headers=self.auth_headers)
+        self.assertEqual(initial_response.status_code, 200)
+        self.assertIn(
+            "choice_options_incomplete",
+            {warning["code"] for warning in initial_response.json()["quality_warnings"]},
+        )
+
+        update_response = self.client.patch(
+            f"/api/v1/drafts/{draft_id}",
+            headers=self.auth_headers,
+            json={"content": f"  {manual_content}  "},
+        )
+        self.assertEqual(update_response.status_code, 200)
+        update_payload = update_response.json()
+        self.assertEqual(update_payload["status"], DraftStatus.DRAFT_READY)
+        self.assertEqual(update_payload["content"], manual_content)
+        self.assertEqual(update_payload["current_content"]["text"], manual_content)
+        self.assertEqual(update_payload["current_content"]["ocr_text"], "raw math text")
+        self.assertEqual(update_payload["current_content"]["knowledge_tags"], [{"label": "函数", "score": 1.0}])
+        self.assertEqual(update_payload["current_content"]["recognition_debug"], {"pipeline": "original"})
+        self.assertEqual(update_payload["last_ocr_run_id"], last_ocr_run_id)
+        self.assertEqual(update_payload["last_llm_run_id"], last_llm_run_id)
+        self.assertEqual(update_payload["recognition_debug"]["ocr_raw_text"], "raw math text")
+        self.assertEqual(update_payload["recognition_debug"]["llm_cleaned_text"], "clean math text")
+        self.assertNotIn(
+            "choice_options_incomplete",
+            {warning["code"] for warning in update_payload["quality_warnings"]},
+        )
+
+        detail_response = self.client.get(f"/api/v1/drafts/{draft_id}", headers=self.auth_headers)
+        self.assertEqual(detail_response.status_code, 200)
+        self.assertEqual(detail_response.json()["content"], manual_content)
+
+        with self.SessionLocal() as db:
+            edit_events = db.query(DraftEvent).filter(DraftEvent.event_type == DraftEventType.EDIT).all()
+            self.assertEqual(len(edit_events), 1)
+            edit_event = edit_events[0]
+            self.assertEqual(edit_event.draft_id, draft_id)
+            self.assertEqual(edit_event.from_status, DraftStatus.DRAFT_READY)
+            self.assertEqual(edit_event.to_status, DraftStatus.DRAFT_READY)
+            self.assertEqual(edit_event.metadata_["source"], "manual_review")
+            self.assertEqual(edit_event.metadata_["previous_length"], len(initial_content))
+            self.assertEqual(edit_event.metadata_["new_length"], len(manual_content))
+            self.assertEqual(len(edit_event.metadata_["previous_sha256"]), 64)
+            self.assertEqual(len(edit_event.metadata_["new_sha256"]), 64)
+            self.assertNotIn(initial_content, edit_event.metadata_.values())
+            self.assertNotIn(manual_content, edit_event.metadata_.values())
+
+        unchanged_response = self.client.patch(
+            f"/api/v1/drafts/{draft_id}",
+            headers=self.auth_headers,
+            json={"content": manual_content},
+        )
+        self.assertEqual(unchanged_response.status_code, 200)
+        with self.SessionLocal() as db:
+            self.assertEqual(db.query(DraftEvent).filter(DraftEvent.event_type == DraftEventType.EDIT).count(), 1)
+
+        with patch.object(endpoints, "evaluate_question_metadata_task", return_value=None):
+            save_response = self.client.post(
+                f"/api/v1/drafts/{draft_id}/save-to-bank",
+                headers=self.auth_headers,
+            )
+        self.assertEqual(save_response.status_code, 200)
+        with self.SessionLocal() as db:
+            question = db.query(Question).one()
+            revision = db.query(QuestionRevision).one()
+            self.assertEqual(question.content, manual_content)
+            self.assertEqual(revision.content["text"], manual_content)
+            self.assertEqual(revision.content["ocr_text"], "raw math text")
+
+    def test_manual_edit_rejects_empty_and_whitespace_only_content(self):
+        asset_id = self._create_source_asset()
+        draft_id = self._create_draft(asset_id)
+        self._set_draft_state(draft_id, DraftStatus.DRAFT_READY, {"text": "原题目内容"})
+
+        for content in ("", "   \r\n\t"):
+            with self.subTest(content=repr(content)):
+                response = self.client.patch(
+                    f"/api/v1/drafts/{draft_id}",
+                    headers=self.auth_headers,
+                    json={"content": content},
+                )
+                self.assertEqual(response.status_code, 422)
+
+    def test_manual_edit_rejects_non_owner(self):
+        asset_id = self._create_source_asset()
+        draft_id = self._create_draft(asset_id)
+        self._set_draft_state(draft_id, DraftStatus.DRAFT_READY, {"text": "原题目内容"})
+
+        other_phone = "13900000001"
+        with self.SessionLocal() as db:
+            db.add(
+                User(
+                    username=other_phone,
+                    email="other-draft-editor@example.com",
+                    phone=other_phone,
+                    display_name="Other Draft Editor",
+                    hashed_password=get_password_hash(self.TEST_PASSWORD),
+                    role="user",
+                    status=UserStatus.ACTIVE.value,
+                )
+            )
+            db.commit()
+        login_response = self.client.post(
+            "/api/v1/auth/token",
+            data={"username": other_phone, "password": self.TEST_PASSWORD},
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        self.assertEqual(login_response.status_code, 200)
+        other_headers = {"Authorization": f"Bearer {login_response.json()['access_token']}"}
+
+        response = self.client.patch(
+            f"/api/v1/drafts/{draft_id}",
+            headers=other_headers,
+            json={"content": "越权修改"},
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_manual_edit_rejects_every_non_ready_status(self):
+        asset_id = self._create_source_asset()
+        forbidden_statuses = (
+            DraftStatus.DRAFT_CREATED,
+            DraftStatus.RECOGNIZING,
+            DraftStatus.FAILED,
+            DraftStatus.SUPERSEDED,
+            DraftStatus.SAVED_TO_BANK,
+        )
+
+        for status in forbidden_statuses:
+            with self.subTest(status=status):
+                draft_id = self._create_draft(asset_id)
+                self._set_draft_state(draft_id, status, {"text": "原题目内容"})
+                response = self.client.patch(
+                    f"/api/v1/drafts/{draft_id}",
+                    headers=self.auth_headers,
+                    json={"content": "人工修改内容"},
+                )
+                self.assertEqual(response.status_code, 409)
 
     def test_draft_pipeline_recognize_is_lightweight_and_save_to_bank_sets_metadata_pending(self):
         asset_id = self._create_source_asset()

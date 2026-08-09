@@ -13,6 +13,10 @@ class DraftCreate(BaseModel):
     crop_bbox: Optional[Any] = None
 
 
+class DraftUpdate(BaseModel):
+    content: str = Field(min_length=1, max_length=100_000)
+
+
 class RecognitionDebug(BaseModel):
     ocr_provider: Optional[str] = None
     ocr_raw_text: Optional[str] = None
