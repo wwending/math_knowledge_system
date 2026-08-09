@@ -33,7 +33,14 @@ from app.models.question import Question
 from app.models.question_revision import QuestionRevision
 from app.models.source_asset import SourceAsset
 from app.models.user import User
-from app.schemas.draft import DraftCreate, DraftDetail, DraftRecognizeResponse, DraftSaveToBankResponse, RecognitionDebug
+from app.schemas.draft import (
+    DraftCreate,
+    DraftDetail,
+    DraftRecognizeResponse,
+    DraftSaveToBankResponse,
+    DraftUpdate,
+    RecognitionDebug,
+)
 from app.schemas.ocr import OCRResponse
 from app.schemas.paper import PaperCreate, PaperListItem, PaperRead
 from app.schemas.paper_render import PaperRenderModel, PaperRenderRequest
@@ -61,6 +68,8 @@ QUESTION_SAVE_FAILED_MESSAGE = "\u9898\u76ee\u4fdd\u5b58\u5931\u8d25\uff0c\u8bf7
 DRAFT_READY_REQUIRED_MESSAGE = "\u53ea\u6709\u5df2\u8bc6\u522b\u5b8c\u6210\u7684 Draft \u53ef\u4ee5\u4fdd\u5b58\u5165\u9898\u5e93"
 DRAFT_ALREADY_SAVED_MESSAGE = "\u5df2\u4fdd\u5b58\u5165\u9898\u5e93\u7684 Draft \u4e0d\u80fd\u91cd\u590d\u4fdd\u5b58"
 DRAFT_ALREADY_SAVED_RECOGNIZE_MESSAGE = "\u5df2\u4fdd\u5b58\u5165\u9898\u5e93\u7684 Draft \u4e0d\u80fd\u518d\u6b21\u8bc6\u522b"
+DRAFT_EDIT_READY_REQUIRED_MESSAGE = "\u53ea\u6709\u5df2\u8bc6\u522b\u5b8c\u6210\u7684 Draft \u53ef\u4ee5\u4eba\u5de5\u4fee\u6539"
+DRAFT_CONTENT_EMPTY_MESSAGE = "Draft \u9898\u76ee\u6b63\u6587\u4e0d\u80fd\u4e3a\u7a7a"
 QUESTION_TYPES = {"single_choice", "multiple_choice", "fill_blank", "solution", "judge", "unknown"}
 
 
@@ -641,6 +650,48 @@ def get_draft(
     current_user: User = Depends(require_active_user),
 ):
     draft = _ensure_owned_draft(db, draft_id, current_user.id)
+    return _build_draft_detail(draft)
+
+
+@router.patch("/drafts/{draft_id}", response_model=DraftDetail)
+def update_draft(
+    draft_id: int,
+    payload: DraftUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_active_user),
+):
+    draft = _ensure_owned_draft(db, draft_id, current_user.id)
+    if draft.status != DraftStatus.DRAFT_READY:
+        raise HTTPException(status_code=409, detail=DRAFT_EDIT_READY_REQUIRED_MESSAGE)
+
+    normalized_content = payload.content.strip()
+    if not normalized_content:
+        raise HTTPException(status_code=422, detail=DRAFT_CONTENT_EMPTY_MESSAGE)
+
+    previous_content = _content_text(draft.current_content)
+    if normalized_content == previous_content:
+        return _build_draft_detail(draft)
+
+    current_content = dict(draft.current_content or {})
+    current_content["text"] = normalized_content
+    draft.current_content = current_content
+    db.add(
+        DraftEvent(
+            draft_id=draft.id,
+            from_status=DraftStatus.DRAFT_READY,
+            to_status=DraftStatus.DRAFT_READY,
+            event_type=DraftEventType.EDIT,
+            metadata_={
+                "source": "manual_review",
+                "previous_length": len(previous_content),
+                "new_length": len(normalized_content),
+                "previous_sha256": hashlib.sha256(previous_content.encode("utf-8")).hexdigest(),
+                "new_sha256": hashlib.sha256(normalized_content.encode("utf-8")).hexdigest(),
+            },
+        )
+    )
+    db.commit()
+    db.refresh(draft)
     return _build_draft_detail(draft)
 
 

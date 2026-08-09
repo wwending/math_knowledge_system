@@ -181,7 +181,26 @@
               class="result-alert"
             />
             <el-card v-if="ocrResult" shadow="hover">
-              <div class="markdown-body" v-html="renderedContent"></div>
+              <div v-if="editMode" class="draft-edit-panel">
+                <h3>编辑内容</h3>
+                <p class="draft-edit-hint">可直接修改题干、选项和 Markdown / LaTeX。</p>
+                <el-input
+                  v-model="editContent"
+                  type="textarea"
+                  :autosize="{ minRows: 8, maxRows: 24 }"
+                  :disabled="editSaving"
+                  placeholder="请输入题目正文"
+                />
+                <h3>预览</h3>
+                <div class="markdown-body draft-edit-preview" v-html="renderedEditPreview"></div>
+                <div class="result-actions">
+                  <el-button :disabled="editSaving" @click="cancelEdit">取消修改</el-button>
+                  <el-button type="primary" :loading="editSaving" @click="saveDraftEdit">
+                    {{ editSaving ? '正在保存...' : '保存修改' }}
+                  </el-button>
+                </div>
+              </div>
+              <div v-else class="markdown-body" v-html="renderedContent"></div>
             </el-card>
             <el-alert
               v-if="qualityWarnings.length > 0"
@@ -211,7 +230,8 @@
                 </div>
               </el-collapse-item>
             </el-collapse>
-            <div v-if="draftStatus === 'draft_ready'" class="result-actions">
+            <div v-if="draftStatus === 'draft_ready' && !editMode" class="result-actions">
+              <el-button :disabled="saveLoading" @click="enterEditMode">编辑识别结果</el-button>
               <el-button type="primary" :loading="saveLoading" :disabled="!canSaveDraft" @click="saveDraftToBank">
                 {{ saveLoading ? '正在保存...' : '保存入题库' }}
               </el-button>
@@ -293,6 +313,9 @@ const saveBlocked = ref(false)
 const saveResult = ref(null)
 const recognitionDebug = ref(null)
 const qualityWarnings = ref([])
+const editMode = ref(false)
+const editContent = ref('')
+const editSaving = ref(false)
 
 const currentUser = computed(() => authState.currentUser)
 const adminMode = computed(() => isAdminUser(currentUser.value))
@@ -440,6 +463,9 @@ const resetDraftState = () => {
   saveResult.value = null
   recognitionDebug.value = null
   qualityWarnings.value = []
+  editMode.value = false
+  editContent.value = ''
+  editSaving.value = false
 }
 
 const setStageMessage = (stage) => {
@@ -458,6 +484,12 @@ const extractId = (payload, fields) => {
 const getDraftContent = (payload) => payload?.content || payload?.current_content?.text || ''
 const getRecognitionDebug = (payload) => payload?.recognition_debug || null
 const getQualityWarnings = (payload) => Array.isArray(payload?.quality_warnings) ? payload.quality_warnings : []
+const applyDraftDetail = (payload) => {
+  ocrResult.value = getDraftContent(payload)
+  recognitionDebug.value = getRecognitionDebug(payload)
+  qualityWarnings.value = getQualityWarnings(payload)
+  draftStatus.value = payload?.status || draftStatus.value
+}
 const formatQualityWarning = (warning) => {
   if (warning?.code === 'choice_options_incomplete') {
     return warning.message || '疑似选择题选项不完整，请核对 A/B/C/D 是否齐全。'
@@ -472,7 +504,9 @@ const canSaveDraft = computed(
     Boolean(draftId.value) &&
     !ocrLoading.value &&
     !saveLoading.value &&
-    !saveBlocked.value
+    !saveBlocked.value &&
+    !editMode.value &&
+    !editSaving.value
 )
 
 const draftOperationText = computed(() => {
@@ -727,6 +761,47 @@ const runLegacyRecognition = async (file) => {
   }
 }
 
+const enterEditMode = () => {
+  if (draftStatus.value !== 'draft_ready' || !draftId.value) {
+    return
+  }
+  editContent.value = ocrResult.value
+  editMode.value = true
+}
+
+const cancelEdit = () => {
+  editContent.value = ocrResult.value
+  editMode.value = false
+}
+
+const saveDraftEdit = async () => {
+  if (!editMode.value || editSaving.value || !draftId.value) {
+    return
+  }
+  if (!editContent.value.trim()) {
+    ElMessage.warning('题目正文不能为空。')
+    return
+  }
+
+  editSaving.value = true
+  draftError.value = ''
+  try {
+    const response = await axios.patch(`${API_V1_BASE_URL}/drafts/${draftId.value}`, {
+      content: editContent.value
+    })
+    applyDraftDetail(response.data || {})
+    editContent.value = ocrResult.value
+    editMode.value = false
+    ElMessage.success('识别结果已更新')
+  } catch (error) {
+    console.error(error)
+    draftError.value = getRequestErrorMessage(error)
+    ElMessage.error(draftError.value)
+  } finally {
+    editSaving.value = false
+  }
+}
+
 const saveDraftToBank = async () => {
   if (!canSaveDraft.value) {
     return
@@ -740,10 +815,14 @@ const saveDraftToBank = async () => {
         {
           confirmButtonText: '仍然保存',
           cancelButtonText: '返回编辑',
+          distinguishCancelAndClose: true,
           type: 'warning'
         }
       )
-    } catch {
+    } catch (action) {
+      if (action === 'cancel') {
+        enterEditMode()
+      }
       return
     }
   }
@@ -782,6 +861,7 @@ const resetUpload = () => {
 }
 
 const renderedContent = computed(() => (ocrResult.value ? renderMarkdown(ocrResult.value) : ''))
+const renderedEditPreview = computed(() => (editContent.value ? renderMarkdown(editContent.value) : ''))
 
 const handleLogout = async () => {
   await logout()
@@ -1095,6 +1175,29 @@ onMounted(async () => {
   padding-left: 18px;
   color: #7a4d00;
   line-height: 1.7;
+}
+
+.draft-edit-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.draft-edit-panel h3,
+.draft-edit-hint {
+  margin: 0;
+}
+
+.draft-edit-hint {
+  color: #667a73;
+}
+
+.draft-edit-preview {
+  min-height: 120px;
+  padding: 14px;
+  border: 1px solid #dbe7e2;
+  border-radius: 8px;
+  background: #fbfdfc;
 }
 
 .result-actions {
