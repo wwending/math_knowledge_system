@@ -96,6 +96,9 @@ jobs:
       - name: Check deployment script syntax
         run: bash -n deploy/scripts/deploy.sh deploy/scripts/backup.sh
 
+      - name: Run Nginx static proxy contract test
+        run: bash deploy/tests/test_nginx_static_proxy.sh
+
       - name: Validate Compose configuration
         run: docker compose --env-file deploy/.env -f compose.prod.yml config
 
