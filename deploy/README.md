@@ -1,6 +1,6 @@
 # v0.1 单机部署
 
-该部署栈用于 v0.1 Release Candidate 的单台 Linux 服务器验证。浏览器只访问 Nginx；Nginx 提供 Vue 静态文件，并把 `/api/`、`/static/` 和 `/healthz` 转发给内部 FastAPI 服务。后端端口 `8000` 仅在 Compose 网络中暴露，不映射到宿主机。
+该部署栈用于 v0.1 Release Candidate 的单台 Linux 服务器验证。浏览器只访问 Nginx；Nginx 提供 Vue 静态文件，并把 `/api/`、`/static/` 和 `/healthz` 转发给内部 FastAPI 服务。后端端口 `8000` 仅在 Compose 网络中暴露，不映射到宿主机。试卷 PDF 由 FastAPI 调用内部 Gotenberg Chromium 即时生成；Gotenberg `3000` 不映射宿主机端口，浏览器不能直接访问。Gotenberg 禁用 JavaScript、`downloadFrom` 与公私网 HTTP(S) 子资源，并把 Chromium 并发限制为 1、等待队列限制为 4，以适应低资源部署。
 
 ## 前提条件
 
@@ -51,7 +51,7 @@ docker compose --env-file deploy/.env -f compose.prod.yml run --rm \
 └── backups/
 ```
 
-容器内固定使用 `/data/math_knowledge.db`、`/data/static`、`/data/static/uploads` 和 `/data/pdf_temp`。后端镜像不包含 `.env` 或真实密钥，构建阶段不会调用 OCR/LLM。运行时 schema 开关被 Compose 强制关闭，数据库只通过以下显式命令升级：
+容器内固定使用 `/data/math_knowledge.db`、`/data/static`、`/data/static/uploads` 和 `/data/pdf_temp`。试卷导出 PDF 仅在请求期间存在于内存和 Gotenberg 临时工作区，不写入持久化目录；`pdf_temp` 仍供既有 PDF 上传解析流程使用。后端镜像不包含 `.env` 或真实密钥，构建阶段不会调用 OCR/LLM。运行时 schema 开关被 Compose 强制关闭，数据库只通过以下显式命令升级：
 
 ```bash
 docker compose --env-file deploy/.env -f compose.prod.yml run --rm backend alembic upgrade head
@@ -102,7 +102,7 @@ REFRESH_TOKEN_COOKIE_SAMESITE=lax
 
 ```bash
 docker compose --env-file deploy/.env -f compose.prod.yml ps
-docker compose --env-file deploy/.env -f compose.prod.yml logs --tail=200 backend web
+docker compose --env-file deploy/.env -f compose.prod.yml logs --tail=200 backend gotenberg web
 curl --fail http://127.0.0.1:8080/healthz
 ```
 

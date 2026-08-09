@@ -141,6 +141,13 @@ LLM 目标输出结构：
 }
 ```
 
+- `POST /api/v1/papers/{paper_id}/pdf`
+  - 使用与 `render-model` 相同的 `PaperRenderRequest` 请求体与用户归属检查。
+  - 服务端执行固定链路：`Paper -> PaperRenderModel -> controlled HTML -> Gotenberg Chromium -> PDF`。
+  - 成功返回 `application/pdf` 与 attachment `Content-Disposition`；响应不缓存，也不会在服务器永久保存 PDF。
+  - 当前仅开放 A4 portrait 默认版式。Gotenberg 不可用时返回稳定的 `503`，不会向客户端暴露内部服务地址或上游响应。
+  - 该接口不接受任意 HTML 或 URL，不能作为通用 HTML/URL-to-PDF 代理。
+
 组卷快照：
 
 - `PaperItem` 创建时保存题目内容快照，避免题库后续编辑导致历史试卷内容被动变化。

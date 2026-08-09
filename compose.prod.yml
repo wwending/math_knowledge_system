@@ -1,6 +1,26 @@
 name: math-knowledge
 
 services:
+  gotenberg:
+    image: gotenberg/gotenberg:8.34.0-chromium
+    restart: unless-stopped
+    shm_size: 256mb
+    environment:
+      API_DISABLE_DOWNLOAD_FROM: "true"
+      CHROMIUM_DISABLE_JAVASCRIPT: "true"
+      CHROMIUM_DENY_PRIVATE_IPS: "true"
+      CHROMIUM_DENY_PUBLIC_IPS: "true"
+      CHROMIUM_MAX_CONCURRENCY: "1"
+      CHROMIUM_MAX_QUEUE_SIZE: "4"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://127.0.0.1:3000/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    networks:
+      - app
+
   backend:
     build:
       context: ./backend
@@ -14,6 +34,9 @@ services:
       STATIC_DIR: /data/static
       UPLOAD_DIR: /data/static/uploads
       PDF_TEMP_DIR: /data/pdf_temp
+      PDF_SERVICE_URL: http://gotenberg:3000
+      PDF_SERVICE_CONNECT_TIMEOUT_SECONDS: ${PDF_SERVICE_CONNECT_TIMEOUT_SECONDS:-5}
+      PDF_SERVICE_READ_TIMEOUT_SECONDS: ${PDF_SERVICE_READ_TIMEOUT_SECONDS:-60}
       ALLOW_RUNTIME_SCHEMA_MUTATIONS: "false"
       AUTO_CREATE_TABLES: "false"
       AUTO_APPLY_LEGACY_QUESTION_COMPAT: "false"
@@ -22,6 +45,9 @@ services:
       - ${BACKUP_ROOT:-/srv/math-knowledge/backups}:/backups
     expose:
       - "8000"
+    depends_on:
+      gotenberg:
+        condition: service_healthy
     networks:
       - app
 

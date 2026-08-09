@@ -2,6 +2,30 @@
 
 说明：本文件按时间倒序记录决策。较早决策中的“当前主链路”等表述保留为当时历史事实；如与顶部较新决策冲突，以较新决策和 `docs/STATUS.md` 当前 checkpoint 为准。
 
+## 决策 33：正式 PDF 输出采用 PaperRenderModel + 内部 Gotenberg
+
+结论：
+
+- 正式打印输出链路固定为 `Paper -> PaperRenderModel -> controlled printable HTML -> Gotenberg Chromium -> PDF`。
+- Browser preview 与 PDF 共享 `PaperRenderModel` 业务数据源；PDF renderer 不重新查询题目或复制分组、排序、编号逻辑。
+- 浏览器只调用认证后的 Paper PDF API，不再用 `window.print()` 承担最终 PDF 生成，也不能提交任意 HTML 或 URL。
+- Gotenberg 使用固定 Chromium-only 镜像，只加入 Compose 内部网络，不映射宿主机端口；禁用 JavaScript、`downloadFrom` 和公私网 HTTP(S) 子资源，并限制并发/队列；PDF 请求即时生成、即时返回，不持久化。
+- 当前只开放 A4 portrait 默认 profile，但 PDF abstraction 已表达 paper size、orientation 和四边 margin。
+- Markdown 原始 HTML、远程资源和危险 LaTeX 命令不进入可执行渲染面；服务端使用离线 MathML 表达常用数学公式。
+
+原因：
+
+- 将预览业务模型与最终输出媒介分层，未来增加 A3、landscape、页边距 profile、教师版时不需要重构 Paper 数据链路。
+- FastAPI 到内部 Gotenberg 是当前资源约束下最短、可 mock、可部署的服务端 PDF 生产链路。
+- 服务端控制 HTML 和 Chromium 目标，可以避免暴露通用 HTML/URL-to-PDF 接口带来的 SSRF 与任意内容执行风险。
+
+边界：
+
+- 本轮不实现 A3 UI、教师版、答案解析、booklet/imposition 或实体打印机控制。
+- PDF 文件不能可靠强制物理打印机开启 duplex；后续只能实现 duplex-aware page layout / imposition 策略。
+
+日期：2026-08-09
+
 ## 决策 32：v0.1 采用 Nginx + 单 FastAPI 容器的单机部署
 
 结论：
