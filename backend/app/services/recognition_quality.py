@@ -6,9 +6,10 @@ from typing import Optional
 from app.schemas.draft import RecognitionQualityWarning
 
 
-OPTION_LABEL_PATTERN = re.compile(r"(?<![A-Za-z0-9])([ABCD])(?:[.．、）)]|\s+)", re.IGNORECASE)
-CHOICE_BLANK_PATTERNS = ("（ ）", "( )", "()", "（）")
-CHOICE_TYPES = {"choice", "single_choice", "multiple_choice"}
+OPTION_MARKER_PATTERN = re.compile(
+    r"(?:^|[\r\n:：;；])[ \t]*(?:[（(][ \t]*([ABCD])[ \t]*[）)]|([ABCD])[ \t]*[.．、）)])[ \t]*",
+    re.IGNORECASE,
+)
 OPTION_SEQUENCE = ("A", "B", "C", "D")
 
 
@@ -16,17 +17,20 @@ def _effective_length(text: Optional[str]) -> int:
     return len(re.sub(r"\s+", "", text or ""))
 
 
+def extract_option_markers(text: str) -> list[str]:
+    markers = []
+    for match in OPTION_MARKER_PATTERN.finditer(text or ""):
+        markers.append((match.group(1) or match.group(2)).upper())
+    return markers
+
+
 def detect_option_labels(text: str) -> set[str]:
-    return {match.group(1).upper() for match in OPTION_LABEL_PATTERN.finditer(text or "")}
+    return set(extract_option_markers(text))
 
 
 def is_choice_like(text: str, question_type: Optional[str] = None) -> bool:
-    normalized_type = (question_type or "").strip().lower()
-    if normalized_type in CHOICE_TYPES:
-        return True
-    if any(pattern in (text or "") for pattern in CHOICE_BLANK_PATTERNS):
-        return True
-    return bool(detect_option_labels(text or ""))
+    # question_type alone is not enough: this warning requires visible option structure.
+    return len(detect_option_labels(text or "")) >= 2
 
 
 def _has_option_sequence_gap(labels: set[str]) -> bool:
