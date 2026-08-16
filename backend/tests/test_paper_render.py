@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -14,6 +15,7 @@ from app.main import app
 from app.models.question import Question
 from app.models.question_revision import QuestionRevision
 from app.models.user import User, UserStatus
+from app.services.pdf_generation_service import PdfGenerationError
 
 
 class PaperRenderModelTests(unittest.TestCase):
@@ -128,12 +130,17 @@ class PaperRenderModelTests(unittest.TestCase):
             db.refresh(question)
             return question.id
 
-    def _create_paper(self, question_ids: list[int], headers: dict[str, str] | None = None) -> int:
+    def _create_paper(
+        self,
+        question_ids: list[int],
+        headers: dict[str, str] | None = None,
+        title: str = "Render Paper",
+    ) -> int:
         response = self.client.post(
             "/api/v1/papers",
             headers=headers or self.auth_headers,
             json={
-                "title": "Render Paper",
+                "title": title,
                 "description": "render model",
                 "items": [
                     {"question_id": question_id, "score": index + 1}
@@ -147,6 +154,13 @@ class PaperRenderModelTests(unittest.TestCase):
     def _render(self, paper_id: int, payload: dict | None = None, headers: dict[str, str] | None = None):
         return self.client.post(
             f"/api/v1/papers/{paper_id}/render-model",
+            headers=headers or self.auth_headers,
+            json=payload or {},
+        )
+
+    def _pdf(self, paper_id: int, payload: dict | None = None, headers: dict[str, str] | None = None):
+        return self.client.post(
+            f"/api/v1/papers/{paper_id}/pdf",
             headers=headers or self.auth_headers,
             json=payload or {},
         )
@@ -251,3 +265,71 @@ class PaperRenderModelTests(unittest.TestCase):
         self.assertEqual(missing_response.status_code, 404)
         self.assertEqual(cross_user_response.status_code, 404)
         self.assertEqual(other_user_response.status_code, 404)
+
+    @patch("app.api.v1.endpoints.pdf_generation_service.generate_pdf", return_value=b"%PDF-1.7 test")
+    def test_owner_pdf_export_uses_render_model_and_returns_attachment(self, generate_pdf):
+        question_id = self._create_question(
+            revision_content={"text": "PDF model source: $x^2$"},
+            question_type="solution",
+        )
+        paper_id = self._create_paper([question_id])
+
+        response = self._pdf(paper_id, {"answer_area_mode": "after_each_question"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["content-type"], "application/pdf")
+        self.assertEqual(response.content, b"%PDF-1.7 test")
+        disposition = response.headers["content-disposition"]
+        self.assertIn("attachment", disposition)
+        self.assertIn(".pdf", disposition)
+        html, options = generate_pdf.call_args.args
+        self.assertIn("PDF model source", html)
+        self.assertIn("解答题", html)
+        self.assertEqual(html.count('class="answer-line"'), 4)
+        self.assertEqual(options.paper_size, "A4")
+
+    @patch("app.api.v1.endpoints.pdf_generation_service.generate_pdf", return_value=b"%PDF-1.7 test")
+    def test_pdf_export_missing_and_cross_user_papers_are_hidden(self, generate_pdf):
+        own_question_id = self._create_question(content="own PDF")
+        other_question_id = self._create_question(user_id=self.other_user_id, content="other PDF")
+        own_paper_id = self._create_paper([own_question_id])
+        other_paper_id = self._create_paper([other_question_id], headers=self.other_auth_headers)
+
+        self.assertEqual(self._pdf(999999).status_code, 404)
+        self.assertEqual(self._pdf(other_paper_id).status_code, 404)
+        self.assertEqual(self._pdf(own_paper_id, headers=self.other_auth_headers).status_code, 404)
+        generate_pdf.assert_not_called()
+
+    @patch(
+        "app.api.v1.endpoints.pdf_generation_service.generate_pdf",
+        side_effect=PdfGenerationError("internal upstream details"),
+    )
+    def test_pdf_service_failure_returns_controlled_503(self, generate_pdf):
+        question_id = self._create_question(content="service failure")
+        paper_id = self._create_paper([question_id])
+
+        response = self._pdf(paper_id)
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json(), {"detail": "PDF 生成服务暂时不可用，请稍后重试"})
+        self.assertNotIn("internal", response.text)
+        generate_pdf.assert_called_once()
+
+    @patch("app.api.v1.endpoints.pdf_generation_service.generate_pdf", return_value=b"%PDF-1.7 test")
+    def test_pdf_export_requires_auth_and_sanitizes_download_filename(self, generate_pdf):
+        question_id = self._create_question(content="safe filename")
+        paper_id = self._create_paper(
+            [question_id],
+            title="../evil\r\nX-Injected: yes 中文",
+        )
+
+        unauthenticated = self.client.post(f"/api/v1/papers/{paper_id}/pdf", json={})
+        response = self._pdf(paper_id)
+
+        self.assertEqual(unauthenticated.status_code, 401)
+        self.assertEqual(response.status_code, 200)
+        disposition = response.headers["content-disposition"]
+        self.assertNotIn("\r", disposition)
+        self.assertNotIn("\n", disposition)
+        self.assertNotIn("../", disposition)
+        self.assertIn(f'filename="paper-{paper_id}.pdf"', disposition)
