@@ -16,21 +16,22 @@
 - KaTeX renderer 支持仓库当前常用的上下标、分数、根号、`aligned`、`cases`、矩阵和中文 `\text{}`，但不支持动态 `\require`、Xy-pic、bussproofs 或任意完整 LaTeX；若未来引入这些核心公式，必须先做兼容性评估。
 - 当前仍有既有 Vite chunk size warning；本轮不宣称所有 npm 漏洞已清零。
 
-## 0.15 GHCR pull-only 部署仍需合并后按需验收
+## 0.15 首次 Staging GHCR pull-only 部署已通过，仍有 artifact 与发布边界
 
-v0.1 的既有 Docker Compose、Nginx、显式 migration、健康检查和安全 SQLite 备份流程已在 Linux 服务器验证，GHCR release image pull smoke 也已单独通过。当前 Windows 开发环境仍没有 Docker 命令，本机无法执行 `docker compose config`、构建 Linux 镜像或验证 pull-only 部署脚本的真实运行。
+2026-08-16 已在 [SERVER] 使用 `main` SHA `b78fbd43deadda495771d0fe221d76d81e9486b2` 完成首次完整 Staging GHCR pull-only deployment。backend/web release images 的 pull、OCI revision、RepoDigest、备份、Alembic migration、Compose rollout、HTTP/Nginx health 和 backend 到内部 Gotenberg 的真实 PDF smoke 均通过；数据库 `current == head == 20260604_0005`，服务 restart count 均为 0，数据库 quick check 与 uploads 完整性通过。
 
-已做缓解：
+已验证：
 
-- GitHub Actions 的 `Production stack checks` 执行 Shell 语法、pull-only Compose 合同、两个 Dockerfile 的显式构建和 OCI revision 验证。
-- 本地后端与前端检查通过，且生产 dist 未包含 localhost API 地址。
-- 既有 [SERVER] GHCR pull smoke 已通过；本 PR 不连接或部署 [SERVER]。
+- backend RepoDigest：`sha256:c4e78f2a6ce0f5c2b4d532be81c92d795522f1d446f6d88ce2daa8f354f5d524`。
+- web RepoDigest：`sha256:f039b40b67c5b0f0ab319fd39c6649dcec4961c42f9b4c335d56b50434574993`。
+- Gotenberg 宿主机端口 `3000` 未暴露；backend 到内部 Gotenberg 的真实 smoke 生成了有效 `%PDF-` 文件。
 
 剩余注意：
 
-- 合并前必须确认 PR 的 deployment job 通过。
-- pull-only 部署脚本尚未由本 PR 在 [SERVER] 执行；合并后如实际发布，应记录 checkout SHA、OCI revision 与 RepoDigest，并按发布范围复核 migration、备份、健康检查和业务 smoke。
-- Compose 仍使用完整 Git SHA tag 选择 release artifact，尚未改为 digest pinning；GHCR credential 生命周期也不由部署脚本管理。
+- 完整 Git SHA tag 本质仍是 mutable-style reference；Compose 尚未改为 digest pinning。
+- GHCR credential 生命周期不由 `deploy.sh` 管理，仍是管理员 preflight 责任。
+- authenticated business-level `/papers/{id}/pdf` 未在本次 infrastructure deployment 中重新执行；本次验证的是 backend 到 Gotenberg 的真实服务 smoke。
+- Demo/production HTTPS 与 Demo/production deployment 尚未完成；首次 Staging deployment 通过不等于 production ready。
 - 2026-08-06 前端运行时加固后，现场 `npm audit` 仍报告 9 项（1 moderate、8 high）；剩余问题覆盖 Markdown 渲染运行时依赖和 Vite/Sass/Rollup 等构建链，需在独立依赖安全 PR 中评估升级兼容性。
 
 ## v0.1 Release Candidate 范围说明
@@ -169,7 +170,7 @@ v0.1 的既有 Docker Compose、Nginx、显式 migration、健康检查和安全
 - 后续接入本地 OCR 前，应先用 `recognition_debug` 判断错误来源。
 - 用户保存入题库前应优先查看调试信息，尤其是公式、选项、焦点编号和证明命题。
 
-## 0.8 MVP smoke 只覆盖本地 PDF 截图和浏览器导出
+## 0.8 MVP smoke 样例覆盖仍有限
 
 第二十三轮已收口 MVP 使用闭环和本地 smoke 样例说明，但这仍是手动 smoke，不是生产级验收矩阵。
 
@@ -177,15 +178,14 @@ v0.1 的既有 Docker Compose、Nginx、显式 migration、健康检查和安全
 
 - 3 张 smoke 样例来自本地 PDF 截图，不覆盖真实拍照噪声、阴影、倾斜、手写批注、低清晰度或复杂图形。
 - 真实用户样本仍不足，后续应根据实际使用中的 bug 小步修复。
-- 当前导出方案为浏览器打印或另存为 PDF。
-- 服务端 PDF/DOCX 导出仍未实现。
+- Paper Preview 已通过 authenticated `POST /api/v1/papers/{paper_id}/pdf` 支持服务端 PDF 导出，backend 使用内部 Gotenberg 生成 PDF；浏览器 print CSS 仍保留。
+- DOCX 导出仍未实现，服务端 PDF 也不等同于正式排版引擎级自动分页。
 - 当前 OCR 默认仍依赖 `baidu`，本地 OCR 尚未接入。
 
 影响：
 
 - 手动 smoke 通过只能说明 MVP 演示链路可走通，不能说明 OCR 质量已覆盖真实场景。
-- 浏览器打印依赖用户浏览器和系统打印设置，不等同于稳定的服务端排版导出。
-- 后续如果要正式交付打印文件，应评估最小服务端 PDF 导出或更严格的打印样式验收。
+- 浏览器打印仍依赖用户浏览器和系统打印设置；服务端 PDF 的 authenticated business-level 路径仍需纳入发布验收。
 
 ## 0.7 OCR 评估指标仍是文本级，真实评估集尚未建立
 
@@ -262,12 +262,12 @@ v0.1 的既有 Docker Compose、Nginx、显式 migration、健康检查和安全
 
 第十七轮新增后端最小手动组卷能力。第十八轮新增前端组卷入口 MVP，支持从题库勾选题目、创建试卷、查看试卷列表和查看试卷详情。
 
-第二十轮新增学生版 A4 作业预览 MVP：后端生成 PaperRenderModel，前端显示预览。该能力仍是预览基础能力，不是导出或正式排版引擎。
+第二十轮新增学生版 A4 作业预览 MVP；后续已增加服务端 PDF 导出，由后端通过内部 Gotenberg 生成文件。该能力仍不是正式排版引擎。
 
 当前明确暂不支持：
 
 - 智能组卷算法。
-- PDF / Word 导出。
+- Word 导出。
 - 自动分页；长题可能撑开 A4 视觉容器。
 - 拖拽排序。
 - 分值编辑。
