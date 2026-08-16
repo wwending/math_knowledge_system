@@ -16,19 +16,21 @@
 - KaTeX renderer 支持仓库当前常用的上下标、分数、根号、`aligned`、`cases`、矩阵和中文 `\text{}`，但不支持动态 `\require`、Xy-pic、bussproofs 或任意完整 LaTeX；若未来引入这些核心公式，必须先做兼容性评估。
 - 当前仍有既有 Vite chunk size warning；本轮不宣称所有 npm 漏洞已清零。
 
-## 0.15 单机部署仍需 Linux 服务器验证
+## 0.15 GHCR pull-only 部署仍需合并后按需验收
 
-v0.1 已增加 Docker Compose、Nginx、显式 migration、健康检查和安全 SQLite 备份脚本，但当前 Windows 验证环境没有 Docker 命令，无法在本机执行 `docker compose config` 或构建 Linux 镜像；本机 WSL Bash 服务也已禁用，无法执行 `bash -n`。
+v0.1 的既有 Docker Compose、Nginx、显式 migration、健康检查和安全 SQLite 备份流程已在 Linux 服务器验证，GHCR release image pull smoke 也已单独通过。当前 Windows 开发环境仍没有 Docker 命令，本机无法执行 `docker compose config`、构建 Linux 镜像或验证 pull-only 部署脚本的真实运行。
 
 已做缓解：
 
-- GitHub Actions 新增部署 job，执行 Shell 语法检查、Compose 配置解析和两个生产镜像构建。
+- GitHub Actions 的 `Production stack checks` 执行 Shell 语法、pull-only Compose 合同、两个 Dockerfile 的显式构建和 OCI revision 验证。
 - 本地后端与前端检查通过，且生产 dist 未包含 localhost API 地址。
+- 既有 [SERVER] GHCR pull smoke 已通过；本 PR 不连接或部署 [SERVER]。
 
 剩余注意：
 
 - 合并前必须确认 PR 的 deployment job 通过。
-- 仍需在目标 Linux 服务器验证目录权限、Alembic migration、SQLite 在线备份、容器健康状态、20MB 上传限制、OCR/LLM 超时和 IP + HTTP smoke。
+- pull-only 部署脚本尚未由本 PR 在 [SERVER] 执行；合并后如实际发布，应记录 checkout SHA、OCI revision 与 RepoDigest，并按发布范围复核 migration、备份、健康检查和业务 smoke。
+- Compose 仍使用完整 Git SHA tag 选择 release artifact，尚未改为 digest pinning；GHCR credential 生命周期也不由部署脚本管理。
 - 2026-08-06 前端运行时加固后，现场 `npm audit` 仍报告 9 项（1 moderate、8 high）；剩余问题覆盖 Markdown 渲染运行时依赖和 Vite/Sass/Rollup 等构建链，需在独立依赖安全 PR 中评估升级兼容性。
 
 ## v0.1 Release Candidate 范围说明

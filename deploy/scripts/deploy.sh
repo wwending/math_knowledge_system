@@ -54,6 +54,28 @@ verify_image_revision() {
     printf '%s\n' "${actual_revision}"
 }
 
+get_image_repo_digest() {
+    local image="$1"
+    local expected_repository="$2"
+    local digest
+    local repo_digest
+
+    while IFS= read -r repo_digest; do
+        if [[ "${repo_digest}" == "${expected_repository}@sha256:"* ]]; then
+            digest="${repo_digest#"${expected_repository}@sha256:"}"
+        else
+            continue
+        fi
+        if [[ "${digest}" =~ ^[0-9a-f]{64}$ ]]; then
+            printf '%s\n' "${repo_digest}"
+            return 0
+        fi
+    done < <(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "${image}")
+
+    echo "No valid RepoDigest for ${expected_repository} was found on ${image}." >&2
+    return 1
+}
+
 DATA_ROOT="${DATA_ROOT:-$(read_env_value DATA_ROOT)}"
 BACKUP_ROOT="${BACKUP_ROOT:-$(read_env_value BACKUP_ROOT)}"
 HTTP_PORT="${HTTP_PORT:-$(read_env_value HTTP_PORT)}"
@@ -80,11 +102,20 @@ install -d -m 0775 -o 10001 -g 10001 \
     "${DATA_ROOT}/pdf_temp"
 install -d -m 0775 "${BACKUP_ROOT}"
 
-BACKEND_IMAGE="math-knowledge-backend:${IMAGE_TAG}"
-WEB_IMAGE="math-knowledge-web:${IMAGE_TAG}"
-docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" build
+BACKEND_REPOSITORY="ghcr.io/wwending/math-knowledge-backend"
+WEB_REPOSITORY="ghcr.io/wwending/math-knowledge-web"
+BACKEND_IMAGE="${BACKEND_REPOSITORY}:${IMAGE_TAG}"
+WEB_IMAGE="${WEB_REPOSITORY}:${IMAGE_TAG}"
+
+if ! docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" pull backend web; then
+    echo "Failed to pull release images. GHCR authentication may be required." >&2
+    exit 1
+fi
+
 BACKEND_REVISION="$(verify_image_revision "${BACKEND_IMAGE}" "${GIT_SHA}")"
 WEB_REVISION="$(verify_image_revision "${WEB_IMAGE}" "${GIT_SHA}")"
+BACKEND_DIGEST="$(get_image_repo_digest "${BACKEND_IMAGE}" "${BACKEND_REPOSITORY}")"
+WEB_DIGEST="$(get_image_repo_digest "${WEB_IMAGE}" "${WEB_REPOSITORY}")"
 
 ENV_FILE="${ENV_FILE}" "${SCRIPT_DIR}/backup.sh"
 
@@ -111,5 +142,7 @@ docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" ps
 echo "Deployed commit: ${GIT_SHA}"
 echo "Backend image: ${BACKEND_IMAGE}"
 echo "Backend revision: ${BACKEND_REVISION}"
+echo "Backend digest: ${BACKEND_DIGEST}"
 echo "Web image: ${WEB_IMAGE}"
 echo "Web revision: ${WEB_REVISION}"
+echo "Web digest: ${WEB_DIGEST}"
