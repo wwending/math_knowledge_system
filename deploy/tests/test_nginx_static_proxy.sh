@@ -14,4 +14,6 @@ static_block="$(awk '
 grep -Eq '^[[:space:]]*proxy_pass http://math_backend;[[:space:]]*$' <<<"${static_block}"
 
 ! grep -Eq '^[[:space:]]*location /static/[[:space:]]*\{' "${config}"
-grep -Fq 'location ~* \.(?:css|js|mjs|map|png|jpg|jpeg|gif|svg|ico|webp|woff|woff2|ttf)$ {' "${config}"
+grep -Fq 'location ~* \.mjs$ {' "${config}"
+grep -Eq '^[[:space:]]*application/javascript mjs;[[:space:]]*$' "${config}"
+grep -Fq 'location ~* \.(?:css|js|map|png|jpg|jpeg|gif|svg|ico|webp|woff|woff2|ttf)$ {' "${config}"
