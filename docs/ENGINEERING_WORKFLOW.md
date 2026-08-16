@@ -95,6 +95,15 @@ Merge is a human-controlled release decision, not an automatic consequence of gr
 Every Staging test report and every Demo deployment report should record the exact commit SHA tested/deployed.
 Branch names such as `main` or `feat/foo` are moving references and are not sufficient deployment evidence.
 
+## GHCR release images
+
+After a change is merged to `main`, the release image workflow builds the backend and web images once and pushes them to GitHub Container Registry with the full Git commit SHA as the immutable-style tag:
+
+- `ghcr.io/wwending/math-knowledge-backend:<full-sha>`
+- `ghcr.io/wwending/math-knowledge-web:<full-sha>`
+
+The workflow records each pushed digest and preserves the same SHA in the OCI revision metadata. The current server deployment has not switched to pulling these GHCR images; Staging pull and deployment migration belong to the next stage.
+
 ## Validation layers
 
 ### Layer 1 — local
