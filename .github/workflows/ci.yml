@@ -105,8 +105,23 @@ jobs:
       - name: Validate Compose configuration
         run: docker compose --env-file deploy/.env -f compose.prod.yml config
 
-      - name: Build production images
-        run: docker compose --env-file deploy/.env -f compose.prod.yml build
+      - name: Run GHCR pull deployment contract test
+        run: bash deploy/tests/test_ghcr_pull_deployment.sh
+
+      - name: Build backend Dockerfile validation image
+        run: |
+          docker build \
+            --build-arg GIT_SHA="${GIT_SHA}" \
+            -t "math-knowledge-backend-ci:${IMAGE_TAG}" \
+            ./backend
+
+      - name: Build web Dockerfile validation image
+        run: |
+          docker build \
+            --build-arg GIT_SHA="${GIT_SHA}" \
+            -f frontend/Dockerfile \
+            -t "math-knowledge-web-ci:${IMAGE_TAG}" \
+            .
 
       - name: Verify production image revisions
         run: |
@@ -121,5 +136,5 @@ jobs:
             fi
           }
 
-          verify_revision "math-knowledge-backend:${IMAGE_TAG}"
-          verify_revision "math-knowledge-web:${IMAGE_TAG}"
+          verify_revision "math-knowledge-backend-ci:${IMAGE_TAG}"
+          verify_revision "math-knowledge-web-ci:${IMAGE_TAG}"

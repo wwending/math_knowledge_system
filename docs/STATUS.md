@@ -1,5 +1,12 @@
 # STATUS
 
+## 2026-08-16 production-like deployment 使用 GHCR release images
+
+- `main` publish workflow 按完整 Git SHA 构建并发布 backend/web release images；production Compose 使用同一 SHA tag 从 GHCR 拉取，不再在部署服务器构建 application images。
+- 部署脚本在 backup、Alembic migration 和启动前完成 pull、OCI revision 匹配及 RepoDigest 记录；pull 失败不会 fallback build。
+- `Production stack checks` 保留原 job 名，独立执行 Compose 合同验证、backend/web Dockerfile 构建和 OCI revision 验证；PR CI 不尝试拉取不存在的 PR HEAD release image。
+- 既有 [SERVER] GHCR pull smoke 已单独通过；本变更只在 [LOCAL] 实现并由 Draft PR CI 验证，未执行 [SERVER] deployment。
+
 ## 2026-08-06 KaTeX 块公式解析限制加固
 
 - 已修复块公式在同行或最后一行闭合时未计入闭合符前内容、从而绕过 `MAX_BLOCK_MATH_LENGTH` 的问题；所有片段及片段间换行现在都会在 KaTeX 调用前计数。
@@ -50,7 +57,7 @@
 - 备份脚本通过 SQLite Backup API 生成一致快照，同时保存上传文件、部署 commit 和不含值的环境字段清单。
 - 前端开发默认地址仍为 `http://127.0.0.1:8000`；生产默认改为同源 `/api/v1` 与 `/static`，仍支持 `VITE_API_BASE_URL` 覆盖。
 - 本地后端 125 项 pytest、125 项 unittest、前端 Stage 3 契约和生产构建通过；生产 dist 不包含 localhost API 地址。
-- 当前 Windows 环境没有 Docker 命令，Compose 解析和 Linux 镜像构建已加入 GitHub Actions，仍需等待 PR CI 与目标服务器 smoke 验证。
+- 当前 Windows 环境没有 Docker 命令，Compose 解析和 Linux 镜像构建由 GitHub Actions 验证；既有 [SERVER] 容器栈与 GHCR pull smoke 已完成，本次 pull-only 部署改动仍需以 Draft PR 的 `Production stack checks` 作为合并前验证。
 
 ## 2026-08-05 v0.1 MVP 交付收尾
 
