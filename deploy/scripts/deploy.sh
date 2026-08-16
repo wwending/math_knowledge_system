@@ -6,6 +6,23 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 ENV_FILE="${ENV_FILE:-${REPO_ROOT}/deploy/.env}"
 COMPOSE_FILE="${REPO_ROOT}/compose.prod.yml"
 
+cd "${REPO_ROOT}"
+
+if [[ "$(git rev-parse --is-inside-work-tree 2>/dev/null)" != "true" ]]; then
+    echo "Refusing to deploy outside a Git worktree." >&2
+    exit 1
+fi
+
+if [[ -n "$(git status --porcelain)" ]]; then
+    echo "Refusing to deploy from a dirty Git worktree." >&2
+    exit 1
+fi
+
+GIT_SHA="$(git rev-parse HEAD)"
+IMAGE_TAG="${GIT_SHA}"
+export GIT_SHA
+export IMAGE_TAG
+
 if [[ ! -f "${ENV_FILE}" ]]; then
     echo "Missing deployment environment file: ${ENV_FILE}" >&2
     echo "Copy deploy/.env.production.example to deploy/.env and fill in its values." >&2
@@ -15,6 +32,26 @@ fi
 read_env_value() {
     local key="$1"
     awk -F= -v key="${key}" '$1 == key { sub(/^[^=]*=/, ""); value=$0 } END { print value }' "${ENV_FILE}"
+}
+
+verify_image_revision() {
+    local image="$1"
+    local expected_revision="$2"
+    local actual_revision
+
+    if ! actual_revision="$(docker image inspect \
+        --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' \
+        "${image}")"; then
+        echo "Failed to inspect image revision: ${image}" >&2
+        return 1
+    fi
+
+    if [[ "${actual_revision}" != "${expected_revision}" ]]; then
+        echo "Image revision mismatch for ${image}: expected ${expected_revision}, got ${actual_revision}" >&2
+        return 1
+    fi
+
+    printf '%s\n' "${actual_revision}"
 }
 
 DATA_ROOT="${DATA_ROOT:-$(read_env_value DATA_ROOT)}"
@@ -43,8 +80,11 @@ install -d -m 0775 -o 10001 -g 10001 \
     "${DATA_ROOT}/pdf_temp"
 install -d -m 0775 "${BACKUP_ROOT}"
 
-cd "${REPO_ROOT}"
+BACKEND_IMAGE="math-knowledge-backend:${IMAGE_TAG}"
+WEB_IMAGE="math-knowledge-web:${IMAGE_TAG}"
 docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" build
+BACKEND_REVISION="$(verify_image_revision "${BACKEND_IMAGE}" "${GIT_SHA}")"
+WEB_REVISION="$(verify_image_revision "${WEB_IMAGE}" "${GIT_SHA}")"
 
 ENV_FILE="${ENV_FILE}" "${SCRIPT_DIR}/backup.sh"
 
@@ -68,4 +108,8 @@ done
 curl --fail --silent --show-error "${health_url}"
 echo
 docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" ps
-echo "Deployed commit: $(git rev-parse HEAD)"
+echo "Deployed commit: ${GIT_SHA}"
+echo "Backend image: ${BACKEND_IMAGE}"
+echo "Backend revision: ${BACKEND_REVISION}"
+echo "Web image: ${WEB_IMAGE}"
+echo "Web revision: ${WEB_REVISION}"
