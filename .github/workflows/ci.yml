@@ -84,6 +84,9 @@ jobs:
   deployment:
     name: Production stack checks
     runs-on: ubuntu-latest
+    env:
+      GIT_SHA: ${{ github.sha }}
+      IMAGE_TAG: ${{ github.sha }}
     steps:
       - name: Check out repository
         uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
@@ -104,3 +107,19 @@ jobs:
 
       - name: Build production images
         run: docker compose --env-file deploy/.env -f compose.prod.yml build
+
+      - name: Verify production image revisions
+        run: |
+          verify_revision() {
+            image="$1"
+            revision="$(docker image inspect \
+              --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' \
+              "${image}")"
+            if [ "${revision}" != "${GIT_SHA}" ]; then
+              echo "Image revision mismatch for ${image}: expected ${GIT_SHA}, got ${revision}" >&2
+              return 1
+            fi
+          }
+
+          verify_revision "math-knowledge-backend:${IMAGE_TAG}"
+          verify_revision "math-knowledge-web:${IMAGE_TAG}"

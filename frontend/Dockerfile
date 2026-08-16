@@ -9,6 +9,10 @@ RUN npm run build
 
 FROM nginx:1.27-alpine
 
+ARG GIT_SHA=unknown
+
+LABEL org.opencontainers.image.revision="${GIT_SHA}"
+
 COPY deploy/nginx/default.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /build/dist /usr/share/nginx/html
 

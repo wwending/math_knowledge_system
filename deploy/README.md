@@ -25,7 +25,7 @@ chmod +x deploy/scripts/*.sh
 sudo ./deploy/scripts/deploy.sh
 ```
 
-脚本依次创建持久化目录、构建镜像、备份已有数据、显式执行 Alembic migration、启动服务、等待健康检查，并输出容器状态与 Git commit。任何步骤失败都会返回非零退出码。它不会运行 `docker system prune`、删除 volume 或删除历史备份。
+脚本拒绝从 dirty Git worktree 部署。工作树干净时，backend 和 web 的 production image tag 默认使用当前完整 Git commit SHA，并把同一个 SHA 写入 OCI label `org.opencontainers.image.revision`。脚本依次创建持久化目录、构建并验证镜像 revision、备份已有数据、显式执行 Alembic migration、启动服务、等待健康检查，并输出 Git commit、image tag 与 revision。任何步骤失败都会返回非零退出码；revision 不匹配时不会执行 migration 或启动服务。它不会运行 `docker system prune`、删除 volume 或删除历史备份。
 
 默认公网或普通 RC 使用 `HTTP_BIND_ADDR=0.0.0.0` 和 `HTTP_PORT=8080`，访问地址为 `http://SERVER_IP:8080`。SSH tunnel/private RC 推荐使用 `HTTP_BIND_ADDR=127.0.0.1` 和 `HTTP_PORT=8000`，以避免 Web 端口直接暴露到公网。访问链路为 `Windows localhost:8000` → SSH local forwarding → `Server 127.0.0.1:8000` → Web/Nginx → `backend:8000` (Docker internal only)。后端 `8000` 始终只在 Compose 内部网络中暴露，不映射到宿主机；DNS 和 HTTPS 可在正式上线阶段再配置。前端生产构建默认使用当前页面同源地址，因此 API 请求为 `/api/v1/*`，上传资源为 `/static/*`；如有特殊需求仍可在构建时设置 `VITE_API_BASE_URL`。
 
@@ -104,6 +104,16 @@ REFRESH_TOKEN_COOKIE_SAMESITE=lax
 docker compose --env-file deploy/.env -f compose.prod.yml ps
 docker compose --env-file deploy/.env -f compose.prod.yml logs --tail=200 backend gotenberg web
 curl --fail http://127.0.0.1:8080/healthz
+
+IMAGE_TAG="$(git rev-parse HEAD)"
+docker image inspect \
+  --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' \
+  "math-knowledge-backend:${IMAGE_TAG}"
+docker image inspect \
+  --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' \
+  "math-knowledge-web:${IMAGE_TAG}"
 ```
+
+也可以对运行中的容器执行 `docker inspect`，读取同名的 `org.opencontainers.image.revision` image label，并与部署 commit 和完整 image tag 比对。
 
 发布前仍需按 `docs/MVP_RELEASE_CHECKLIST.md` 完成真实百度 OCR + LLM + Draft + 题库 + 组卷 + Paper Preview smoke。本部署能力不改变业务逻辑，也不代表 v0.1 已正式生产验收。

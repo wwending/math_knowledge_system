@@ -25,7 +25,9 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    image: math-knowledge-backend:${IMAGE_TAG:-v0.1}
+      args:
+        GIT_SHA: ${GIT_SHA:-unknown}
+    image: math-knowledge-backend:${IMAGE_TAG:-unknown}
     restart: unless-stopped
     env_file:
       - ./deploy/.env
@@ -55,7 +57,9 @@ services:
     build:
       context: .
       dockerfile: frontend/Dockerfile
-    image: math-knowledge-web:${IMAGE_TAG:-v0.1}
+      args:
+        GIT_SHA: ${GIT_SHA:-unknown}
+    image: math-knowledge-web:${IMAGE_TAG:-unknown}
     restart: unless-stopped
     depends_on:
       backend:
