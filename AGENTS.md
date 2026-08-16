@@ -3,7 +3,9 @@
 ## Purpose
 
 This file is the repository-level operating contract for coding agents working on `math_knowledge_system`.
-Keep this file concise. Current project facts live in `docs/`; machine-specific rules live in each machine's Codex home.
+Keep this file concise. Current project facts live in `docs/`.
+
+Project-specific machine/checkout rules belong in a repository-root `AGENTS.override.md`, which is intentionally ignored by Git. Do not require `math_knowledge_system`-specific rules in the user's global Codex home.
 
 ## Authority and instruction order
 
@@ -27,6 +29,7 @@ Before a non-trivial task:
 1. Read `docs/STATUS.md` for the current state and release checkpoint.
 2. Read `docs/KNOWN_ISSUES.md` for active risks relevant to the task.
 3. Read only the other documents relevant to the task:
+   - development / Git / PR / Staging / Demo workflow -> `docs/ENGINEERING_WORKFLOW.md`
    - architecture / API / data-model / process change -> `docs/DECISIONS.md`
    - deployment / migration / backup / rollback -> `deploy/README.md` and relevant deployment docs/scripts
    - public API behavior -> `docs/API.md`
@@ -91,6 +94,7 @@ If the user explicitly requested one of these actions, do not ask a second time 
 - After implementation, push only the task branch and create/update a Draft PR unless the user asks for a different workflow.
 - Do not mark a PR ready, approve it, enable auto-merge, or merge it unless explicitly requested.
 - PR descriptions must state: scope, architecture/behavior changes, tests run, tests not run, deployment/migration impact, and known risks.
+- Keep checkout-specific Codex instructions in root `AGENTS.override.md`; do not commit that file or move these project-specific rules into global `~/.codex` configuration.
 
 ## Test contract
 
