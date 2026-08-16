@@ -7,7 +7,13 @@
       </div>
       <div class="preview-actions">
         <el-tag size="small" effect="plain">{{ renderModel.template_type }}</el-tag>
-        <el-button type="primary" size="small" @click="handlePrint">
+        <el-button
+          type="primary"
+          size="small"
+          :loading="downloadLoading"
+          :disabled="downloadLoading"
+          @click="handleExportPdf"
+        >
           <el-icon><Printer /></el-icon>
           <span>打印/导出 PDF</span>
         </el-button>
@@ -69,20 +75,73 @@
 </template>
 
 <script setup>
+import { ref } from 'vue'
+import axios from 'axios'
+import { ElMessage } from 'element-plus'
 import { Printer } from '@element-plus/icons-vue'
 import { renderMarkdown } from '@/utils/renderMarkdown'
+import { API_V1_BASE_URL } from '../config/api'
 
-defineProps({
+const props = defineProps({
   renderModel: {
     type: Object,
     required: true
   }
 })
 
+const downloadLoading = ref(false)
+
 const renderContent = (content) => content ? renderMarkdown(content) : '<span style="color:#999">暂无内容</span>'
 
-const handlePrint = () => {
-  window.print()
+const downloadFilename = (contentDisposition) => {
+  const encoded = contentDisposition?.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
+  if (encoded) {
+    try {
+      return decodeURIComponent(encoded)
+    } catch {
+      // Fall through to the server's ASCII-safe fallback.
+    }
+  }
+  return contentDisposition?.match(/filename="([^"]+)"/i)?.[1] || `paper-${props.renderModel.paper.id}.pdf`
+}
+
+const handleExportPdf = async () => {
+  if (downloadLoading.value) return
+  downloadLoading.value = true
+  let objectUrl = ''
+  let downloadLink = null
+  try {
+    const response = await axios.post(
+      `${API_V1_BASE_URL}/papers/${props.renderModel.paper.id}/pdf`,
+      {
+        template_type: props.renderModel.template_type,
+        version: props.renderModel.version,
+        paper_size: props.renderModel.paper_size,
+        group_by: props.renderModel.group_by,
+        sort_by: props.renderModel.sort_by,
+        answer_area_mode: props.renderModel.answer_area_mode
+      },
+      { responseType: 'blob' }
+    )
+    const pdfBlob = response.data instanceof Blob
+      ? response.data
+      : new Blob([response.data], { type: 'application/pdf' })
+    objectUrl = URL.createObjectURL(pdfBlob)
+    downloadLink = document.createElement('a')
+    downloadLink.href = objectUrl
+    downloadLink.download = downloadFilename(response.headers?.['content-disposition'])
+    document.body.appendChild(downloadLink)
+    downloadLink.click()
+    ElMessage.success('PDF 已生成并开始下载。')
+  } catch (error) {
+    console.error(error)
+    const detail = error.response?.data?.detail
+    ElMessage.error(typeof detail === 'string' ? detail : '导出 PDF 失败，请稍后重试。')
+  } finally {
+    downloadLink?.remove()
+    if (objectUrl) URL.revokeObjectURL(objectUrl)
+    downloadLoading.value = false
+  }
 }
 </script>
 

@@ -110,6 +110,9 @@ class Settings(BaseSettings):
     DEEPSEEK_MODEL: str = "deepseek-chat"
     DEEPSEEK_TIMEOUT_SECONDS: int = 30
     DEEPSEEK_METADATA_TIMEOUT_SECONDS: int = 45
+    PDF_SERVICE_URL: str = "http://gotenberg:3000"
+    PDF_SERVICE_CONNECT_TIMEOUT_SECONDS: float = 5
+    PDF_SERVICE_READ_TIMEOUT_SECONDS: float = 60
 
     model_config = SettingsConfigDict(
         env_file=ENV_FILE_PATH,

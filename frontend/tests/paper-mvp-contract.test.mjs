@@ -147,16 +147,37 @@ if (!existsSync(paperPreviewPath)) {
     failures.push('PaperPreview renders answer or analysis snapshot fields')
   }
 
-  if (!paperPreviewSource.includes('window.print()')) {
-    failures.push('PaperPreview does not expose browser print export')
+  if (paperPreviewSource.includes('window.print()')) {
+    failures.push('PaperPreview still uses browser print as the PDF export path')
   }
 
   if (!paperPreviewSource.includes('打印/导出 PDF')) {
     failures.push('PaperPreview is missing the print/export PDF button text')
   }
 
-  if (!paperPreviewSource.includes('@media print')) {
-    failures.push('PaperPreview is missing print CSS')
+  const exportHandler = paperPreviewSource.match(/const handleExportPdf = async \(\) => \{([\s\S]*?)\n\}/)?.[1] || ''
+  if (!exportHandler.includes('/pdf')) {
+    failures.push('PaperPreview does not call the paper PDF endpoint')
+  }
+
+  if (!exportHandler.includes("responseType: 'blob'")) {
+    failures.push('PaperPreview does not request a Blob PDF response')
+  }
+
+  if (!exportHandler.includes('URL.createObjectURL') || !exportHandler.includes('URL.revokeObjectURL')) {
+    failures.push('PaperPreview does not create and release an object URL for download')
+  }
+
+  if (!exportHandler.includes('downloadLoading.value = true') || !exportHandler.includes('finally')) {
+    failures.push('PaperPreview does not guard PDF export with loading state cleanup')
+  }
+
+  if (!exportHandler.includes('ElMessage.error')) {
+    failures.push('PaperPreview does not show an explicit PDF export error')
+  }
+
+  if (!paperPreviewSource.includes(':loading="downloadLoading"') || !paperPreviewSource.includes(':disabled="downloadLoading"')) {
+    failures.push('PaperPreview does not prevent duplicate PDF export clicks')
   }
 }
 

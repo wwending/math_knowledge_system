@@ -2,14 +2,16 @@ import hashlib
 import json
 import mimetypes
 import os
+import re
 import shutil
 import time
 import uuid
 from datetime import datetime, timezone
 from typing import Any, List, Optional
+from urllib.parse import quote
 
 import fitz
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Response, UploadFile
 from loguru import logger
 from PIL import Image
 from pydantic import BaseModel
@@ -52,17 +54,27 @@ from app.services.ocr_providers.base import OCRResult
 from app.services.ocr_service import ocr_service as draft_ocr_service
 from app.services.paper_service import create_paper, get_paper, list_papers
 from app.services.paper_render_service import build_paper_render_model
+from app.services.paper_html_renderer import PaperHtmlRenderError, render_paper_html
+from app.services.pdf_generation_service import GotenbergPdfGenerationService, PdfGenerationError, PdfGenerationOptions
 from app.services.question_metadata import evaluate_question_metadata_task
 from app.services.recognition_quality import detect_quality_warnings
 
 
 router = APIRouter()
 
+pdf_generation_service = GotenbergPdfGenerationService(
+    settings.PDF_SERVICE_URL,
+    settings.PDF_SERVICE_CONNECT_TIMEOUT_SECONDS,
+    settings.PDF_SERVICE_READ_TIMEOUT_SECONDS,
+)
+
 NOT_FOUND_MESSAGE = "\u8d44\u6e90\u4e0d\u5b58\u5728"
 FORBIDDEN_MESSAGE = "\u65e0\u6743\u8bbf\u95ee\u8be5\u8d44\u6e90"
 QUESTION_UPDATED_MESSAGE = "\u9898\u76ee\u5185\u5bb9\u5df2\u66f4\u65b0"
 PDF_ONLY_MESSAGE = "\u8bf7\u4e0a\u4f20 PDF \u6587\u4ef6"
 PDF_PARSE_FAILED_MESSAGE = "\u672a\u80fd\u89e3\u6790 PDF \u6587\u4ef6"
+PDF_GENERATION_UNAVAILABLE_MESSAGE = "PDF \u751f\u6210\u670d\u52a1\u6682\u65f6\u4e0d\u53ef\u7528\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5"
+PDF_PAPER_TOO_LARGE_MESSAGE = "\u8bd5\u5377\u5185\u5bb9\u8fc7\u5927\uff0c\u65e0\u6cd5\u751f\u6210 PDF"
 UPLOAD_SAVE_FAILED_MESSAGE = "\u4e0a\u4f20\u6587\u4ef6\u4fdd\u5b58\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5"
 QUESTION_SAVE_FAILED_MESSAGE = "\u9898\u76ee\u4fdd\u5b58\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5"
 DRAFT_READY_REQUIRED_MESSAGE = "\u53ea\u6709\u5df2\u8bc6\u522b\u5b8c\u6210\u7684 Draft \u53ef\u4ee5\u4fdd\u5b58\u5165\u9898\u5e93"
@@ -990,6 +1002,48 @@ def get_paper_render_model_endpoint(
     current_user: User = Depends(require_active_user),
 ):
     return build_paper_render_model(db, current_user, paper_id, payload)
+
+
+def _paper_pdf_content_disposition(title: str, paper_id: int) -> str:
+    normalized = re.sub(r"[^\w\u4e00-\u9fff.-]+", "_", title, flags=re.UNICODE).strip("._")
+    unicode_filename = f"{(normalized[:64] or f'paper-{paper_id}')}.pdf"
+    return (
+        f'attachment; filename="paper-{paper_id}.pdf"; '
+        f"filename*=UTF-8''{quote(unicode_filename, safe='')}"
+    )
+
+
+@router.post("/papers/{paper_id}/pdf")
+def generate_paper_pdf_endpoint(
+    paper_id: int,
+    payload: PaperRenderRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_active_user),
+):
+    render_model = build_paper_render_model(db, current_user, paper_id, payload)
+    options = PdfGenerationOptions.a4_portrait()
+    try:
+        printable_html = render_paper_html(render_model, options)
+        pdf_bytes = pdf_generation_service.generate_pdf(printable_html, options)
+    except PaperHtmlRenderError as exc:
+        raise HTTPException(status_code=413, detail=PDF_PAPER_TOO_LARGE_MESSAGE) from exc
+    except PdfGenerationError as exc:
+        logger.exception(
+            "Paper PDF generation failed paper_id={} user_id={}",
+            paper_id,
+            current_user.id,
+        )
+        raise HTTPException(status_code=503, detail=PDF_GENERATION_UNAVAILABLE_MESSAGE) from exc
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": _paper_pdf_content_disposition(render_model.paper.title, paper_id),
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 # Legacy compatibility endpoint. Keep behavior unchanged while Dashboard uses the Draft flow.
