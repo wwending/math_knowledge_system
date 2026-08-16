@@ -123,6 +123,9 @@ jobs:
             -t "math-knowledge-web-ci:${IMAGE_TAG}" \
             .
 
+      - name: Verify web static asset MIME types
+        run: bash deploy/tests/test_nginx_mime.sh "math-knowledge-web-ci:${IMAGE_TAG}"
+
       - name: Verify production image revisions
         run: |
           verify_revision() {
