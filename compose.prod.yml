@@ -22,12 +22,7 @@ services:
       - app
 
   backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-      args:
-        GIT_SHA: ${GIT_SHA:-unknown}
-    image: math-knowledge-backend:${IMAGE_TAG:-unknown}
+    image: "ghcr.io/wwending/math-knowledge-backend:${IMAGE_TAG:?IMAGE_TAG must be set}"
     restart: unless-stopped
     env_file:
       - ./deploy/.env
@@ -54,12 +49,7 @@ services:
       - app
 
   web:
-    build:
-      context: .
-      dockerfile: frontend/Dockerfile
-      args:
-        GIT_SHA: ${GIT_SHA:-unknown}
-    image: math-knowledge-web:${IMAGE_TAG:-unknown}
+    image: "ghcr.io/wwending/math-knowledge-web:${IMAGE_TAG:?IMAGE_TAG must be set}"
     restart: unless-stopped
     depends_on:
       backend:

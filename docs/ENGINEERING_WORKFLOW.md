@@ -102,7 +102,7 @@ After a change is merged to `main`, the release image workflow builds the backen
 - `ghcr.io/wwending/math-knowledge-backend:<full-sha>`
 - `ghcr.io/wwending/math-knowledge-web:<full-sha>`
 
-The workflow records each pushed digest and preserves the same SHA in the OCI revision metadata. The current server deployment has not switched to pulling these GHCR images; Staging pull and deployment migration belong to the next stage.
+The workflow records each pushed digest and preserves the same SHA in the OCI revision metadata. Production-like deployment selects those backend and web images by the checkout's full Git SHA, pulls them from GHCR, verifies their OCI revision before backup or migration, and records the pulled RepoDigests in the deployment report. The server does not rebuild application images and does not fall back to a local build if pull fails. In short: `main -> build once -> GHCR -> Staging/Demo pull`. A checkout can therefore be deployed only after its `main` publish workflow has succeeded; GHCR authentication, when required, remains an administrator preflight responsibility.
 
 ## Validation layers
 
