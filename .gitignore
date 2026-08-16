@@ -105,4 +105,5 @@ backend/reports/ocr_ab/
 
 .claude/settings.local.json
 
-/AGENTS.md
+# --- Project-local Codex checkout rules ---
+/AGENTS.override.md
