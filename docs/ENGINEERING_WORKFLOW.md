@@ -20,24 +20,24 @@ Non-responsibilities:
 
 ### Staging Debian server
 
-Integration environment.
+Integration environment used when a change needs real Linux/Docker/runtime validation.
 
 Responsibilities:
 
 - test an exact PR/head commit under Linux + Docker;
-- real Compose/network/volume/Nginx/Gotenberg validation;
+- real Compose/network/volume/Nginx/Gotenberg validation when relevant;
 - requested real Baidu OCR + LLM smoke tests;
-- migration and backup rehearsal;
+- migration and backup rehearsal when relevant;
 - deployment script validation.
 
 ### Demo Debian server
 
-Production-like demonstration environment.
+Production-like demonstration environment used only when intentionally deploying a reviewed release candidate or merged commit.
 
 Responsibilities:
 
 - run only reviewed/validated commits;
-- practice backup, migration, exact-SHA deployment, health checks, smoke tests, and rollback discipline.
+- practice backup, migration, exact-SHA deployment, health checks, smoke tests, and rollback discipline when a Demo deployment is actually requested.
 
 ## Normal change flow
 
@@ -48,15 +48,13 @@ Issue / task
   -> push branch
   -> Draft PR
   -> GitHub Actions
-  -> Staging deploy exact PR HEAD SHA
-  -> real integration/smoke evidence
+  -> Staging exact-SHA validation [when runtime/integration dependent]
   -> review + fixes
   -> merge main
-  -> resolve merged main SHA
-  -> Demo backup/preflight
-  -> Demo deploy exact SHA
-  -> Demo health + minimal smoke
+  -> Demo exact-SHA deployment [when intentionally releasing to Demo]
 ```
+
+Documentation-only, governance-only, or other non-runtime changes normally do not require Staging or Demo deployment unless they change executable deployment commands, runtime contracts, infrastructure behavior, or release evidence.
 
 ## Branch naming
 
@@ -94,7 +92,7 @@ Merge is a human-controlled release decision, not an automatic consequence of gr
 
 ## Exact-SHA principle
 
-Every Staging and Demo report should record the exact commit SHA tested/deployed.
+Every Staging test report and every Demo deployment report should record the exact commit SHA tested/deployed.
 Branch names such as `main` or `feat/foo` are moving references and are not sufficient deployment evidence.
 
 ## Validation layers
@@ -118,20 +116,32 @@ Independent clean-environment gate:
 - dependency review;
 - Compose/shell/image-build checks currently defined in workflows.
 
-### Layer 3 — Staging
+### Layer 3 — Staging (when required)
 
-Real runtime gate:
+Use for changes whose correctness depends on real Linux/Docker/runtime behavior, including as relevant:
 
 - container startup/health;
 - networking/volumes/permissions;
 - Nginx routing;
-- Gotenberg/PDF when relevant;
-- Alembic migration when relevant;
+- Gotenberg/PDF;
+- Alembic migration;
+- backup/restore rehearsal;
 - real Baidu OCR/LLM smoke when explicitly required.
 
-### Layer 4 — Demo
+Do not require Staging merely as a ritual for documentation-only or other changes with no runtime/integration dependency.
+
+### Layer 4 — Demo (when intentionally deploying)
 
 Minimal post-deploy verification proving the intended artifact/SHA is actually healthy in the production-like environment.
+
+Do not deploy every merged PR to Demo automatically. Demo deployment is an explicit release/deployment action.
+
+## Project-local Codex rules
+
+Project-wide instructions live in the repository-tracked root `AGENTS.md`.
+Checkout-specific instructions for Windows, Staging, or Demo belong in a root `AGENTS.override.md` inside that checkout and are intentionally ignored by Git.
+
+Do not place `math_knowledge_system`-specific instructions into global `~/.codex/AGENTS.md` or `~/.codex/AGENTS.override.md` as part of this project workflow.
 
 ## Documentation ownership
 
@@ -149,7 +159,7 @@ A normal PR is done when:
 - regression tests exist for meaningful behavior changes;
 - relevant local checks pass;
 - required CI passes;
-- environment-specific unverified items are either tested in Staging or explicitly documented;
+- environment-specific unverified items are either tested in Staging when required or explicitly documented;
 - migration/deployment impact is stated;
 - active known risks are recorded in the correct place;
 - PR is reviewable and reversible at a reasonable cost.
