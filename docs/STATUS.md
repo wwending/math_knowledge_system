@@ -1,5 +1,13 @@
 # STATUS
 
+## 2026-08-17 first-party release image digest-pinned deployment contract
+
+- 当前 implementation PR 将 production Compose 和部署脚本从 backend/web 完整 Git SHA tag 升级为 trusted `repository@sha256:...` 输入；digest 缺失、格式非法、OCI revision 不等于 checkout SHA 或 RepoDigest 不精确匹配都会在 backup、Alembic migration 和 rollout 前 fail closed。
+- Git SHA 继续作为 source identity，main publisher 的 SHA tag 继续用于 release discovery / traceability；successful main `Publish release images` 记录的 backend/web digest 是服务器部署的 immutable artifact identity，部署脚本不通过 tag 自行解析 digest，也没有 build fallback。
+- `Production stack checks` 保持原 required job name，并为 Compose/部署合同使用固定合法 digest fixture；正式 Dockerfile build、OCI revision 和 Nginx `.mjs` MIME validation 继续保留，PR CI 不 pull 虚构的 GHCR digest。
+- 该 PR 只实现 first-party backend/web 合同和 CI 验证，未连接 [SERVER]。现有 Staging 仍是下节记录的 SHA-tag rollout；真实 digest-pinned Staging 验证必须等待 PR merge、新 main publisher 成功并显式提供两个 release digest。
+- Gotenberg 仍使用 `gotenberg/gotenberg:8.34.0-chromium` 固定 version tag；本阶段不包含第三方 digest pinning、签名/SLSA、自动部署、HTTPS、Demo/production rollout 或 GHCR credential 生命周期管理。
+
 ## 2026-08-16 production-like deployment 使用 GHCR release images
 
 - `main` publish workflow 按完整 Git SHA 构建并发布 backend/web release images；production Compose 使用同一 SHA tag 从 GHCR 拉取，不再在部署服务器构建 application images。
@@ -7,7 +15,7 @@
 - `Production stack checks` 保留原 job 名，独立执行 Compose 合同验证、backend/web Dockerfile 构建和 OCI revision 验证；PR CI 不尝试拉取不存在的 PR HEAD release image。
 - 首次完整 Staging GHCR pull-only deployment 已在 [SERVER] 通过：部署 `main` SHA `b78fbd43deadda495771d0fe221d76d81e9486b2`，backend RepoDigest 为 `sha256:c4e78f2a6ce0f5c2b4d532be81c92d795522f1d446f6d88ce2daa8f354f5d524`，web RepoDigest 为 `sha256:f039b40b67c5b0f0ab319fd39c6649dcec4961c42f9b4c335d56b50434574993`。
 - 本次闭环已覆盖 `main SHA -> GHCR SHA-tagged images -> exact digest verification -> server pull -> revision/digest gate -> backup -> Alembic migration -> Compose rollout -> HTTP/Nginx health -> backend 到内部 Gotenberg 的真实 PDF smoke`；数据库 `current == head == 20260604_0005`，服务健康且 restart count 均为 0，数据库 quick check 与 uploads 完整性通过。
-- 本次是 Staging infrastructure deployment 验证，不代表 Demo/production deployment 或 production ready；Compose 仍按可变的 SHA tag 引用镜像，尚未 digest pinning，GHCR credential 生命周期仍由管理员管理，authenticated business-level `/papers/{id}/pdf` 未在本次部署中重新执行。
+- 该次是 SHA-tag Staging infrastructure deployment 验证，不代表 Demo/production deployment 或 production ready；后续 digest-pinned implementation contract 见上节，但尚未在 [SERVER] rollout。GHCR credential 生命周期仍由管理员管理，authenticated business-level `/papers/{id}/pdf` 未在该次部署中重新执行。
 
 ## 2026-08-06 KaTeX 块公式解析限制加固
 

@@ -7,7 +7,7 @@
 - 一台安装了 Docker Engine、Docker Compose v2、Git、curl、tar 和 sha256sum 的 Linux 服务器。
 - 仓库建议检出到固定目录，例如 `/opt/math-knowledge-system`。
 - 部署脚本需要能够创建并调整 `/srv/math-knowledge` 下目录的属主；首次执行通常使用 `sudo`。
-- 当前 checkout 的完整 Git SHA 必须已有成功的 `main` release image publish workflow；如 GHCR package 需要认证，管理员须在部署前完成 `docker login ghcr.io`，部署脚本不读取或管理凭据。
+- 当前 checkout 的完整 Git SHA 必须已有成功的 `main` `Publish release images` workflow；部署调用方须从该次成功 workflow 取得 backend/web digest，并显式传给部署脚本。如 GHCR package 需要认证，管理员须在部署前完成 `docker login ghcr.io`，部署脚本不读取或管理凭据。
 - 防火墙只开放选定的 HTTP 端口。不要开放后端 `8000`。
 
 ## RC HTTP 部署
@@ -23,17 +23,23 @@ cp deploy/.env.production.example deploy/.env
 
 ```bash
 chmod +x deploy/scripts/*.sh
-sudo ./deploy/scripts/deploy.sh
+sudo env \
+  BACKEND_IMAGE_DIGEST='sha256:<backend-64-hex>' \
+  WEB_IMAGE_DIGEST='sha256:<web-64-hex>' \
+  ./deploy/scripts/deploy.sh
 ```
 
-脚本拒绝从 dirty Git worktree 部署。工作树干净时，backend 和 web 的 production image tag 使用当前完整 Git commit SHA，并从 GHCR 拉取对应的 release images；服务器不再构建 application images，pull 失败也不会 fallback 到本地 build。拉取完成后，脚本会在任何备份、migration 或启动操作之前确认两个镜像的 OCI `org.opencontainers.image.revision` 都等于 checkout SHA，并验证、记录实际拉取的 GHCR RepoDigest。随后才会备份已有数据、显式执行 Alembic migration、启动服务和等待健康检查，最终输出 Git commit、image、revision 与 digest。任何步骤失败都会返回非零退出码；pull、revision 或 digest 验证失败时不会执行 backup、migration 或启动服务。脚本不会创建 PAT、执行 Docker login、读取 GHCR credential，也不会运行 `docker system prune`、删除 volume 或删除历史备份。
+这里有三个互补的 artifact identity：Git SHA 是 source identity；同 SHA 的 GHCR tag 用于 release discovery / traceability；publisher 记录的 digest 是服务器实际消费的 immutable artifact identity。支持的发布路径是：合并到 `main` → `Publish release images` 成功并输出 backend/web digest → checkout 对应的精确 main SHA → 把两个 trusted digest 作为部署输入 → 按 `repository@sha256:...` pull → 验证两个镜像的 OCI `org.opencontainers.image.revision` 都等于 checkout SHA → backup、migration 和 rollout。部署脚本不会通过 SHA tag、`main` 或 `latest` 自行解析或选择 digest。
+
+脚本拒绝 dirty Git worktree，也会在任何目录创建、pull、backup、migration 或服务替换前，要求两个 digest 严格匹配 `sha256:<64 lowercase hex>`。digest 缺失或格式非法会失败；pull、OCI revision 或 exact RepoDigest 不匹配也会失败，且不会继续 backup、migration 或启动服务。服务器不构建 application images，pull 失败没有本地 build fallback。最终报告包含 Git commit、完整 `repository@digest` image reference、revision 与 exact RepoDigest。脚本不会创建 PAT、执行 Docker login、读取 GHCR credential，也不会运行 `docker system prune`、删除 volume 或删除历史备份。
 
 默认公网或普通 RC 使用 `HTTP_BIND_ADDR=0.0.0.0` 和 `HTTP_PORT=8080`，访问地址为 `http://SERVER_IP:8080`。SSH tunnel/private RC 推荐使用 `HTTP_BIND_ADDR=127.0.0.1` 和 `HTTP_PORT=8000`，以避免 Web 端口直接暴露到公网。访问链路为 `Windows localhost:8000` → SSH local forwarding → `Server 127.0.0.1:8000` → Web/Nginx → `backend:8000` (Docker internal only)。后端 `8000` 始终只在 Compose 内部网络中暴露，不映射到宿主机；DNS 和 HTTPS 可在正式上线阶段再配置。前端生产构建默认使用当前页面同源地址，因此 API 请求为 `/api/v1/*`，上传资源为 `/static/*`；如有特殊需求仍可在构建时设置 `VITE_API_BASE_URL`。
 
 如需创建初始管理员，可在部署后显式执行：
 
 ```bash
-export IMAGE_TAG="$(git rev-parse HEAD)"
+export BACKEND_IMAGE_DIGEST='sha256:<backend-64-hex>'
+export WEB_IMAGE_DIGEST='sha256:<web-64-hex>'
 docker compose --env-file deploy/.env -f compose.prod.yml run --rm \
   -e ADMIN_PHONE=实际手机号 -e ADMIN_PASSWORD='一次性强密码' \
   backend python -m app.scripts.create_admin
@@ -56,7 +62,8 @@ docker compose --env-file deploy/.env -f compose.prod.yml run --rm \
 容器内固定使用 `/data/math_knowledge.db`、`/data/static`、`/data/static/uploads` 和 `/data/pdf_temp`。试卷导出 PDF 仅在请求期间存在于内存和 Gotenberg 临时工作区，不写入持久化目录；`pdf_temp` 仍供既有 PDF 上传解析流程使用。后端镜像不包含 `.env` 或真实密钥，构建阶段不会调用 OCR/LLM。运行时 schema 开关被 Compose 强制关闭，数据库只通过以下显式命令升级：
 
 ```bash
-export IMAGE_TAG="$(git rev-parse HEAD)"
+export BACKEND_IMAGE_DIGEST='sha256:<backend-64-hex>'
+export WEB_IMAGE_DIGEST='sha256:<web-64-hex>'
 docker compose --env-file deploy/.env -f compose.prod.yml run --rm backend alembic upgrade head
 ```
 
@@ -67,6 +74,8 @@ docker compose --env-file deploy/.env -f compose.prod.yml run --rm backend alemb
 ```bash
 sudo ./deploy/scripts/backup.sh
 ```
+
+由 `deploy.sh` 调用时，备份脚本继承本次目标 release 的两个 digest，因此数据库快照使用即将部署的 pinned backend image。独立手工运行且未显式提供 digest 时，脚本只接受当前 Compose project 中唯一运行的 backend/web 容器，并要求其 `.Config.Image` 分别是预期 GHCR repository 的合法 `repository@sha256:...` 引用；容器不存在、数量不唯一、仍使用 tag 或 repository 不符时会 fail closed，并提示显式提供 trusted digests。它不会从 Git SHA tag、`main` 或 `latest` 解析 digest，也不会 fallback build。
 
 每次备份写入 `/srv/math-knowledge/backups/<UTC时间>/`，包含：
 
@@ -104,19 +113,20 @@ REFRESH_TOKEN_COOKIE_SAMESITE=lax
 ## 运维检查
 
 ```bash
-export IMAGE_TAG="$(git rev-parse HEAD)"
+export BACKEND_IMAGE_DIGEST='sha256:<backend-64-hex>'
+export WEB_IMAGE_DIGEST='sha256:<web-64-hex>'
 docker compose --env-file deploy/.env -f compose.prod.yml ps
 docker compose --env-file deploy/.env -f compose.prod.yml logs --tail=200 backend gotenberg web
 curl --fail http://127.0.0.1:8080/healthz
 
 docker image inspect \
   --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' \
-  "ghcr.io/wwending/math-knowledge-backend:${IMAGE_TAG}"
+  "ghcr.io/wwending/math-knowledge-backend@${BACKEND_IMAGE_DIGEST}"
 docker image inspect \
   --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' \
-  "ghcr.io/wwending/math-knowledge-web:${IMAGE_TAG}"
+  "ghcr.io/wwending/math-knowledge-web@${WEB_IMAGE_DIGEST}"
 ```
 
-也可以用 `docker image inspect` 的 `.RepoDigests` 或对运行中的容器执行 `docker inspect`，把实际 artifact digest、同名 OCI revision、部署 commit 和完整 SHA tag 交叉比对。Compose 仍以完整 Git SHA tag 选择 artifact；本阶段只记录 digest，不做 digest pinning。
+也可以用 `docker image inspect` 的 `.RepoDigests` 或对运行中的容器执行 `docker inspect`，把 exact artifact digest、OCI revision、部署 commit 和用于发现 release 的完整 SHA tag 交叉比对。Compose 对 first-party backend/web 使用 digest；第三方 `gotenberg/gotenberg:8.34.0-chromium` 本阶段仍保持固定 version tag。
 
 发布前仍需按 `docs/MVP_RELEASE_CHECKLIST.md` 完成真实百度 OCR + LLM + Draft + 题库 + 组卷 + Paper Preview smoke。本部署能力不改变业务逻辑，也不代表 v0.1 已正式生产验收。
