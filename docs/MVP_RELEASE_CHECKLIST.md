@@ -14,7 +14,7 @@
 - LLM：DeepSeek 或兼容 OpenAI API 的服务。
 - Draft 人工确认是正式入库前的必要步骤。
 - RapidOCR 仅保留为历史实验代码，不属于 v0.1 交付范围。除非真实客户需求或成本数据要求重新评估，否则不再继续迁移或比较本地 OCR。
-- 当前导出方式为 Paper Preview 中的浏览器打印或另存为 PDF；不包含服务端 PDF / DOCX 导出。
+- Paper Preview 已支持服务端 PDF 导出：前端通过 authenticated `POST /api/v1/papers/{paper_id}/pdf` 请求 backend，backend 使用 `GotenbergPdfGenerationService` 通过内部 `gotenberg:3000` 生成 PDF；Gotenberg 不暴露宿主机端口。浏览器 print CSS 仍保留；DOCX 导出不在当前范围。
 
 ## 2. 自动检查
 
@@ -114,6 +114,7 @@ npm run dev
 | 用户数据隔离 | 普通用户不能读取或组卷其他用户题目；错误响应不泄露他人数据 | 待人工验证 | |
 | 组卷快照 | 建卷后修改题库原题，既有 PaperItem 内容保持创建时快照 | 待人工验证 | |
 | Paper Preview | 学生版可预览，且不返回答案与解析快照 | 待人工验证 | |
+| 服务端 PDF 导出 | 登录用户从 Paper Preview 导出 PDF，文件可打开且关键题目内容不缺失 | 待人工验证 | |
 | 浏览器打印/另存 PDF | 预览可打印或另存 PDF，关键题目内容不缺失 | 待人工验证 | |
 
 ## 7. 已知非阻塞问题
@@ -124,7 +125,7 @@ npm run dev
 - LLM 仍可能超时、返回空内容或改变数学语义；`partial_success` 和调试信息不能替代人工核对。
 - 重复保存当前返回 409，不返回既有保存结果。
 - `SourceAsset.sha256` 是全局唯一约束；不同用户上传完全相同文件仍是已知隔离边界。
-- Paper Preview 不支持正式排版引擎级自动分页，当前仅使用浏览器打印/另存 PDF。
+- Paper Preview 支持服务端 PDF 导出并保留浏览器 print CSS，但仍不支持正式排版引擎级自动分页。
 - 后台题型/难度任务依赖当前后端进程，进程重启可能丢失执行中的任务。
 
 ## 8. 发布签字
