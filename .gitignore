@@ -104,5 +104,3 @@ data/manual_smoke/predictions/
 backend/reports/ocr_ab/
 
 .claude/settings.local.json
-
-/AGENTS.md
