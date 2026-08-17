@@ -3,9 +3,10 @@
 ## 2026-08-17 裁剪识别图像质量修复
 
 - 前端裁剪链路不再依赖 `vue-cropper 1.1.4` 的默认 `maxImgSize=2000`；现在按源图真实像素显式计算上限，最长边不超过 8192px、总像素不超过 3600 万，常见 4961×7016 的 600 DPI A4 扫描保持原始像素。
-- 裁剪输出改为 PNG，上传文件的 MIME 与扩展名保持一致，避免 cropper 输入预处理和最终裁剪继续引入 JPEG 有损重编码；PDF 页面仍按既有 2.5 倍 Canvas 和 JPEG 中间图生成，本轮未扩大 PDF 流程范围。
+- 裁剪首先生成 PNG；16 MiB 以内直接上传，超出后依次尝试保持像素尺寸的 JPEG quality 0.95、0.90、0.85，仍超限才进行一次 0.75–0.90 比例的有限降采样，最后仍超过 16 MiB 则阻止上传并要求缩小裁剪范围。该 soft limit 为 Nginx 和后端共同的 20 MiB 上限保留 multipart/代理余量；上传文件的 MIME 与扩展名保持一致。PDF 页面仍按既有 2.5 倍 Canvas 和 JPEG 中间图生成。
 - 本地无头浏览器对同一 4961×7016 JPEG、396×560 CSS 裁剪框的实测：旧配置内部输入 1414×2000、输出 1131×1600 JPEG；新配置内部输入 4961×7016、输出 3969×5613 PNG。CSS 裁剪框尺寸不是上传 Blob 的像素尺寸。
 - 新增尺寸上限、PNG MIME/文件名和 Dashboard cropper 配置回归测试，并纳入 Stage 3 前端合同；真实 Issue #20 样本的整页/裁剪 OCR 人工对比仍需在 Draft PR 验收。
+- 本地真实 Canvas/Blob 合成验证：3969×5613 白底文字图的 PNG 为 1,617,150 bytes，保持 PNG 原尺寸；4096×4096 高熵彩色噪声 PNG 为 57,717,592 bytes，自动选择保持原尺寸的 JPEG quality 0.90，最终为 13,825,093 bytes。普通图片 Blob URL 会在替换、重置、解码失败和组件卸载时释放。
 
 ## 2026-08-17 first-party release image digest-pinned deployment contract
 

@@ -130,7 +130,7 @@
                 <el-button
                   type="primary"
                   class="confirm-btn"
-                  :loading="ocrLoading"
+                  :loading="ocrLoading || cropEncoding"
                   :disabled="isDraftBusy"
                   @click="confirmCropAndUpload"
                 >
@@ -265,7 +265,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import axios from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Clock, Collection, DataAnalysis, Document, UploadFilled, UserFilled } from '@element-plus/icons-vue'
@@ -278,7 +278,9 @@ import { renderMarkdown } from '@/utils/renderMarkdown'
 import {
   CROPPER_MAX_EDGE,
   CROP_OUTPUT_TYPE,
+  CropImageTooLargeError,
   calculateCropperMaxImageSize,
+  createCropUploadFile,
   createImageUploadFile
 } from '../utils/imageProcessing.mjs'
 import {
@@ -321,6 +323,8 @@ const saveResult = ref(null)
 const recognitionDebug = ref(null)
 const qualityWarnings = ref([])
 const cropperMaxImgSize = ref(CROPPER_MAX_EDGE)
+const cropEncoding = ref(false)
+let cropEncodingGeneration = 0
 const editMode = ref(false)
 const editContent = ref('')
 const editSaving = ref(false)
@@ -505,7 +509,7 @@ const formatQualityWarning = (warning) => {
   return warning?.message || '识别结果存在风险，请保存前核对。'
 }
 
-const isDraftBusy = computed(() => ocrLoading.value || draftStatus.value === 'recognizing')
+const isDraftBusy = computed(() => cropEncoding.value || ocrLoading.value || draftStatus.value === 'recognizing')
 const canSaveDraft = computed(
   () =>
     draftStatus.value === 'draft_ready' &&
@@ -587,7 +591,7 @@ const handleFileSelect = async (uploadFile) => {
   try {
     const dimensions = await loadImageDimensions(objectUrl)
     cropperMaxImgSize.value = calculateCropperMaxImageSize(dimensions.width, dimensions.height)
-    currentImageUrl.value = objectUrl
+    setCurrentImageSource(objectUrl)
     step.value = 'process-image'
     processMode.value = 'full'
   } catch (error) {
@@ -604,7 +608,21 @@ const loadImageDimensions = (source) => new Promise((resolve, reject) => {
   image.src = source
 })
 
+const revokeImageObjectUrl = (source) => {
+  if (typeof source === 'string' && source.startsWith('blob:')) {
+    URL.revokeObjectURL(source)
+  }
+}
+
+const setCurrentImageSource = (source) => {
+  if (currentImageUrl.value !== source) {
+    revokeImageObjectUrl(currentImageUrl.value)
+  }
+  currentImageUrl.value = source
+}
+
 const renderPdfToImages = async (file) => {
+  setCurrentImageSource('')
   step.value = 'preview-pdf'
   pdfLoading.value = true
   pdfPages.value = []
@@ -638,7 +656,7 @@ const renderPdfToImages = async (file) => {
 }
 
 const selectPdfPage = (pageData) => {
-  currentImageUrl.value = pageData.src
+  setCurrentImageSource(pageData.src)
   cropperMaxImgSize.value = calculateCropperMaxImageSize(pageData.width, pageData.height)
   step.value = 'process-image'
   processMode.value = 'full'
@@ -649,13 +667,33 @@ const confirmCropAndUpload = () => {
     return
   }
 
-  cropperRef.value.getCropBlob((blob) => {
-    if (!blob) {
-      ElMessage.error('裁剪图片生成失败，请调整裁剪区域后重试。')
-      return
+  const generation = ++cropEncodingGeneration
+  cropEncoding.value = true
+  cropperRef.value.getCropBlob(async (blob) => {
+    try {
+      if (!blob) {
+        throw new Error('Cropper returned an empty Blob')
+      }
+      const { file } = await createCropUploadFile(blob)
+      if (generation !== cropEncodingGeneration) {
+        return
+      }
+      runRecognition(file)
+    } catch (error) {
+      if (generation !== cropEncodingGeneration) {
+        return
+      }
+      console.error(error)
+      if (error instanceof CropImageTooLargeError) {
+        ElMessage.error('裁剪图片过大，请缩小裁剪范围后重试。')
+      } else {
+        ElMessage.error('裁剪图片处理失败，请调整裁剪区域后重试。')
+      }
+    } finally {
+      if (generation === cropEncodingGeneration) {
+        cropEncoding.value = false
+      }
     }
-    const file = createImageUploadFile(blob, 'crop_question')
-    runRecognition(file)
   })
 }
 
@@ -885,9 +923,11 @@ const saveDraftToBank = async () => {
 }
 
 const resetUpload = () => {
+  cropEncodingGeneration += 1
   step.value = 'select-file'
-  currentImageUrl.value = ''
+  setCurrentImageSource('')
   cropperMaxImgSize.value = CROPPER_MAX_EDGE
+  cropEncoding.value = false
   pdfPages.value = []
   ocrResult.value = ''
   recognizeWarning.value = ''
@@ -914,6 +954,11 @@ onMounted(async () => {
   if (!adminMode.value && activeMenu.value === 'users') {
     activeMenu.value = 'upload'
   }
+})
+
+onBeforeUnmount(() => {
+  cropEncodingGeneration += 1
+  revokeImageObjectUrl(currentImageUrl.value)
 })
 </script>
 
