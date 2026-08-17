@@ -122,11 +122,22 @@
                   :max-img-size="cropperMaxImgSize"
                   :auto-crop="true"
                   :center-box="true"
+                  :can-move="true"
+                  :can-move-box="true"
+                  :can-scale="true"
                   :fixed-box="false"
                   :full="true"
                   :high="true"
-                  mode="contain"
+                  :info-true="true"
+                  mode="cover"
                 />
+                <div class="cropper-toolbar">
+                  <span>拖动图片定位题目，可使用滚轮或 +/- 缩放。</span>
+                  <el-button-group>
+                    <el-button aria-label="缩小裁剪图片" @click="changeCropperScale(-10)">−</el-button>
+                    <el-button aria-label="放大裁剪图片" @click="changeCropperScale(10)">+</el-button>
+                  </el-button-group>
+                </div>
                 <el-button
                   type="primary"
                   class="confirm-btn"
@@ -328,6 +339,10 @@ let cropEncodingGeneration = 0
 const editMode = ref(false)
 const editContent = ref('')
 const editSaving = ref(false)
+
+const changeCropperScale = (amount) => {
+  cropperRef.value?.changeScale(amount)
+}
 
 const currentUser = computed(() => authState.currentUser)
 const adminMode = computed(() => isAdminUser(currentUser.value))
@@ -1206,6 +1221,28 @@ onBeforeUnmount(() => {
   background-color: #233843;
   border-radius: 16px;
   overflow: hidden;
+}
+
+.cropper-toolbar {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  right: 16px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px 8px 14px;
+  color: #fff;
+  background: rgba(17, 38, 49, 0.78);
+  border-radius: 10px;
+  pointer-events: none;
+}
+
+.cropper-toolbar .el-button-group {
+  flex: none;
+  pointer-events: auto;
 }
 
 .confirm-btn {

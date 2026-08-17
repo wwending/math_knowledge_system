@@ -7,6 +7,7 @@
 - 本地无头浏览器对同一 4961×7016 JPEG、396×560 CSS 裁剪框的实测：旧配置内部输入 1414×2000、输出 1131×1600 JPEG；新配置内部输入 4961×7016、输出 3969×5613 PNG。CSS 裁剪框尺寸不是上传 Blob 的像素尺寸。
 - 新增尺寸上限、PNG MIME/文件名和 Dashboard cropper 配置回归测试，并纳入 Stage 3 前端合同；真实 Issue #20 样本的整页/裁剪 OCR 人工对比仍需在 Draft PR 验收。
 - 本地真实 Canvas/Blob 合成验证：3969×5613 白底文字图的 PNG 为 1,617,150 bytes，保持 PNG 原尺寸；4096×4096 高熵彩色噪声 PNG 为 57,717,592 bytes，自动选择保持原尺寸的 JPEG quality 0.90，最终为 13,825,093 bytes。普通图片 Blob URL 会在替换、重置、解码失败和组件卸载时释放。
+- 第一轮真实 UI 验收发现第二层问题：固定高度的横向裁剪 viewport 配合 `mode=contain` 会把竖版 A4 完整缩入容器，导致默认显示宽度过小。当前 PR 改为可读优先的默认 `cover` 视图，保留图片/裁剪框平移、滚轮缩放，并增加明确的 +/- 控件和真实输出像素尺寸标签；高清 source bitmap、`full=true` Blob 输出与 adaptive encoding 策略不变。第二轮真实 Issue #20 人工 UI 验收仍待完成。
 
 ## 2026-08-17 first-party release image digest-pinned deployment contract
 
