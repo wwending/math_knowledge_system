@@ -1,5 +1,11 @@
 # STATUS
 
+## 2026-08-17 组卷答题区改为 50mm 纯留白
+
+- `answer_area_mode=after_each_question` 的 render model 使用 `height_mm: 50` 明确表达固定高度，不再输出横线行数；`none` 继续表示无答题区，API 枚举保持兼容。
+- 组卷界面默认选择“每题后留白”，前端预览按模型使用 CSS `mm` 单位渲染，PDF HTML 同步输出 50mm 白底空白且不包含横线或占位文字。
+- PDF 分页只约束题干末尾块与答题区尾部，普通短题尽量避免题干和留白分离；不对整道题强制 `break-inside: avoid`，长题内容仍可跨页。
+
 ## 2026-08-17 first-party release image digest-pinned deployment contract
 
 - 当前 implementation PR 将 production Compose 和部署脚本从 backend/web 完整 Git SHA tag 升级为 trusted `repository@sha256:...` 输入；digest 缺失、格式非法、OCI revision 不等于 checkout SHA 或 RepoDigest 不精确匹配都会在 backup、Alembic migration 和 rollout 前 fail closed。

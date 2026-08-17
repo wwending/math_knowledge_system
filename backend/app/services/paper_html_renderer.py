@@ -203,15 +203,17 @@ def render_paper_html(model: PaperRenderModel, options: PdfGenerationOptions) ->
             if item.knowledge_tags:
                 tag_html = "".join(f"<span>{html.escape(tag.label)}</span>" for tag in item.knowledge_tags)
                 tags = f'<div class="knowledge-tags">{tag_html}</div>'
-            answer_lines = ""
+            question_tail = ""
             if item.answer_area:
-                lines = "".join('<div class="answer-line"></div>' for _ in range(item.answer_area.lines))
-                answer_lines = f'<div class="answer-lines">{lines}</div>'
+                answer_area = (
+                    f'<div class="answer-area" style="height: {item.answer_area.height_mm:g}mm"></div>'
+                )
+                question_tail = f'<div class="question-tail">{tags}{answer_area}</div>'
             item_html.append(
                 '<article class="question">'
                 f'<div class="question-heading"><span>{item.display_number}.</span>{score}</div>'
                 f'<div class="question-content">{_render_markdown(item.content)}</div>'
-                f"{tags}{answer_lines}</article>"
+                f"{question_tail or tags}</article>"
             )
         sections_html.append(
             f'<section class="paper-section"><h2>{html.escape(section.title)}</h2>{"".join(item_html)}</section>'
@@ -247,6 +249,7 @@ h1 {{ margin: 0 0 2.5mm; font-size: 20pt; line-height: 1.3; }}
 .question {{ margin-bottom: 6mm; }}
 .question-heading {{ display: flex; gap: 1.5mm; font-weight: 700; margin-bottom: 2mm; break-after: avoid; }}
 .question-content p {{ margin: 0 0 2.5mm; }}
+.question-content > :last-child {{ break-after: avoid; page-break-after: avoid; }}
 .question-content h1, .question-content h2, .question-content h3 {{ font-size: 11.5pt; margin: 2mm 0; break-after: avoid; }}
 .question-content pre {{ white-space: pre-wrap; border: 0.2mm solid #d1d5db; padding: 2mm; }}
 .question-content math {{ font-size: 1.05em; }}
@@ -255,8 +258,8 @@ h1 {{ margin: 0 0 2.5mm; font-size: 20pt; line-height: 1.3; }}
 .score {{ font-weight: 400; }}
 .knowledge-tags {{ display: flex; flex-wrap: wrap; gap: 1.5mm; margin-top: 2mm; font-size: 9pt; color: #52616b; }}
 .knowledge-tags span {{ border: 0.2mm solid #cbd5df; border-radius: 1mm; padding: 0.5mm 1.5mm; }}
-.answer-lines {{ margin-top: 4mm; break-inside: avoid; }}
-.answer-line {{ height: 8mm; border-bottom: 0.25mm solid #b8c4cc; }}
+.question-tail {{ break-before: avoid; page-break-before: avoid; break-inside: avoid; page-break-inside: avoid; }}
+.answer-area {{ margin-top: 4mm; break-inside: avoid; page-break-inside: avoid; background: #fff; }}
 </style>
 </head>
 <body>

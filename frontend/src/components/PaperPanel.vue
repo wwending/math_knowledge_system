@@ -70,7 +70,7 @@
               <span>版本：学生版</span>
               <el-radio-group v-model="answerAreaMode" size="small">
                 <el-radio-button label="none">无答题区</el-radio-button>
-                <el-radio-button label="after_each_question">每题后横线</el-radio-button>
+                <el-radio-button label="after_each_question">每题后留白</el-radio-button>
               </el-radio-group>
             </div>
             <el-button type="primary" :loading="previewLoading" @click="fetchPaperRenderModel">
@@ -162,7 +162,7 @@ const previewLoading = ref(false)
 const errorMessage = ref('')
 const previewErrorMessage = ref('')
 const paperRenderModel = ref(null)
-const answerAreaMode = ref('none')
+const answerAreaMode = ref('after_each_question')
 
 const getErrorMessage = (error, fallback) => {
   const detail = error.response?.data?.detail
