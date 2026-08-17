@@ -5,13 +5,17 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 ENV_FILE="${ENV_FILE:-${REPO_ROOT}/deploy/.env}"
 COMPOSE_FILE="${REPO_ROOT}/compose.prod.yml"
-IMAGE_TAG="${IMAGE_TAG:-$(git -C "${REPO_ROOT}" rev-parse HEAD)}"
-export IMAGE_TAG
+
+source "${SCRIPT_DIR}/image-digests.sh"
 
 if [[ ! -f "${ENV_FILE}" ]]; then
     echo "Missing deployment environment file: ${ENV_FILE}" >&2
     exit 1
 fi
+
+BACKEND_REPOSITORY="ghcr.io/wwending/math-knowledge-backend"
+WEB_REPOSITORY="ghcr.io/wwending/math-knowledge-web"
+load_or_resolve_release_image_digests
 
 read_env_value() {
     local key="$1"

@@ -16,7 +16,7 @@
 - KaTeX renderer 支持仓库当前常用的上下标、分数、根号、`aligned`、`cases`、矩阵和中文 `\text{}`，但不支持动态 `\require`、Xy-pic、bussproofs 或任意完整 LaTeX；若未来引入这些核心公式，必须先做兼容性评估。
 - 当前仍有既有 Vite chunk size warning；本轮不宣称所有 npm 漏洞已清零。
 
-## 0.15 首次 Staging GHCR pull-only 部署已通过，仍有 artifact 与发布边界
+## 0.15 first-party digest-pinned deployment contract 已实现，待真实 Staging rollout 验证
 
 2026-08-16 已在 [SERVER] 使用 `main` SHA `b78fbd43deadda495771d0fe221d76d81e9486b2` 完成首次完整 Staging GHCR pull-only deployment。backend/web release images 的 pull、OCI revision、RepoDigest、备份、Alembic migration、Compose rollout、HTTP/Nginx health 和 backend 到内部 Gotenberg 的真实 PDF smoke 均通过；数据库 `current == head == 20260604_0005`，服务 restart count 均为 0，数据库 quick check 与 uploads 完整性通过。
 
@@ -28,7 +28,9 @@
 
 剩余注意：
 
-- 完整 Git SHA tag 本质仍是 mutable-style reference；Compose 尚未改为 digest pinning。
+- implementation PR 已将 backend/web Compose 与部署合同改为 trusted exact digest 输入，同时保留 checkout SHA 与 OCI revision 匹配门禁；当前 [SERVER] 仍运行上次已验证的 SHA-tag rollout，尚未执行真实 digest-pinned Staging deployment。
+- 合并后必须等待新的 successful main `Publish release images`，取得其记录的 backend/web digest，再以精确 main checkout 做一次显式 Staging rollout 验证；在此之前不能宣称 digest-pinned Staging 已通过。
+- 第三方 `gotenberg/gotenberg:8.34.0-chromium` 仍使用固定 version tag，未 digest pinning；本阶段不包含 image signing、SLSA 或 SBOM admission policy。
 - GHCR credential 生命周期不由 `deploy.sh` 管理，仍是管理员 preflight 责任。
 - authenticated business-level `/papers/{id}/pdf` 未在本次 infrastructure deployment 中重新执行；本次验证的是 backend 到 Gotenberg 的真实服务 smoke。
 - Demo/production HTTPS 与 Demo/production deployment 尚未完成；首次 Staging deployment 通过不等于 production ready。
