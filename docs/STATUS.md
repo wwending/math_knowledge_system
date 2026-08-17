@@ -1,5 +1,12 @@
 # STATUS
 
+## 2026-08-17 裁剪识别图像质量修复
+
+- 前端裁剪链路不再依赖 `vue-cropper 1.1.4` 的默认 `maxImgSize=2000`；现在按源图真实像素显式计算上限，最长边不超过 8192px、总像素不超过 3600 万，常见 4961×7016 的 600 DPI A4 扫描保持原始像素。
+- 裁剪输出改为 PNG，上传文件的 MIME 与扩展名保持一致，避免 cropper 输入预处理和最终裁剪继续引入 JPEG 有损重编码；PDF 页面仍按既有 2.5 倍 Canvas 和 JPEG 中间图生成，本轮未扩大 PDF 流程范围。
+- 本地无头浏览器对同一 4961×7016 JPEG、396×560 CSS 裁剪框的实测：旧配置内部输入 1414×2000、输出 1131×1600 JPEG；新配置内部输入 4961×7016、输出 3969×5613 PNG。CSS 裁剪框尺寸不是上传 Blob 的像素尺寸。
+- 新增尺寸上限、PNG MIME/文件名和 Dashboard cropper 配置回归测试，并纳入 Stage 3 前端合同；真实 Issue #20 样本的整页/裁剪 OCR 人工对比仍需在 Draft PR 验收。
+
 ## 2026-08-17 first-party release image digest-pinned deployment contract
 
 - 当前 implementation PR 将 production Compose 和部署脚本从 backend/web 完整 Git SHA tag 升级为 trusted `repository@sha256:...` 输入；digest 缺失、格式非法、OCI revision 不等于 checkout SHA 或 RepoDigest 不精确匹配都会在 backup、Alembic migration 和 rollout 前 fail closed。

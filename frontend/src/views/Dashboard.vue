@@ -93,7 +93,7 @@
                 class="pdf-page-card"
                 @click="selectPdfPage(pageData)"
               >
-                <img :src="pageData" class="pdf-thumb" />
+                <img :src="pageData.src" class="pdf-thumb" />
                 <div class="page-number">第 {{ index + 1 }} 页</div>
               </div>
             </div>
@@ -118,7 +118,8 @@
                   ref="cropperRef"
                   :img="currentImageUrl"
                   :output-size="1"
-                  output-type="jpeg"
+                  :output-type="CROP_OUTPUT_TYPE"
+                  :max-img-size="cropperMaxImgSize"
                   :auto-crop="true"
                   :center-box="true"
                   :fixed-box="false"
@@ -275,6 +276,12 @@ import { VueCropper } from 'vue-cropper'
 import { API_V1_BASE_URL } from '../config/api'
 import { renderMarkdown } from '@/utils/renderMarkdown'
 import {
+  CROPPER_MAX_EDGE,
+  CROP_OUTPUT_TYPE,
+  calculateCropperMaxImageSize,
+  createImageUploadFile
+} from '../utils/imageProcessing.mjs'
+import {
   authState,
   fetchCurrentUser,
   isAdminUser,
@@ -313,6 +320,7 @@ const saveBlocked = ref(false)
 const saveResult = ref(null)
 const recognitionDebug = ref(null)
 const qualityWarnings = ref([])
+const cropperMaxImgSize = ref(CROPPER_MAX_EDGE)
 const editMode = ref(false)
 const editContent = ref('')
 const editSaving = ref(false)
@@ -575,10 +583,26 @@ const handleFileSelect = async (uploadFile) => {
     return
   }
 
-  currentImageUrl.value = URL.createObjectURL(file)
-  step.value = 'process-image'
-  processMode.value = 'full'
+  const objectUrl = URL.createObjectURL(file)
+  try {
+    const dimensions = await loadImageDimensions(objectUrl)
+    cropperMaxImgSize.value = calculateCropperMaxImageSize(dimensions.width, dimensions.height)
+    currentImageUrl.value = objectUrl
+    step.value = 'process-image'
+    processMode.value = 'full'
+  } catch (error) {
+    URL.revokeObjectURL(objectUrl)
+    console.error(error)
+    ElMessage.error('图片解析失败，请重新选择有效的图片文件。')
+  }
 }
+
+const loadImageDimensions = (source) => new Promise((resolve, reject) => {
+  const image = new Image()
+  image.onload = () => resolve({ width: image.naturalWidth, height: image.naturalHeight })
+  image.onerror = () => reject(new Error('Unable to decode image dimensions'))
+  image.src = source
+})
 
 const renderPdfToImages = async (file) => {
   step.value = 'preview-pdf'
@@ -598,7 +622,11 @@ const renderPdfToImages = async (file) => {
       canvas.width = viewport.width
 
       await page.render({ canvasContext: context, viewport }).promise
-      pdfPages.value.push(canvas.toDataURL('image/jpeg'))
+      pdfPages.value.push({
+        src: canvas.toDataURL('image/jpeg'),
+        width: canvas.width,
+        height: canvas.height
+      })
     }
   } catch (error) {
     console.error(error)
@@ -609,8 +637,9 @@ const renderPdfToImages = async (file) => {
   }
 }
 
-const selectPdfPage = (base64Img) => {
-  currentImageUrl.value = base64Img
+const selectPdfPage = (pageData) => {
+  currentImageUrl.value = pageData.src
+  cropperMaxImgSize.value = calculateCropperMaxImageSize(pageData.width, pageData.height)
   step.value = 'process-image'
   processMode.value = 'full'
 }
@@ -621,7 +650,11 @@ const confirmCropAndUpload = () => {
   }
 
   cropperRef.value.getCropBlob((blob) => {
-    const file = new File([blob], 'crop_question.jpg', { type: 'image/jpeg' })
+    if (!blob) {
+      ElMessage.error('裁剪图片生成失败，请调整裁剪区域后重试。')
+      return
+    }
+    const file = createImageUploadFile(blob, 'crop_question')
     runRecognition(file)
   })
 }
@@ -634,7 +667,7 @@ const uploadFullImage = async () => {
   try {
     const response = await fetch(currentImageUrl.value)
     const blob = await response.blob()
-    const file = new File([blob], 'full_page.jpg', { type: 'image/jpeg' })
+    const file = createImageUploadFile(blob, 'full_page')
     runRecognition(file)
   } catch (error) {
     console.error(error)
@@ -854,6 +887,7 @@ const saveDraftToBank = async () => {
 const resetUpload = () => {
   step.value = 'select-file'
   currentImageUrl.value = ''
+  cropperMaxImgSize.value = CROPPER_MAX_EDGE
   pdfPages.value = []
   ocrResult.value = ''
   recognizeWarning.value = ''
