@@ -109,6 +109,14 @@ if (!existsSync(paperPanelPath)) {
     failures.push('PaperPanel does not expose answer_area_mode configuration')
   }
 
+  if (!paperPanelSource.includes("const answerAreaMode = ref('after_each_question')")) {
+    failures.push('PaperPanel does not default to an answer area after each question')
+  }
+
+  if (!paperPanelSource.includes('每题后留白') || paperPanelSource.includes('每题后横线')) {
+    failures.push('PaperPanel does not use the answer-space UI wording')
+  }
+
   if (!paperPanelSource.includes('PaperPreview')) {
     failures.push('PaperPanel does not render PaperPreview')
   }
@@ -145,6 +153,18 @@ if (!existsSync(paperPreviewPath)) {
 
   if (paperPreviewSource.includes('answer_snapshot') || paperPreviewSource.includes('analysis_snapshot')) {
     failures.push('PaperPreview renders answer or analysis snapshot fields')
+  }
+
+  if (!paperPreviewSource.includes('item.answer_area.height_mm') || !paperPreviewSource.includes('class="answer-area"')) {
+    failures.push('PaperPreview does not render the model-driven answer-space height')
+  }
+
+  if (!paperPreviewSource.includes('height: 50mm;')) {
+    failures.push('PaperPreview is missing the 50mm answer-space CSS contract')
+  }
+
+  if (paperPreviewSource.includes('answer-line') || paperPreviewSource.includes('answer-lines')) {
+    failures.push('PaperPreview still renders answer lines')
   }
 
   if (paperPreviewSource.includes('window.print()')) {

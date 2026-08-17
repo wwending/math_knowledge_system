@@ -86,7 +86,7 @@ LLM 目标输出结构：
 }
 ```
 
-  - `answer_area_mode` 支持 `none` 和 `after_each_question`，默认 `none`。
+  - `answer_area_mode` 支持 `none` 和 `after_each_question`；API 请求体省略该字段时仍默认 `none`，组卷界面默认请求 `after_each_question`。
   - 非法枚举值由 Pydantic 校验返回 `422`。
   - 试卷不存在或不属于当前用户时返回 `404`。
   - 学生版响应不包含答案或解析快照。
@@ -132,7 +132,7 @@ LLM 目标输出结构：
           ],
           "answer_area": {
             "mode": "after_each_question",
-            "lines": 4
+            "height_mm": 50
           }
         }
       ]
@@ -146,6 +146,7 @@ LLM 目标输出结构：
   - 服务端执行固定链路：`Paper -> PaperRenderModel -> controlled HTML -> Gotenberg Chromium -> PDF`。
   - 成功返回 `application/pdf` 与 attachment `Content-Disposition`；响应不缓存，也不会在服务器永久保存 PDF。
   - 当前仅开放 A4 portrait 默认版式。Gotenberg 不可用时返回稳定的 `503`，不会向客户端暴露内部服务地址或上游响应。
+  - `after_each_question` 在每题后生成固定 `50mm` 的纯白留白，不包含横线；短题末尾与留白尽量连续，长题题干仍允许跨页。
   - 该接口不接受任意 HTML 或 URL，不能作为通用 HTML/URL-to-PDF 代理。
 
 组卷快照：

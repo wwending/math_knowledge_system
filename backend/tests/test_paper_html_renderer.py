@@ -13,14 +13,14 @@ from app.services.paper_html_renderer import render_paper_html
 from app.services.pdf_generation_service import PdfGenerationOptions
 
 
-def _render_model(content: str) -> PaperRenderModel:
+def _render_model(content: str, *, with_answer_area: bool = True) -> PaperRenderModel:
     return PaperRenderModel(
         template_type="homework",
         version="student",
         paper_size="A4",
         group_by="question_type",
         sort_by="position",
-        answer_area_mode="after_each_question",
+        answer_area_mode="after_each_question" if with_answer_area else "none",
         paper=PaperRenderPaperMeta(
             id=7,
             title='中文试卷 <script>alert("title")</script>',
@@ -45,9 +45,10 @@ def _render_model(content: str) -> PaperRenderModel:
                         question_type="solution",
                         question_type_label="解答题",
                         knowledge_tags=[],
-                        answer_area=PaperRenderAnswerArea(
-                            mode="after_each_question",
-                            lines=4,
+                        answer_area=(
+                            PaperRenderAnswerArea(mode="after_each_question", height_mm=50)
+                            if with_answer_area
+                            else None
                         ),
                     )
                 ],
@@ -74,7 +75,22 @@ class PaperHtmlRendererTests(unittest.TestCase):
         self.assertIn("10 分", first)
         self.assertIn("<strong>求解</strong>", first)
         self.assertIn("<math", first)
-        self.assertEqual(first.count('class="answer-line"'), 4)
+        self.assertEqual(first.count('class="answer-area"'), 1)
+        self.assertIn('class="answer-area" style="height: 50mm"', first)
+        self.assertNotIn('class="answer-line"', first)
+        self.assertNotIn("border-bottom: 0.25mm solid #b8c4cc", first)
+        self.assertIn(".question-content > :last-child { break-after: avoid;", first)
+        self.assertIn(".question-tail { break-before: avoid;", first)
+        self.assertNotIn(".question { margin-bottom: 6mm; break-inside: avoid;", first)
+
+    def test_none_mode_does_not_render_an_answer_area(self):
+        html = render_paper_html(
+            _render_model("无需答题区", with_answer_area=False),
+            PdfGenerationOptions.a4_portrait(),
+        )
+
+        self.assertNotIn('class="answer-area"', html)
+        self.assertNotIn('class="question-tail"', html)
 
     def test_escapes_html_and_never_emits_remote_or_executable_resources(self):
         html = render_paper_html(
