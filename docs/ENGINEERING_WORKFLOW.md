@@ -97,12 +97,14 @@ Branch names such as `main` or `feat/foo` are moving references and are not suff
 
 ## GHCR release images
 
-After a change is merged to `main`, the release image workflow builds the backend and web images once and pushes them to GitHub Container Registry with the full Git commit SHA as the immutable-style tag:
+After a change is merged to `main`, the trusted release image workflow builds the backend and web images once and pushes them to GitHub Container Registry with the full Git commit SHA tag:
 
 - `ghcr.io/wwending/math-knowledge-backend:<full-sha>`
 - `ghcr.io/wwending/math-knowledge-web:<full-sha>`
 
-The workflow records each pushed digest and preserves the same SHA in the OCI revision metadata. Production-like deployment selects those backend and web images by the checkout's full Git SHA, pulls them from GHCR, verifies their OCI revision before backup or migration, and records the pulled RepoDigests in the deployment report. The server does not rebuild application images and does not fall back to a local build if pull fails. In short: `main -> build once -> GHCR -> Staging/Demo pull`. A checkout can therefore be deployed only after its `main` publish workflow has succeeded; GHCR authentication, when required, remains an administrator preflight responsibility.
+The SHA tag remains the source-oriented discovery and traceability handle. The workflow also records each pushed immutable digest and preserves the same SHA in the OCI revision metadata. Production-like deployment requires the backend and web digests from the successful main publisher, pulls exact `repository@sha256:...` references, verifies both OCI revisions equal the checkout SHA, and verifies each local RepoDigest exactly matches the supplied digest before backup or migration. The server does not resolve a deployment digest from a mutable tag, rebuild application images, or fall back to a local build if pull fails.
+
+Artifact promotion is therefore `main -> build once -> SHA-tagged GHCR release artifact + recorded digest -> Staging/Demo deploy by digest`. A checkout can be deployed only after its `main` publish workflow succeeds and the trusted backend/web digests are supplied explicitly. GHCR authentication remains an administrator preflight responsibility. This first-party digest contract does not claim that the third-party Gotenberg image is digest-pinned.
 
 ## Validation layers
 

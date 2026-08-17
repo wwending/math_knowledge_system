@@ -87,6 +87,8 @@ jobs:
     env:
       GIT_SHA: ${{ github.sha }}
       IMAGE_TAG: ${{ github.sha }}
+      BACKEND_IMAGE_DIGEST: sha256:1111111111111111111111111111111111111111111111111111111111111111
+      WEB_IMAGE_DIGEST: sha256:2222222222222222222222222222222222222222222222222222222222222222
     steps:
       - name: Check out repository
         uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
@@ -97,7 +99,7 @@ jobs:
         run: cp deploy/.env.production.example deploy/.env
 
       - name: Check deployment script syntax
-        run: bash -n deploy/scripts/deploy.sh deploy/scripts/backup.sh
+        run: bash -n deploy/scripts/deploy.sh deploy/scripts/backup.sh deploy/scripts/image-digests.sh
 
       - name: Run Nginx static proxy contract test
         run: bash deploy/tests/test_nginx_static_proxy.sh
