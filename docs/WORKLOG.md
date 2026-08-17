@@ -2,6 +2,12 @@
 
 说明：本文件按时间倒序记录每轮工作。较早轮次中的“当前主链路”等表述保留为当时历史事实；当前状态以 `docs/STATUS.md` 最新 checkpoint 和较新的 DECISIONS 为准。
 
+## 2026-08-17 Issue #28 组卷答题留白
+
+- 将 render model 的答题区从 `lines=4` 调整为 `height_mm=50`，保留 `answer_area_mode=after_each_question` 枚举；前端默认改为“每题后留白”。
+- 前端 A4 预览与 PDF HTML 均使用 50mm 纯白容器，不再生成横线 DOM 或边框；分页只绑定题干最后块与答题区尾部，长题主体仍可跨页。
+- 本地 Edge Chromium 实际生成短题、多题、页尾题、95 行长题、最后一题和 `none` 六类 A4 PDF；题干与答题区未出现孤立分页，长题正常跨 3 页，`none` 六题保持 1 页，测量版答题区约 49.48mm 加 1pt 标记自身高度。
+
 ## 2026-08-06 KaTeX 块公式解析限制加固
 
 结果：

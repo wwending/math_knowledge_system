@@ -202,7 +202,7 @@ class PaperRenderModelTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         item = response.json()["sections"][0]["items"][0]
-        self.assertEqual(item["answer_area"], {"mode": "after_each_question", "lines": 4})
+        self.assertEqual(item["answer_area"], {"mode": "after_each_question", "height_mm": 50})
 
     def test_groups_by_question_type_and_sorts_by_position_with_global_display_number(self):
         first_solution = self._create_question(content="first solution", question_type="solution")
@@ -210,7 +210,7 @@ class PaperRenderModelTests(unittest.TestCase):
         third_solution = self._create_question(content="third solution", question_type="solution")
 
         paper_id = self._create_paper([first_solution, second_choice, third_solution])
-        response = self._render(paper_id)
+        response = self._render(paper_id, {"answer_area_mode": "after_each_question"})
 
         self.assertEqual(response.status_code, 200)
         sections = response.json()["sections"]
@@ -220,6 +220,10 @@ class PaperRenderModelTests(unittest.TestCase):
             [(first_solution, 1, 1), (third_solution, 3, 3)],
         )
         self.assertEqual(sections[1]["items"][0]["display_number"], 2)
+        self.assertEqual(
+            [item["answer_area"] for section in sections for item in section["items"]],
+            [{"mode": "after_each_question", "height_mm": 50}] * 3,
+        )
 
     def test_empty_question_type_goes_to_unknown_section(self):
         question_id = self._create_question(question_type=None, metadata_status="pending")
@@ -285,7 +289,9 @@ class PaperRenderModelTests(unittest.TestCase):
         html, options = generate_pdf.call_args.args
         self.assertIn("PDF model source", html)
         self.assertIn("解答题", html)
-        self.assertEqual(html.count('class="answer-line"'), 4)
+        self.assertEqual(html.count('class="answer-area"'), 1)
+        self.assertIn('class="answer-area" style="height: 50mm"', html)
+        self.assertNotIn('class="answer-line"', html)
         self.assertEqual(options.paper_size, "A4")
 
     @patch("app.api.v1.endpoints.pdf_generation_service.generate_pdf", return_value=b"%PDF-1.7 test")

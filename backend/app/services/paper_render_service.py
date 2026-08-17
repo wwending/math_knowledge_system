@@ -66,7 +66,7 @@ def _question_type_key(item: PaperItem) -> str:
 def _answer_area(payload: PaperRenderRequest) -> PaperRenderAnswerArea | None:
     if payload.answer_area_mode != "after_each_question":
         return None
-    return PaperRenderAnswerArea(mode="after_each_question", lines=4)
+    return PaperRenderAnswerArea(mode="after_each_question", height_mm=50)
 
 
 def build_paper_render_model(db: Session, current_user: User, paper_id: int, payload: PaperRenderRequest) -> PaperRenderModel:
