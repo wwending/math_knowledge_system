@@ -49,23 +49,26 @@
           </div>
           <div class="markdown-body question-content" v-html="renderContent(item.content)"></div>
 
-          <div v-if="item.knowledge_tags.length > 0" class="preview-tags">
-            <el-tag
-              v-for="tag in item.knowledge_tags"
-              :key="tag.label"
-              size="small"
-              type="info"
-              effect="plain"
-            >
-              {{ tag.label }}
-            </el-tag>
-          </div>
+          <div
+            v-if="item.knowledge_tags.length > 0 || item.answer_area"
+            :class="{ 'question-tail': item.answer_area }"
+          >
+            <div v-if="item.knowledge_tags.length > 0" class="preview-tags">
+              <el-tag
+                v-for="tag in item.knowledge_tags"
+                :key="tag.label"
+                size="small"
+                type="info"
+                effect="plain"
+              >
+                {{ tag.label }}
+              </el-tag>
+            </div>
 
-          <div v-if="item.answer_area" class="answer-lines">
             <div
-              v-for="line in item.answer_area.lines"
-              :key="line"
-              class="answer-line"
+              v-if="item.answer_area"
+              class="answer-area"
+              :style="{ height: `${item.answer_area.height_mm}mm` }"
             ></div>
           </div>
         </article>
@@ -240,6 +243,11 @@ const handleExportPdf = async () => {
   line-height: 1.85;
 }
 
+.question-content > :last-child {
+  break-after: avoid;
+  page-break-after: avoid;
+}
+
 .preview-tags {
   display: flex;
   flex-wrap: wrap;
@@ -247,13 +255,19 @@ const handleExportPdf = async () => {
   margin-top: 8px;
 }
 
-.answer-lines {
-  margin-top: 14px;
+.question-tail {
+  break-before: avoid;
+  page-break-before: avoid;
+  break-inside: avoid;
+  page-break-inside: avoid;
 }
 
-.answer-line {
-  height: 28px;
-  border-bottom: 1px solid #cbd5df;
+.answer-area {
+  height: 50mm;
+  margin-top: 4mm;
+  break-inside: avoid;
+  page-break-inside: avoid;
+  background: #fff;
 }
 
 @media (max-width: 840px) {
