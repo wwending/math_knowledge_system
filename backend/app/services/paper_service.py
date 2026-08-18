@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from fastapi import HTTPException
@@ -7,11 +8,21 @@ from app.models.paper import Paper, PaperItem
 from app.models.question import Question
 from app.models.question_revision import QuestionRevision
 from app.models.user import User
-from app.schemas.paper import PaperCreate, PaperItemRead, PaperListItem, PaperRead
+from app.schemas.paper import (
+    PaperCreate,
+    PaperExistingItemUpdate,
+    PaperItemRead,
+    PaperListItem,
+    PaperRead,
+    PaperUpdate,
+)
 
 NOT_FOUND_MESSAGE = "\u8d44\u6e90\u4e0d\u5b58\u5728"
 PAPER_EMPTY_ITEMS_MESSAGE = "\u8bd5\u5377\u81f3\u5c11\u9700\u8981\u4e00\u9053\u9898"
 PAPER_DUPLICATE_QUESTION_MESSAGE = "\u540c\u4e00\u5f20\u8bd5\u5377\u4e0d\u80fd\u91cd\u590d\u6dfb\u52a0\u540c\u4e00\u9898"
+PAPER_NOT_DRAFT_MESSAGE = "\u53ea\u6709\u8349\u7a3f\u72b6\u6001\u7684\u8bd5\u5377\u53ef\u4ee5\u7f16\u8f91"
+PAPER_ITEM_MISMATCH_MESSAGE = "\u8bd5\u5377\u9898\u76ee\u4e0d\u5b58\u5728\u6216\u4e0d\u5c5e\u4e8e\u5f53\u524d\u8bd5\u5377"
+PAPER_EMPTY_CONTENT_MESSAGE = "\u8bd5\u5377\u9898\u5e72\u4e0d\u80fd\u4e3a\u7a7a"
 
 
 def _latest_revision(db: Session, question_id: int) -> Optional[QuestionRevision]:
@@ -140,6 +151,111 @@ def create_paper(db: Session, current_user: User, payload: PaperCreate) -> Paper
         )
 
     db.commit()
+    db.refresh(paper)
+    return _build_paper_read(paper)
+
+
+def update_paper(db: Session, current_user: User, paper_id: int, payload: PaperUpdate) -> PaperRead:
+    paper = db.query(Paper).filter(Paper.id == paper_id, Paper.user_id == current_user.id).first()
+    if not paper:
+        raise HTTPException(status_code=404, detail=NOT_FOUND_MESSAGE)
+    if paper.status != "draft":
+        raise HTTPException(status_code=409, detail=PAPER_NOT_DRAFT_MESSAGE)
+
+    item_payloads = list(payload.items)
+    question_ids = [item.question_id for item in item_payloads]
+    if len(question_ids) != len(set(question_ids)):
+        raise HTTPException(status_code=409, detail=PAPER_DUPLICATE_QUESTION_MESSAGE)
+
+    current_items = list(paper.items or [])
+    current_items_by_id = {item.id: item for item in current_items}
+    retained_item_ids: set[int] = set()
+    new_question_ids: list[int] = []
+
+    for item_payload in item_payloads:
+        if isinstance(item_payload, PaperExistingItemUpdate):
+            current_item = current_items_by_id.get(item_payload.id)
+            if not current_item or current_item.question_id != item_payload.question_id:
+                raise HTTPException(status_code=404, detail=PAPER_ITEM_MISMATCH_MESSAGE)
+            if item_payload.id in retained_item_ids:
+                raise HTTPException(status_code=409, detail=PAPER_DUPLICATE_QUESTION_MESSAGE)
+            retained_item_ids.add(item_payload.id)
+        else:
+            new_question_ids.append(item_payload.question_id)
+
+    questions_by_id: dict[int, Question] = {}
+    if new_question_ids:
+        questions = (
+            db.query(Question)
+            .filter(Question.user_id == current_user.id, Question.id.in_(new_question_ids))
+            .all()
+        )
+        questions_by_id = {question.id: question for question in questions}
+        if len(questions_by_id) != len(new_question_ids):
+            raise HTTPException(status_code=404, detail=NOT_FOUND_MESSAGE)
+
+    new_snapshots: dict[int, dict[str, Any]] = {}
+    for item_payload in item_payloads:
+        if isinstance(item_payload, PaperExistingItemUpdate):
+            continue
+        snapshot = _snapshot_from_question(db, questions_by_id[item_payload.question_id])
+        for field_name in ("content_snapshot", "answer_snapshot", "analysis_snapshot"):
+            if field_name in item_payload.model_fields_set:
+                snapshot[field_name] = getattr(item_payload, field_name)
+        if not snapshot["content_snapshot"] or not snapshot["content_snapshot"].strip():
+            raise HTTPException(status_code=400, detail=PAPER_EMPTY_CONTENT_MESSAGE)
+        new_snapshots[item_payload.question_id] = snapshot
+
+    try:
+        paper.title = payload.title
+        paper.description = payload.description
+
+        removed_items = [item for item in current_items if item.id not in retained_item_ids]
+        for item in removed_items:
+            db.delete(item)
+
+        max_position = max(
+            max((item.position for item in current_items), default=0),
+            len(item_payloads),
+        )
+        retained_items = [current_items_by_id[item.id] for item in item_payloads if isinstance(item, PaperExistingItemUpdate)]
+        for temporary_index, item in enumerate(retained_items, start=1):
+            item.position = max_position + temporary_index
+        db.flush()
+
+        new_items: list[tuple[int, Any]] = []
+        for position, item_payload in enumerate(item_payloads, start=1):
+            if isinstance(item_payload, PaperExistingItemUpdate):
+                item = current_items_by_id[item_payload.id]
+                item.position = position
+                item.score = item_payload.score
+                item.content_snapshot = item_payload.content_snapshot
+                item.answer_snapshot = item_payload.answer_snapshot
+                item.analysis_snapshot = item_payload.analysis_snapshot
+                continue
+
+            new_items.append((position, item_payload))
+
+        db.flush()
+
+        for position, item_payload in new_items:
+            question = questions_by_id[item_payload.question_id]
+            db.add(
+                PaperItem(
+                    paper_id=paper.id,
+                    question_id=question.id,
+                    position=position,
+                    score=item_payload.score,
+                    **new_snapshots[item_payload.question_id],
+                )
+            )
+
+        paper.updated_at = datetime.now(timezone.utc)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
     db.refresh(paper)
     return _build_paper_read(paper)
 
