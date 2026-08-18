@@ -93,7 +93,7 @@
                 class="pdf-page-card"
                 @click="selectPdfPage(pageData)"
               >
-                <img :src="pageData" class="pdf-thumb" />
+                <img :src="pageData.src" class="pdf-thumb" />
                 <div class="page-number">第 {{ index + 1 }} 页</div>
               </div>
             </div>
@@ -118,18 +118,30 @@
                   ref="cropperRef"
                   :img="currentImageUrl"
                   :output-size="1"
-                  output-type="jpeg"
+                  :output-type="CROP_OUTPUT_TYPE"
+                  :max-img-size="cropperMaxImgSize"
                   :auto-crop="true"
                   :center-box="true"
+                  :can-move="true"
+                  :can-move-box="true"
+                  :can-scale="true"
                   :fixed-box="false"
                   :full="true"
                   :high="true"
-                  mode="contain"
+                  :info-true="true"
+                  mode="cover"
                 />
+                <div class="cropper-toolbar">
+                  <span>拖动图片定位题目，可使用滚轮或 +/- 缩放。</span>
+                  <el-button-group>
+                    <el-button aria-label="缩小裁剪图片" @click="changeCropperScale(-10)">−</el-button>
+                    <el-button aria-label="放大裁剪图片" @click="changeCropperScale(10)">+</el-button>
+                  </el-button-group>
+                </div>
                 <el-button
                   type="primary"
                   class="confirm-btn"
-                  :loading="ocrLoading"
+                  :loading="ocrLoading || cropEncoding"
                   :disabled="isDraftBusy"
                   @click="confirmCropAndUpload"
                 >
@@ -264,7 +276,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import axios from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Clock, Collection, DataAnalysis, Document, UploadFilled, UserFilled } from '@element-plus/icons-vue'
@@ -274,6 +286,14 @@ import { VueCropper } from 'vue-cropper'
 
 import { API_V1_BASE_URL } from '../config/api'
 import { renderMarkdown } from '@/utils/renderMarkdown'
+import {
+  CROPPER_MAX_EDGE,
+  CROP_OUTPUT_TYPE,
+  CropImageTooLargeError,
+  calculateCropperMaxImageSize,
+  createCropUploadFile,
+  createImageUploadFile
+} from '../utils/imageProcessing.mjs'
 import {
   authState,
   fetchCurrentUser,
@@ -313,9 +333,16 @@ const saveBlocked = ref(false)
 const saveResult = ref(null)
 const recognitionDebug = ref(null)
 const qualityWarnings = ref([])
+const cropperMaxImgSize = ref(CROPPER_MAX_EDGE)
+const cropEncoding = ref(false)
+let cropEncodingGeneration = 0
 const editMode = ref(false)
 const editContent = ref('')
 const editSaving = ref(false)
+
+const changeCropperScale = (amount) => {
+  cropperRef.value?.changeScale(amount)
+}
 
 const currentUser = computed(() => authState.currentUser)
 const adminMode = computed(() => isAdminUser(currentUser.value))
@@ -497,7 +524,7 @@ const formatQualityWarning = (warning) => {
   return warning?.message || '识别结果存在风险，请保存前核对。'
 }
 
-const isDraftBusy = computed(() => ocrLoading.value || draftStatus.value === 'recognizing')
+const isDraftBusy = computed(() => cropEncoding.value || ocrLoading.value || draftStatus.value === 'recognizing')
 const canSaveDraft = computed(
   () =>
     draftStatus.value === 'draft_ready' &&
@@ -575,12 +602,42 @@ const handleFileSelect = async (uploadFile) => {
     return
   }
 
-  currentImageUrl.value = URL.createObjectURL(file)
-  step.value = 'process-image'
-  processMode.value = 'full'
+  const objectUrl = URL.createObjectURL(file)
+  try {
+    const dimensions = await loadImageDimensions(objectUrl)
+    cropperMaxImgSize.value = calculateCropperMaxImageSize(dimensions.width, dimensions.height)
+    setCurrentImageSource(objectUrl)
+    step.value = 'process-image'
+    processMode.value = 'full'
+  } catch (error) {
+    URL.revokeObjectURL(objectUrl)
+    console.error(error)
+    ElMessage.error('图片解析失败，请重新选择有效的图片文件。')
+  }
+}
+
+const loadImageDimensions = (source) => new Promise((resolve, reject) => {
+  const image = new Image()
+  image.onload = () => resolve({ width: image.naturalWidth, height: image.naturalHeight })
+  image.onerror = () => reject(new Error('Unable to decode image dimensions'))
+  image.src = source
+})
+
+const revokeImageObjectUrl = (source) => {
+  if (typeof source === 'string' && source.startsWith('blob:')) {
+    URL.revokeObjectURL(source)
+  }
+}
+
+const setCurrentImageSource = (source) => {
+  if (currentImageUrl.value !== source) {
+    revokeImageObjectUrl(currentImageUrl.value)
+  }
+  currentImageUrl.value = source
 }
 
 const renderPdfToImages = async (file) => {
+  setCurrentImageSource('')
   step.value = 'preview-pdf'
   pdfLoading.value = true
   pdfPages.value = []
@@ -598,7 +655,11 @@ const renderPdfToImages = async (file) => {
       canvas.width = viewport.width
 
       await page.render({ canvasContext: context, viewport }).promise
-      pdfPages.value.push(canvas.toDataURL('image/jpeg'))
+      pdfPages.value.push({
+        src: canvas.toDataURL('image/jpeg'),
+        width: canvas.width,
+        height: canvas.height
+      })
     }
   } catch (error) {
     console.error(error)
@@ -609,8 +670,9 @@ const renderPdfToImages = async (file) => {
   }
 }
 
-const selectPdfPage = (base64Img) => {
-  currentImageUrl.value = base64Img
+const selectPdfPage = (pageData) => {
+  setCurrentImageSource(pageData.src)
+  cropperMaxImgSize.value = calculateCropperMaxImageSize(pageData.width, pageData.height)
   step.value = 'process-image'
   processMode.value = 'full'
 }
@@ -620,9 +682,33 @@ const confirmCropAndUpload = () => {
     return
   }
 
-  cropperRef.value.getCropBlob((blob) => {
-    const file = new File([blob], 'crop_question.jpg', { type: 'image/jpeg' })
-    runRecognition(file)
+  const generation = ++cropEncodingGeneration
+  cropEncoding.value = true
+  cropperRef.value.getCropBlob(async (blob) => {
+    try {
+      if (!blob) {
+        throw new Error('Cropper returned an empty Blob')
+      }
+      const { file } = await createCropUploadFile(blob)
+      if (generation !== cropEncodingGeneration) {
+        return
+      }
+      runRecognition(file)
+    } catch (error) {
+      if (generation !== cropEncodingGeneration) {
+        return
+      }
+      console.error(error)
+      if (error instanceof CropImageTooLargeError) {
+        ElMessage.error('裁剪图片过大，请缩小裁剪范围后重试。')
+      } else {
+        ElMessage.error('裁剪图片处理失败，请调整裁剪区域后重试。')
+      }
+    } finally {
+      if (generation === cropEncodingGeneration) {
+        cropEncoding.value = false
+      }
+    }
   })
 }
 
@@ -634,7 +720,7 @@ const uploadFullImage = async () => {
   try {
     const response = await fetch(currentImageUrl.value)
     const blob = await response.blob()
-    const file = new File([blob], 'full_page.jpg', { type: 'image/jpeg' })
+    const file = createImageUploadFile(blob, 'full_page')
     runRecognition(file)
   } catch (error) {
     console.error(error)
@@ -852,8 +938,11 @@ const saveDraftToBank = async () => {
 }
 
 const resetUpload = () => {
+  cropEncodingGeneration += 1
   step.value = 'select-file'
-  currentImageUrl.value = ''
+  setCurrentImageSource('')
+  cropperMaxImgSize.value = CROPPER_MAX_EDGE
+  cropEncoding.value = false
   pdfPages.value = []
   ocrResult.value = ''
   recognizeWarning.value = ''
@@ -880,6 +969,11 @@ onMounted(async () => {
   if (!adminMode.value && activeMenu.value === 'users') {
     activeMenu.value = 'upload'
   }
+})
+
+onBeforeUnmount(() => {
+  cropEncodingGeneration += 1
+  revokeImageObjectUrl(currentImageUrl.value)
 })
 </script>
 
@@ -1127,6 +1221,28 @@ onMounted(async () => {
   background-color: #233843;
   border-radius: 16px;
   overflow: hidden;
+}
+
+.cropper-toolbar {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  right: 16px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px 8px 14px;
+  color: #fff;
+  background: rgba(17, 38, 49, 0.78);
+  border-radius: 10px;
+  pointer-events: none;
+}
+
+.cropper-toolbar .el-button-group {
+  flex: none;
+  pointer-events: auto;
 }
 
 .confirm-btn {

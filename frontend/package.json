@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "security:list-install-scripts": "node ./scripts/list-install-scripts.mjs",
     "test:auth-contract": "node ./tests/login-page-auth-contract.test.mjs",
-    "test:stage3-contract": "node ./tests/auth-session-contract.test.mjs && node ./tests/admin-user-management-contract.test.mjs && node ./tests/paper-mvp-contract.test.mjs && node ./tests/production-api-contract.test.mjs && node ./tests/markdown-security-contract.test.mjs && node ./tests/draft-manual-edit-contract.test.mjs"
+    "test:crop-quality": "node ./tests/crop-image-quality.test.mjs && node ./tests/cropper-viewport-browser.test.mjs",
+    "test:stage3-contract": "node ./tests/auth-session-contract.test.mjs && node ./tests/admin-user-management-contract.test.mjs && node ./tests/paper-mvp-contract.test.mjs && node ./tests/production-api-contract.test.mjs && node ./tests/markdown-security-contract.test.mjs && node ./tests/draft-manual-edit-contract.test.mjs && npm run test:crop-quality"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.2",

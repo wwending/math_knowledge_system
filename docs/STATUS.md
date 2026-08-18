@@ -6,6 +6,15 @@
 - 组卷界面默认选择“每题后留白”，前端预览按模型使用 CSS `mm` 单位渲染，PDF HTML 同步输出 50mm 白底空白且不包含横线或占位文字。
 - PDF 分页只约束题干末尾块与答题区尾部，普通短题尽量避免题干和留白分离；不对整道题强制 `break-inside: avoid`，长题内容仍可跨页。
 
+## 2026-08-17 裁剪识别图像质量修复
+
+- 前端裁剪链路不再依赖 `vue-cropper 1.1.4` 的默认 `maxImgSize=2000`；现在按源图真实像素显式计算上限，最长边不超过 8192px、总像素不超过 3600 万，常见 4961×7016 的 600 DPI A4 扫描保持原始像素。
+- 裁剪首先生成 PNG；16 MiB 以内直接上传，超出后依次尝试保持像素尺寸的 JPEG quality 0.95、0.90、0.85，仍超限才进行一次 0.75–0.90 比例的有限降采样，最后仍超过 16 MiB 则阻止上传并要求缩小裁剪范围。该 soft limit 为 Nginx 和后端共同的 20 MiB 上限保留 multipart/代理余量；上传文件的 MIME 与扩展名保持一致。PDF 页面仍按既有 2.5 倍 Canvas 和 JPEG 中间图生成。
+- 本地无头浏览器对同一 4961×7016 JPEG、396×560 CSS 裁剪框的实测：旧配置内部输入 1414×2000、输出 1131×1600 JPEG；新配置内部输入 4961×7016、输出 3969×5613 PNG。CSS 裁剪框尺寸不是上传 Blob 的像素尺寸。
+- 新增尺寸上限、PNG MIME/文件名和 Dashboard cropper 配置回归测试，并纳入 Stage 3 前端合同；真实 Issue #20 样本的整页/裁剪 OCR 人工对比仍需在 Draft PR 验收。
+- 本地真实 Canvas/Blob 合成验证：3969×5613 白底文字图的 PNG 为 1,617,150 bytes，保持 PNG 原尺寸；4096×4096 高熵彩色噪声 PNG 为 57,717,592 bytes，自动选择保持原尺寸的 JPEG quality 0.90，最终为 13,825,093 bytes。普通图片 Blob URL 会在替换、重置、解码失败和组件卸载时释放。
+- 第一轮真实 UI 验收发现第二层问题：固定高度的横向裁剪 viewport 配合 `mode=contain` 会把竖版 A4 完整缩入容器，导致默认显示宽度过小。当前 PR 改为可读优先的默认 `cover` 视图，保留图片/裁剪框平移、滚轮缩放，并增加明确的 +/- 控件和真实输出像素尺寸标签；高清 source bitmap、`full=true` Blob 输出与 adaptive encoding 策略不变。第二轮真实 Issue #20 人工 UI 验收仍待完成。
+
 ## 2026-08-17 first-party release image digest-pinned deployment contract
 
 - 当前 implementation PR 将 production Compose 和部署脚本从 backend/web 完整 Git SHA tag 升级为 trusted `repository@sha256:...` 输入；digest 缺失、格式非法、OCI revision 不等于 checkout SHA 或 RepoDigest 不精确匹配都会在 backup、Alembic migration 和 rollout 前 fail closed。
