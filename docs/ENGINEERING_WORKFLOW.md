@@ -42,32 +42,49 @@ Responsibilities:
 ## Normal change flow
 
 ```text
-Issue / task
-  -> local task branch
+GitHub Issue [required]
+  -> issue-numbered local task branch
   -> local focused tests
   -> push branch
-  -> Draft PR
+  -> Draft PR linked with `Closes #<issue>`
+  -> PR traceability gate
   -> GitHub Actions
   -> Staging exact-SHA validation [when runtime/integration dependent]
   -> review + fixes
   -> merge main
+  -> linked Issue closes
   -> Demo exact-SHA deployment [when intentionally releasing to Demo]
 ```
 
 Documentation-only, governance-only, or other non-runtime changes normally do not require Staging or Demo deployment unless they change executable deployment commands, runtime contracts, infrastructure behavior, or release evidence.
 
+## Issue-first / Traceability
+
+Normal feature, fix, refactor, test, docs, chore, security, and deploy work starts from a real GitHub Issue. The Issue is the traceability root and records the why: the requirement, defect, or task. It must exist before implementation enters the normal branch and PR publication flow.
+
+The development records have distinct roles:
+
+- Issue: why the change is needed and what outcome is required;
+- branch: the isolated implementation workspace, with the Issue number in its name;
+- commit: the concrete change history;
+- PR: the review, validation, and merge unit, linked with a closing keyword.
+
+Together they form `Issue -> Branch -> Commit -> PR -> Merge`, with each layer traceable to the same Issue. Every normal PR must include a same-repository closing relationship such as `Closes #123` (preferred), `Fixes #123`, or `Resolves #123`. A plain mention such as `Addresses #123` is not sufficient. The automated `PR traceability` check verifies that the referenced target exists, is an Issue rather than a PR, and that at least one valid linked Issue predates the PR.
+
+This policy applies prospectively after the governance change is merged. Historical branches and merged PRs are not renamed or rewritten.
+
 ## Branch naming
 
 Use one intent per branch:
 
-- `feat/...`
-- `fix/...`
-- `refactor/...`
-- `test/...`
-- `docs/...`
-- `chore/...`
-- `security/...`
-- `deploy/...`
+- `feat/issue-123-description`
+- `fix/issue-123-description`
+- `refactor/issue-123-description`
+- `test/issue-123-description`
+- `docs/issue-123-description`
+- `chore/issue-123-description`
+- `security/issue-123-description`
+- `deploy/issue-123-description`
 
 ## PR lifecycle
 
@@ -167,6 +184,9 @@ Do not place `math_knowledge_system`-specific instructions into global `~/.codex
 A normal PR is done when:
 
 - scope is complete and unrelated changes are absent;
+- a linked same-repository Issue exists and predates the PR;
+- the PR body contains a valid closing relationship, normally `Closes #<issue-number>`;
+- the automated `PR traceability` check passes;
 - regression tests exist for meaningful behavior changes;
 - relevant local checks pass;
 - required CI passes;

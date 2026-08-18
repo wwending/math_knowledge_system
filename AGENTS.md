@@ -85,13 +85,17 @@ If the user explicitly requested one of these actions, do not ask a second time 
 
 ## Git and PR workflow
 
+- Normal feature, fix, refactor, test, docs, chore, security, and deploy work is Issue-first. Before implementation, confirm that a real GitHub Issue already exists as the task's traceability root; use an Issue supplied by the user, and do not invent a meaningless Issue merely to satisfy the workflow.
+- If no Issue exists, do not enter the normal branch/PR publication flow. The Issue should describe the requirement, defect, or task before implementation begins.
 - Never develop directly on `main`.
 - Start implementation from a clean worktree and an up-to-date base when practical.
-- Use a focused branch such as `feat/...`, `fix/...`, `test/...`, `docs/...`, `chore/...`, or `refactor/...`.
+- Normal task branches must contain the Issue number, for example `feat/issue-123-description`, `fix/issue-123-description`, `chore/issue-123-description`, `docs/issue-123-description`, or `deploy/issue-123-description`. Do not rename historical branches solely to apply this rule retroactively.
 - Do not use `git push --force`, `git reset --hard`, destructive `git clean`, or rewrite shared history unless the user explicitly asks and the consequences are understood.
 - Do not amend or squash existing shared commits without explicit instruction.
 - Prefer logical commits with meaningful messages.
 - After implementation, push only the task branch and create/update a Draft PR unless the user asks for a different workflow.
+- Every normal PR must link at least one existing Issue in this repository with a GitHub closing keyword. Use `Closes #123` by default; `Fixes #123` and `Resolves #123` are also accepted. `Addresses #123` alone does not satisfy this rule because it does not express automatic closure after merge.
+- Before creating a Draft PR, confirm that the Issue exists, its number is correct, the PR body contains the closing relationship, and the PR scope matches the Issue scope.
 - Do not mark a PR ready, approve it, enable auto-merge, or merge it unless explicitly requested.
 - PR descriptions must state: scope, architecture/behavior changes, tests run, tests not run, deployment/migration impact, and known risks.
 - Keep checkout-specific Codex instructions in root `AGENTS.override.md`; do not commit that file or move these project-specific rules into global `~/.codex` configuration.
