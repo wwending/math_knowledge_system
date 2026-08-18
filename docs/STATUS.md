@@ -1,5 +1,13 @@
 # STATUS
 
+## 2026-08-18 digest-pinned Staging 与 HTTPS production-mode Demo 验收完成
+
+- 首次真实 first-party digest-pinned Staging rollout 已通过：部署 Git SHA `45b604bbde646e0f41b219c1fbaad6d506525fe1`，backend/web trusted digest 分别为 `sha256:a9fc71f85461a8360d44e8b76bbb8798a703d828fa041fa81e829ba31dcf9018` 与 `sha256:3c69c38858ee402b45d7e557ebde292c466b3d758238fa80fc881a2ddbf47af6`；`repository@sha256` runtime、exact RepoDigest、OCI revision、备份、Alembic、SQLite `quick_check`、uploads、HTTP、PDF.js `.mjs` MIME、backend 到 Gotenberg 的真实 PDF smoke 和服务健康均已验证，结论为 `DIGEST-PINNED STAGING DEPLOYMENT PASS`。
+- `math.wwlabcode.top` 已使用 Host Caddy `2.11.4` 和 Let's Encrypt 托管证书提供 HTTPS：公网 IPv4 仅开放 `22/80/443`，Caddy 在 `80` 重定向 HTTPS、在 `443` 终止 TLS 并代理到 `127.0.0.1:8000`；`backend:8000` 与 `gotenberg:3000` 仅在 Docker 内部，宿主机 `8000/8080/3000` 不对公网开放，也没有公网 IPv6 `80/443` listener。
+- 已验收的 production-mode Demo 精确运行 Git SHA `feca1a7c540666b5b520121a8ca8c8b2eb4467c6`；backend/web trusted publisher digest 分别为 `sha256:6b05dfdb355a146f31ac1cb1df4b7344da795fd31f7bf341c26a82219e60f268` 与 `sha256:be2556c4f2c9898b3a8a4fb228b1f2299a527360e051dcc27b4434257365413b`。运行环境启用 `APP_ENV=production`、严格认证安全、`trusted_proxy_tls`、Secure refresh cookie、精确 HTTPS CORS origin，并关闭公开注册；密钥未写入或输出到验收记录。
+- 自动验收覆盖 exact digest/revision/RepoDigest 门禁、备份、migration current/head、SQLite、uploads、服务健康、HTTP 到 HTTPS、可信证书、页面/health/static/MIME、CORS、forwarded-header 防伪、refresh cookie、注册开关、真实 PDF 与公网端口边界，结论为 `HTTPS PRODUCTION-MODE DEMO ROLLOUT PASS`。用户已完成人工浏览器 Demo 验收并确认通过。
+- 验收时 Demo 运行 `feca1a7...`；其后 `main` 才推进到子提交 `6795ede0dcd366ba5d15cc0bcc148ef25a99ab27`。这是显式选择 release 的预期状态而非部署竞态；Demo 不自动跟随每个 main commit，不能据此宣称 `6795ede...` 的 #29/#33 已部署。
+
 ## 2026-08-18 完整试卷草稿编辑
 
 - 组卷中心支持草稿试卷标题、描述、分值、题序、题干、答案和解析编辑，并支持删除题目及从当前用户题库继续添加题目；前端修改保存在本地草稿中，单次保存或取消。
@@ -27,8 +35,8 @@
 - 当前 implementation PR 将 production Compose 和部署脚本从 backend/web 完整 Git SHA tag 升级为 trusted `repository@sha256:...` 输入；digest 缺失、格式非法、OCI revision 不等于 checkout SHA 或 RepoDigest 不精确匹配都会在 backup、Alembic migration 和 rollout 前 fail closed。
 - Git SHA 继续作为 source identity，main publisher 的 SHA tag 继续用于 release discovery / traceability；successful main `Publish release images` 记录的 backend/web digest 是服务器部署的 immutable artifact identity，部署脚本不通过 tag 自行解析 digest，也没有 build fallback。
 - `Production stack checks` 保持原 required job name，并为 Compose/部署合同使用固定合法 digest fixture；正式 Dockerfile build、OCI revision 和 Nginx `.mjs` MIME validation 继续保留，PR CI 不 pull 虚构的 GHCR digest。
-- 该 PR 只实现 first-party backend/web 合同和 CI 验证，未连接 [SERVER]。现有 Staging 仍是下节记录的 SHA-tag rollout；真实 digest-pinned Staging 验证必须等待 PR merge、新 main publisher 成功并显式提供两个 release digest。
-- Gotenberg 仍使用 `gotenberg/gotenberg:8.34.0-chromium` 固定 version tag；本阶段不包含第三方 digest pinning、签名/SLSA、自动部署、HTTPS、Demo/production rollout 或 GHCR credential 生命周期管理。
+- 在该 implementation PR 合并前，它只实现 first-party backend/web 合同和 CI 验证；当时服务器基线仍是下节记录的 SHA-tag rollout，后续 rollout 必须等待 main publisher 产出并显式提供两个 trusted digest。
+- 后续真实 digest-pinned Staging 与 HTTPS production-mode Demo rollout 已于 2026-08-18 完成，见本文件顶部验收记录。该合同本身仍不包含第三方 Gotenberg digest pinning、签名/SLSA、自动部署或 GHCR credential 生命周期管理。
 
 ## 2026-08-16 production-like deployment 使用 GHCR release images
 
@@ -37,7 +45,7 @@
 - `Production stack checks` 保留原 job 名，独立执行 Compose 合同验证、backend/web Dockerfile 构建和 OCI revision 验证；PR CI 不尝试拉取不存在的 PR HEAD release image。
 - 首次完整 Staging GHCR pull-only deployment 已在 [SERVER] 通过：部署 `main` SHA `b78fbd43deadda495771d0fe221d76d81e9486b2`，backend RepoDigest 为 `sha256:c4e78f2a6ce0f5c2b4d532be81c92d795522f1d446f6d88ce2daa8f354f5d524`，web RepoDigest 为 `sha256:f039b40b67c5b0f0ab319fd39c6649dcec4961c42f9b4c335d56b50434574993`。
 - 本次闭环已覆盖 `main SHA -> GHCR SHA-tagged images -> exact digest verification -> server pull -> revision/digest gate -> backup -> Alembic migration -> Compose rollout -> HTTP/Nginx health -> backend 到内部 Gotenberg 的真实 PDF smoke`；数据库 `current == head == 20260604_0005`，服务健康且 restart count 均为 0，数据库 quick check 与 uploads 完整性通过。
-- 该次是 SHA-tag Staging infrastructure deployment 验证，不代表 Demo/production deployment 或 production ready；后续 digest-pinned implementation contract 见上节，但尚未在 [SERVER] rollout。GHCR credential 生命周期仍由管理员管理，authenticated business-level `/papers/{id}/pdf` 未在该次部署中重新执行。
+- 该次是当时的 SHA-tag Staging infrastructure deployment 验证，本身不代表 Demo/production deployment 或 production ready；后续 digest-pinned Staging 与 HTTPS Demo 验收见顶部 2026-08-18 记录。GHCR credential 生命周期仍由管理员管理；authenticated business-level `/papers/{id}/pdf` 在这一次历史 rollout 中未重新执行。
 
 ## 2026-08-06 KaTeX 块公式解析限制加固
 

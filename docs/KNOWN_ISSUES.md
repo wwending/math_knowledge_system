@@ -16,7 +16,7 @@
 - KaTeX renderer 支持仓库当前常用的上下标、分数、根号、`aligned`、`cases`、矩阵和中文 `\text{}`，但不支持动态 `\require`、Xy-pic、bussproofs 或任意完整 LaTeX；若未来引入这些核心公式，必须先做兼容性评估。
 - 当前仍有既有 Vite chunk size warning；本轮不宣称所有 npm 漏洞已清零。
 
-## 0.15 first-party digest-pinned deployment contract 已实现，待真实 Staging rollout 验证
+## 0.15 first-party digest-pinned Staging 与 HTTPS Demo rollout 已完成
 
 2026-08-16 已在 [SERVER] 使用 `main` SHA `b78fbd43deadda495771d0fe221d76d81e9486b2` 完成首次完整 Staging GHCR pull-only deployment。backend/web release images 的 pull、OCI revision、RepoDigest、备份、Alembic migration、Compose rollout、HTTP/Nginx health 和 backend 到内部 Gotenberg 的真实 PDF smoke 均通过；数据库 `current == head == 20260604_0005`，服务 restart count 均为 0，数据库 quick check 与 uploads 完整性通过。
 
@@ -26,15 +26,21 @@
 - web RepoDigest：`sha256:f039b40b67c5b0f0ab319fd39c6649dcec4961c42f9b4c335d56b50434574993`。
 - Gotenberg 宿主机端口 `3000` 未暴露；backend 到内部 Gotenberg 的真实 smoke 生成了有效 `%PDF-` 文件。
 
+2026-08-18 已完成后续里程碑：
+
+- 首次真实 first-party digest-pinned Staging 部署 Git SHA 为 `45b604bbde646e0f41b219c1fbaad6d506525fe1`，backend/web trusted digest 分别为 `sha256:a9fc71f85461a8360d44e8b76bbb8798a703d828fa041fa81e829ba31dcf9018` 与 `sha256:3c69c38858ee402b45d7e557ebde292c466b3d758238fa80fc881a2ddbf47af6`；exact digest/revision/RepoDigest、数据、migration、HTTP/MIME、真实 PDF 与服务健康验证通过。
+- HTTPS production-mode Demo 部署并验收 Git SHA `feca1a7c540666b5b520121a8ca8c8b2eb4467c6`，backend/web trusted digest 分别为 `sha256:6b05dfdb355a146f31ac1cb1df4b7344da795fd31f7bf341c26a82219e60f268` 与 `sha256:be2556c4f2c9898b3a8a4fb228b1f2299a527360e051dcc27b4434257365413b`；Caddy/Let's Encrypt HTTPS、production security mode、数据/migration/PDF/网络边界自动验收通过，用户已完成人工浏览器 Demo 验收并确认通过。
+- 验收后 main 才从 `feca1a7...` 推进到其子提交 `6795ede...`；Demo 继续运行显式选择的 release 是预期状态，不代表部署失败，也不代表后续 main 内容已部署。
+
 剩余注意：
 
-- implementation PR 已将 backend/web Compose 与部署合同改为 trusted exact digest 输入，同时保留 checkout SHA 与 OCI revision 匹配门禁；当前 [SERVER] 仍运行上次已验证的 SHA-tag rollout，尚未执行真实 digest-pinned Staging deployment。
-- 合并后必须等待新的 successful main `Publish release images`，取得其记录的 backend/web digest，再以精确 main checkout 做一次显式 Staging rollout 验证；在此之前不能宣称 digest-pinned Staging 已通过。
-- 第三方 `gotenberg/gotenberg:8.34.0-chromium` 仍使用固定 version tag，未 digest pinning；本阶段不包含 image signing、SLSA 或 SBOM admission policy。
+- 第三方 `gotenberg/gotenberg:8.34.0-chromium` 仍使用固定 version tag，未 digest pinning。
+- 当前没有 image signing、SLSA enforcement 或 SBOM admission policy。
 - GHCR credential 生命周期不由 `deploy.sh` 管理，仍是管理员 preflight 责任。
-- authenticated business-level `/papers/{id}/pdf` 未在本次 infrastructure deployment 中重新执行；本次验证的是 backend 到 Gotenberg 的真实服务 smoke。
-- Demo/production HTTPS 与 Demo/production deployment 尚未完成；首次 Staging deployment 通过不等于 production ready。
-- 2026-08-06 前端运行时加固后，现场 `npm audit` 仍报告 9 项（1 moderate、8 high）；剩余问题覆盖 Markdown 渲染运行时依赖和 Vite/Sass/Rollup 等构建链，需在独立依赖安全 PR 中评估升级兼容性。
+- 首次 HTTPS rollout 有意未启用 HSTS；是否启用需单独评估并授权。
+- Demo 不会在每次 main 推进时自动部署；下一次 release 仍须显式选择 exact Git SHA 与 publisher-recorded backend/web digest。
+- production security mode 已在该 Demo 验证，不等于全部 production-readiness 工作或 v0.1 发布清单已经完成。用户确认的是整体人工浏览器 Demo 验收；未记录的逐请求、凭据或业务步骤不得据此补写为已验证。
+- 前端依赖与安全 backlog 独立存在；当前审计状态及限制见 0.16，不因本次部署验收而关闭。
 
 ## v0.1 Release Candidate 范围说明
 
