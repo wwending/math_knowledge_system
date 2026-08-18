@@ -51,7 +51,7 @@ LLM 目标输出结构：
 
 ## 组卷 MVP
 
-第十七轮新增后端最小组卷能力。当前只支持登录用户手动选择自己题库中的题目生成草稿试卷，不支持智能组卷、导出、前端组卷或拖拽排序。
+当前支持登录用户从自己的题库创建并完整编辑草稿试卷，以及预览和服务端 PDF 导出；不支持智能组卷、Word 导出或拖拽排序。
 
 接口：
 
@@ -70,6 +70,36 @@ LLM 目标输出结构：
 - `GET /api/v1/papers/{paper_id}`
   - 返回当前登录用户自己的试卷详情。
   - 试卷不存在或不属于当前用户时返回 `404`。
+
+- `PATCH /api/v1/papers/{paper_id}`
+  - 原子保存 owner 的草稿试卷标题、描述及完整有序 items；非 `draft` 状态返回冲突错误。
+  - `items` 不能为空且 `question_id` 不得重复；后端忽略客户端 position，严格按数组顺序重建连续 `1..N`。
+  - 已有条目使用 `kind=existing`，提交当前 paper item 的 `id`、`question_id`、`score` 和可编辑文本快照。
+  - 从题库新增使用 `kind=question` 和 `question_id`；服务端从当前用户题库的最新 QuestionRevision 建立基础快照。可选文本字段只覆盖当前新 PaperItem，不能提交或修改题型、难度、知识点及 revision id。
+  - 删除通过省略已有 item 表达；保存失败时整个事务回滚。试卷编辑不修改 Question 或 QuestionRevision。
+
+```json
+{
+  "title": "高一函数练习",
+  "description": "课堂练习",
+  "items": [
+    {
+      "kind": "existing",
+      "id": 11,
+      "question_id": 21,
+      "score": 10,
+      "content_snapshot": "试卷专用题干",
+      "answer_snapshot": "答案",
+      "analysis_snapshot": "解析"
+    },
+    {
+      "kind": "question",
+      "question_id": 34,
+      "score": 8
+    }
+  ]
+}
+```
 
 - `POST /api/v1/papers/{paper_id}/render-model`
   - 返回当前登录用户自己的试卷渲染模型，用于前端 A4 作业预览，并为后续 PDF / DOCX 导出复用同一模型打基础。

@@ -1,5 +1,12 @@
 # STATUS
 
+## 2026-08-18 完整试卷草稿编辑
+
+- 组卷中心支持草稿试卷标题、描述、分值、题序、题干、答案和解析编辑，并支持删除题目及从当前用户题库继续添加题目；前端修改保存在本地草稿中，单次保存或取消。
+- 新增原子 `PATCH /api/v1/papers/{paper_id}`：只允许 owner 编辑 `draft`，以后端提交数组顺序生成连续 `position`，通过临时 position 两阶段更新规避唯一约束交换冲突，并在保存后显式更新 Paper 时间戳。
+- 已有题目的文本修改只写入当前 PaperItem snapshot；新增题目的基础 snapshot、题型、难度、知识点及 revision id 由服务端读取最新 Question / QuestionRevision，Question 与 QuestionRevision 不会被试卷编辑修改。
+- Paper detail/list、PaperRenderModel 与服务端 PDF 继续读取保存后的 Paper/PaperItem 数据；学生版 render/PDF 仍不暴露答案和解析。现有表结构足够，本次不新增 Alembic migration。
+
 ## 2026-08-17 组卷答题区改为 50mm 纯留白
 
 - `answer_area_mode=after_each_question` 的 render model 使用 `height_mm: 50` 明确表达固定高度，不再输出横线行数；`none` 继续表示无答题区，API 枚举保持兼容。

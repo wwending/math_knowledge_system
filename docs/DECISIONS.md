@@ -2,7 +2,7 @@
 
 说明：本文件按时间倒序记录决策。较早决策中的“当前主链路”等表述保留为当时历史事实；如与顶部较新决策冲突，以较新决策和 `docs/STATUS.md` 当前 checkpoint 为准。
 
-## 决策 34：正常开发采用 Issue-first 与 PR 自动追溯门禁
+## 决策 35：正常开发采用 Issue-first 与 PR 自动追溯门禁
 
 结论：
 
@@ -20,6 +20,28 @@
 
 - 当前只接受本仓库 `#<number>` 形式的 Issue，不引入跨仓库追踪。
 - main ruleset 是否把新 check 设为 required 由仓库管理员另行授权配置，本决策不自动修改 ruleset。
+
+日期：2026-08-18
+
+## 决策 34：试卷草稿编辑采用原子全量状态保存并保持题库快照隔离
+
+结论：
+
+- 使用 `PATCH /api/v1/papers/{paper_id}` 原子保存标题、描述和有序 items；仅 owner 的 `draft` 可编辑，跨用户资源继续按不存在处理。
+- payload 区分已有 PaperItem 与从 Question 新增的 item。已有条目可修改当前试卷文本快照；新增条目的基础快照和元数据必须由服务端读取最新 QuestionRevision，客户端不能提交知识点、题型、难度或 revision id。
+- 后端按 items 数组顺序重新生成连续 `position`，使用临时位置和分阶段 flush 避免 `(paper_id, position)` 交换时的瞬时唯一约束冲突。
+- 删除、增加、排序和内容修改在同一事务内完成。试卷编辑绝不写 Question 或 QuestionRevision。
+- Paper detail/list、预览和 PDF 继续以保存后的 Paper/PaperItem / PaperRenderModel 为唯一数据链，不创建第二套导出数据源。
+
+原因：
+
+- 全量草稿保存使前端可安全取消本地修改，也能在任一校验失败时避免半保存状态。
+- 试卷是历史输出，题库是可继续演进的来源；两者必须通过 snapshot 边界解耦。
+
+边界：
+
+- 不新增数据库字段或迁移，不引入拖拽依赖；当前排序交互使用上移/下移。
+- 学生版 render/PDF 继续不返回答案或解析，试卷详情仍保存并返回 owner 可编辑的答案/解析快照。
 
 日期：2026-08-18
 
