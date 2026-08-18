@@ -123,7 +123,13 @@ export BACKEND_IMAGE_DIGEST='sha256:<backend-64-hex>'
 export WEB_IMAGE_DIGEST='sha256:<web-64-hex>'
 docker compose --env-file deploy/.env -f compose.prod.yml ps
 docker compose --env-file deploy/.env -f compose.prod.yml logs --tail=200 backend gotenberg web
+
+# 默认 HTTP RC（HTTP_PORT=8080）
 curl --fail http://127.0.0.1:8080/healthz
+
+# 当前 HTTPS Demo（HTTP_PORT=8000）
+curl --fail http://127.0.0.1:8000/healthz
+curl --fail https://math.wwlabcode.top/healthz
 
 docker image inspect \
   --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' \
