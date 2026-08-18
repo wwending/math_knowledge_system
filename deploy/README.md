@@ -8,7 +8,7 @@
 - 仓库建议检出到固定目录，例如 `/opt/math-knowledge-system`。
 - 部署脚本需要能够创建并调整 `/srv/math-knowledge` 下目录的属主；首次执行通常使用 `sudo`。
 - 当前 checkout 的完整 Git SHA 必须已有成功的 `main` `Publish release images` workflow；部署调用方须从该次成功 workflow 取得 backend/web digest，并显式传给部署脚本。如 GHCR package 需要认证，管理员须在部署前完成 `docker login ghcr.io`，部署脚本不读取或管理凭据。
-- 防火墙只开放选定的 HTTP 端口。不要开放后端 `8000`。
+- 防火墙只开放当前访问模式所需端口。不要把应用 Web 的宿主机端口或 backend/Gotenberg 容器端口直接暴露到公网。
 
 ## RC HTTP 部署
 
@@ -33,7 +33,7 @@ sudo env \
 
 脚本拒绝 dirty Git worktree，也会在任何目录创建、pull、backup、migration 或服务替换前，要求两个 digest 严格匹配 `sha256:<64 lowercase hex>`。digest 缺失或格式非法会失败；pull、OCI revision 或 exact RepoDigest 不匹配也会失败，且不会继续 backup、migration 或启动服务。服务器不构建 application images，pull 失败没有本地 build fallback。最终报告包含 Git commit、完整 `repository@digest` image reference、revision 与 exact RepoDigest。脚本不会创建 PAT、执行 Docker login、读取 GHCR credential，也不会运行 `docker system prune`、删除 volume 或删除历史备份。
 
-默认公网或普通 RC 使用 `HTTP_BIND_ADDR=0.0.0.0` 和 `HTTP_PORT=8080`，访问地址为 `http://SERVER_IP:8080`。SSH tunnel/private RC 推荐使用 `HTTP_BIND_ADDR=127.0.0.1` 和 `HTTP_PORT=8000`，以避免 Web 端口直接暴露到公网。访问链路为 `Windows localhost:8000` → SSH local forwarding → `Server 127.0.0.1:8000` → Web/Nginx → `backend:8000` (Docker internal only)。后端 `8000` 始终只在 Compose 内部网络中暴露，不映射到宿主机；DNS 和 HTTPS 可在正式上线阶段再配置。前端生产构建默认使用当前页面同源地址，因此 API 请求为 `/api/v1/*`，上传资源为 `/static/*`；如有特殊需求仍可在构建时设置 `VITE_API_BASE_URL`。
+默认公网或普通 RC 使用 `HTTP_BIND_ADDR=0.0.0.0` 和 `HTTP_PORT=8080`，访问地址为 `http://SERVER_IP:8080`。SSH tunnel/private RC 推荐使用 `HTTP_BIND_ADDR=127.0.0.1` 和 `HTTP_PORT=8000`，以避免 Web 端口直接暴露到公网。访问链路为 `Windows localhost:8000` → SSH local forwarding → `Server 127.0.0.1:8000` → Web/Nginx → `backend:8000` (Docker internal only)。后端 `8000` 始终只在 Compose 内部网络中暴露，不映射到宿主机。当前已验收 Demo 的 DNS/HTTPS 边界见“正式 HTTPS”一节；其他环境仍须按自身域名和网络边界单独配置。前端生产构建默认使用当前页面同源地址，因此 API 请求为 `/api/v1/*`，上传资源为 `/static/*`；如有特殊需求仍可在构建时设置 `VITE_API_BASE_URL`。
 
 如需创建初始管理员，可在部署后显式执行：
 
@@ -95,7 +95,13 @@ rsync -a --checksum /srv/math-knowledge/backups/ backup-user@SECOND_SERVER:/srv/
 
 ## 正式 HTTPS
 
-RC 的 IP + HTTP 端口仅用于 smoke，不适合正式生产。正式环境应在 Web 容器前配置可信的 TLS 终止层（如主机 Nginx、云负载均衡或隧道服务），使用真实证书并只开放 443。不要把测试证书或私钥提交到仓库。
+应用 release 与 TLS infrastructure 是两个独立生命周期：应用 release 由 exact Git SHA 和 main publisher 记录的 backend/web digest 标识；TLS 由宿主机 edge 和证书管理系统维护，Caddy 不属于 application image digest。
+
+2026-08-18 已验收 Demo 使用 `math.wwlabcode.top`、Host Caddy `2.11.4` 和 Let's Encrypt 托管证书。公网 IPv4 边界为 `22/80/443`，其中 `80` 重定向到 HTTPS，`443` 代理到 loopback `127.0.0.1:8000`；`backend:8000` 与 `gotenberg:3000` 仅在 Docker 内部。公网未开放 `8000/8080/3000`，也没有 IPv6 `80/443` listener。首次 HTTPS rollout 有意未启用 HSTS。
+
+该 Demo 已使用 production security mode 完成自动验收与用户人工浏览器验收，但这不等于所有 production-readiness 工作均已完成。Demo 不自动跟随 main；已部署 release 保持其显式选择的 exact Git SHA 与 publisher digest，直到下一次授权 rollout。
+
+其他正式环境仍应在 Web 容器前配置可信的 TLS 终止层（如主机 Caddy/Nginx、云负载均衡或隧道服务），使用真实证书，并避免直接开放应用端口。不要把测试证书或私钥提交到仓库。
 
 正式环境至少改为：
 
