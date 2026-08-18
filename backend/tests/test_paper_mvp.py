@@ -145,6 +145,32 @@ class PaperMvpTests(unittest.TestCase):
             },
         )
 
+    def _update_paper(
+        self,
+        paper_id: int,
+        payload: dict,
+        headers: dict[str, str] | None = None,
+    ):
+        return self.client.patch(
+            f"/api/v1/papers/{paper_id}",
+            headers=headers or self.auth_headers,
+            json=payload,
+        )
+
+    @staticmethod
+    def _existing_item(item: dict, **changes) -> dict:
+        payload = {
+            "kind": "existing",
+            "id": item["id"],
+            "question_id": item["question_id"],
+            "score": item["score"] or 0,
+            "content_snapshot": item["content_snapshot"],
+            "answer_snapshot": item["answer_snapshot"],
+            "analysis_snapshot": item["analysis_snapshot"],
+        }
+        payload.update(changes)
+        return payload
+
     def test_login_user_can_create_paper_with_own_questions(self):
         question_id = self._create_question(content="own question")
 
@@ -259,32 +285,6 @@ class PaperMvpTests(unittest.TestCase):
             difficulty_label="较难",
             metadata_status="ready",
         )
-
-    def _update_paper(
-        self,
-        paper_id: int,
-        payload: dict,
-        headers: dict[str, str] | None = None,
-    ):
-        return self.client.patch(
-            f"/api/v1/papers/{paper_id}",
-            headers=headers or self.auth_headers,
-            json=payload,
-        )
-
-    @staticmethod
-    def _existing_item(item: dict, **changes) -> dict:
-        payload = {
-            "kind": "existing",
-            "id": item["id"],
-            "question_id": item["question_id"],
-            "score": item["score"] or 0,
-            "content_snapshot": item["content_snapshot"],
-            "answer_snapshot": item["answer_snapshot"],
-            "analysis_snapshot": item["analysis_snapshot"],
-        }
-        payload.update(changes)
-        return payload
 
         response = self._create_paper([question_id])
 
