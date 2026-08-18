@@ -44,7 +44,7 @@ from app.schemas.draft import (
     RecognitionDebug,
 )
 from app.schemas.ocr import OCRResponse
-from app.schemas.paper import PaperCreate, PaperListItem, PaperRead
+from app.schemas.paper import PaperCreate, PaperListItem, PaperRead, PaperUpdate
 from app.schemas.paper_render import PaperRenderModel, PaperRenderRequest
 from app.schemas.question import KnowledgeTag, QuestionDetail, QuestionListItem, QuestionUpdate
 from app.services.draft_state import transition_draft_status
@@ -52,7 +52,7 @@ from app.services.llm import nlp_service
 from app.services.ocr_engine import ocr_service
 from app.services.ocr_providers.base import OCRResult
 from app.services.ocr_service import ocr_service as draft_ocr_service
-from app.services.paper_service import create_paper, get_paper, list_papers
+from app.services.paper_service import create_paper, get_paper, list_papers, update_paper
 from app.services.paper_render_service import build_paper_render_model
 from app.services.paper_html_renderer import PaperHtmlRenderError, render_paper_html
 from app.services.pdf_generation_service import GotenbergPdfGenerationService, PdfGenerationError, PdfGenerationOptions
@@ -992,6 +992,16 @@ def get_paper_endpoint(
     current_user: User = Depends(require_active_user),
 ):
     return get_paper(db, current_user, paper_id)
+
+
+@router.patch("/papers/{paper_id}", response_model=PaperRead)
+def update_paper_endpoint(
+    paper_id: int,
+    payload: PaperUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_active_user),
+):
+    return update_paper(db, current_user, paper_id, payload)
 
 
 @router.post("/papers/{paper_id}/render-model", response_model=PaperRenderModel)

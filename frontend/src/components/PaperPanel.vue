@@ -1,174 +1,138 @@
 <template>
   <div class="paper-container">
     <div class="header-row">
-      <div>
-        <h2>组卷中心</h2>
-        <p class="subtitle">查看当前登录用户创建的试卷草稿</p>
-      </div>
-      <el-button @click="fetchPapers" :loading="listLoading" circle>
-        <el-icon><Refresh /></el-icon>
-      </el-button>
+      <div><h2>组卷中心</h2><p class="subtitle">查看和编辑当前登录用户创建的试卷草稿</p></div>
+      <el-button @click="fetchPapers" :loading="listLoading" circle><el-icon><Refresh /></el-icon></el-button>
     </div>
-
-    <el-alert
-      v-if="errorMessage"
-      :title="errorMessage"
-      type="error"
-      show-icon
-      class="state-alert"
-    />
-
+    <el-alert v-if="errorMessage" :title="errorMessage" type="error" show-icon class="state-alert" />
     <el-skeleton v-if="listLoading" :rows="4" animated />
-
-    <div v-else-if="papers.length === 0" class="empty-state">
-      <el-empty description="暂无试卷" />
-    </div>
+    <div v-else-if="papers.length === 0" class="empty-state"><el-empty description="暂无试卷" /></div>
 
     <div v-else class="paper-layout">
       <div class="paper-list">
-        <el-card
-          v-for="paper in papers"
-          :key="paper.id"
-          class="paper-card"
-          :class="{ active: selectedPaperId === paper.id }"
-          shadow="hover"
-          @click="openPaperDetail(paper.id)"
-        >
-          <div class="paper-title-row">
-            <strong>{{ paper.title }}</strong>
-            <el-tag size="small" type="info">{{ paper.status }}</el-tag>
-          </div>
-          <div class="paper-meta-grid">
-            <span>题数：{{ paper.item_count }}</span>
-            <span>总分：{{ paper.total_score }}</span>
-            <span>创建：{{ formatTime(paper.created_at) }}</span>
-          </div>
+        <el-card v-for="paper in papers" :key="paper.id" class="paper-card" :class="{ active: selectedPaperId === paper.id }" shadow="hover" @click="openPaperDetail(paper.id)">
+          <div class="paper-title-row"><strong>{{ paper.title }}</strong><el-tag size="small" type="info">{{ paper.status }}</el-tag></div>
+          <div class="paper-meta-grid"><span>题数：{{ paper.item_count }}</span><span>总分：{{ paper.total_score }}</span><span>创建：{{ formatTime(paper.created_at) }}</span></div>
         </el-card>
       </div>
 
       <div class="paper-detail">
         <el-skeleton v-if="detailLoading" :rows="6" animated />
-
         <el-empty v-else-if="!currentPaper" description="请选择试卷查看详情" />
-
         <div v-else>
-          <div class="detail-header">
-            <div>
-              <h3>{{ currentPaper.title }}</h3>
-              <p v-if="currentPaper.description">{{ currentPaper.description }}</p>
+          <div v-if="editMode" class="edit-paper-meta">
+            <el-form label-position="top" @submit.prevent>
+              <el-form-item label="试卷标题"><el-input v-model="editDraft.title" maxlength="80" show-word-limit /></el-form-item>
+              <el-form-item label="试卷描述"><el-input v-model="editDraft.description" type="textarea" :rows="3" maxlength="300" show-word-limit /></el-form-item>
+            </el-form>
+            <div class="edit-actions">
+              <el-button @click="openQuestionDialog">从题库添加题目</el-button>
+              <div><el-button :disabled="saveLoading" @click="cancelEditing">取消修改</el-button><el-button type="primary" :loading="saveLoading" :disabled="saveLoading" @click="savePaper">保存修改</el-button></div>
             </div>
+          </div>
+
+          <div v-else class="detail-header">
+            <div><h3>{{ currentPaper.title }}</h3><p v-if="currentPaper.description">{{ currentPaper.description }}</p></div>
             <div class="detail-stats">
-              <el-tag type="info">{{ currentPaper.status }}</el-tag>
-              <span>{{ currentPaper.item_count }} 题</span>
-              <span>{{ currentPaper.total_score }} 分</span>
+              <el-tag type="info">{{ currentPaper.status }}</el-tag><span>{{ currentPaper.item_count }} 题</span><span>{{ currentPaper.total_score }} 分</span>
+              <el-button v-if="currentPaper.status === 'draft'" type="primary" plain @click="startEditing">编辑试卷</el-button>
             </div>
           </div>
 
-          <div class="preview-controls">
-            <div class="preview-config">
-              <span>模板：HOMEWORK</span>
-              <span>版本：学生版</span>
-              <el-radio-group v-model="answerAreaMode" size="small">
-                <el-radio-button label="none">无答题区</el-radio-button>
-                <el-radio-button label="after_each_question">每题后留白</el-radio-button>
-              </el-radio-group>
-            </div>
-            <el-button type="primary" :loading="previewLoading" @click="fetchPaperRenderModel">
-              预览作业
-            </el-button>
+          <div v-if="!editMode" class="preview-controls">
+            <div class="preview-config"><span>模板：HOMEWORK</span><span>版本：学生版</span><el-radio-group v-model="answerAreaMode" size="small"><el-radio-button label="none">无答题区</el-radio-button><el-radio-button label="after_each_question">每题后留白</el-radio-button></el-radio-group></div>
+            <el-button type="primary" :loading="previewLoading" @click="fetchPaperRenderModel">预览作业</el-button>
           </div>
-
-          <el-alert
-            v-if="previewErrorMessage"
-            :title="previewErrorMessage"
-            type="error"
-            show-icon
-            class="state-alert"
-          />
-
+          <el-alert v-if="previewErrorMessage" :title="previewErrorMessage" type="error" show-icon class="state-alert" />
           <el-skeleton v-if="previewLoading" :rows="5" animated />
-          <paper-preview v-else-if="paperRenderModel" :render-model="paperRenderModel" />
+          <paper-preview v-else-if="paperRenderModel && !editMode" :render-model="paperRenderModel" />
 
-          <div class="paper-items">
-            <el-card
-              v-for="item in currentPaper.items"
-              :key="item.id"
-              class="paper-item"
-              shadow="never"
-            >
-              <div class="item-heading">
-                <span>第 {{ item.position }} 题</span>
-                <el-tag size="small" effect="plain">分值：{{ item.score ?? 0 }}</el-tag>
-                <el-tag size="small" type="info" effect="plain">题目 ID：{{ item.question_id }}</el-tag>
-                <el-tag size="small" type="warning" effect="plain">
-                  {{ formatQuestionType(item.question_type_snapshot) }}
-                </el-tag>
-                <span class="difficulty-text">难度：{{ formatDifficultyStars(item.difficulty_level_snapshot) }}</span>
+          <div v-if="editMode" class="paper-items edit-items">
+            <el-card v-for="(item, index) in editDraft.items" :key="item.localKey" class="paper-item" shadow="never">
+              <div class="item-heading edit-item-heading">
+                <span>第 {{ index + 1 }} 题</span><el-tag size="small" type="info" effect="plain">题目 ID：{{ item.question_id }}</el-tag>
+                <div class="reorder-actions"><el-button size="small" :disabled="index === 0" @click="moveItem(index, -1)">↑ 上移</el-button><el-button size="small" :disabled="index === editDraft.items.length - 1" @click="moveItem(index, 1)">↓ 下移</el-button><el-button size="small" type="danger" plain @click="removeItem(index)">删除</el-button></div>
               </div>
+              <el-form label-position="top" class="item-edit-form" @submit.prevent>
+                <el-form-item label="分值"><el-input-number v-model="item.score" :min="0" :precision="1" controls-position="right" /></el-form-item>
+                <el-form-item label="题干"><el-input v-model="item.content_snapshot" type="textarea" :rows="5" @input="markSnapshotOverride(item, 'content_snapshot')" /></el-form-item>
+                <div class="snapshot-preview markdown-body" v-html="renderSnapshot(item.content_snapshot)"></div>
+                <el-form-item label="答案"><el-input v-model="item.answer_snapshot" type="textarea" :rows="3" @input="markSnapshotOverride(item, 'answer_snapshot')" /></el-form-item>
+                <div v-if="item.answer_snapshot" class="snapshot-preview markdown-body" v-html="renderSnapshot(item.answer_snapshot)"></div>
+                <el-form-item label="解析"><el-input v-model="item.analysis_snapshot" type="textarea" :rows="3" @input="markSnapshotOverride(item, 'analysis_snapshot')" /></el-form-item>
+                <div v-if="item.analysis_snapshot" class="snapshot-preview markdown-body" v-html="renderSnapshot(item.analysis_snapshot)"></div>
+              </el-form>
+            </el-card>
+          </div>
 
-              <el-divider content-position="left">题目内容</el-divider>
-              <div class="markdown-body item-content" v-html="renderSnapshot(item.content_snapshot)"></div>
-
-              <template v-if="item.answer_snapshot">
-                <el-divider content-position="left">答案</el-divider>
-                <div class="markdown-body item-content" v-html="renderSnapshot(item.answer_snapshot)"></div>
-              </template>
-
-              <template v-if="item.analysis_snapshot">
-                <el-divider content-position="left">解析</el-divider>
-                <div class="markdown-body item-content" v-html="renderSnapshot(item.analysis_snapshot)"></div>
-              </template>
-
-              <template v-if="getTags(item).length > 0">
-                <el-divider content-position="left">知识点</el-divider>
-                <div class="knowledge-tags">
-                  <el-tag
-                    v-for="(tag, index) in getTags(item)"
-                    :key="index"
-                    size="small"
-                    type="success"
-                    effect="plain"
-                  >
-                    {{ tag.label }}
-                  </el-tag>
-                </div>
-              </template>
+          <div v-else class="paper-items">
+            <el-card v-for="item in currentPaper.items" :key="item.id" class="paper-item" shadow="never">
+              <div class="item-heading"><span>第 {{ item.position }} 题</span><el-tag size="small" effect="plain">分值：{{ item.score ?? 0 }}</el-tag><el-tag size="small" type="info" effect="plain">题目 ID：{{ item.question_id }}</el-tag><el-tag size="small" type="warning" effect="plain">{{ formatQuestionType(item.question_type_snapshot) }}</el-tag><span class="difficulty-text">难度：{{ formatDifficultyStars(item.difficulty_level_snapshot) }}</span></div>
+              <el-divider content-position="left">题目内容</el-divider><div class="markdown-body item-content" v-html="renderSnapshot(item.content_snapshot)"></div>
+              <template v-if="item.answer_snapshot"><el-divider content-position="left">答案</el-divider><div class="markdown-body item-content" v-html="renderSnapshot(item.answer_snapshot)"></div></template>
+              <template v-if="item.analysis_snapshot"><el-divider content-position="left">解析</el-divider><div class="markdown-body item-content" v-html="renderSnapshot(item.analysis_snapshot)"></div></template>
+              <template v-if="getTags(item).length > 0"><el-divider content-position="left">知识点</el-divider><div class="knowledge-tags"><el-tag v-for="(tag, index) in getTags(item)" :key="index" size="small" type="success" effect="plain">{{ tag.label }}</el-tag></div></template>
             </el-card>
           </div>
         </div>
       </div>
     </div>
+
+    <el-dialog v-model="questionDialogVisible" title="从题库添加题目" width="720px" destroy-on-close>
+      <el-input v-model="questionKeyword" placeholder="搜索题干" clearable class="question-search" />
+      <el-skeleton v-if="questionLoading" :rows="5" animated />
+      <el-empty v-else-if="filteredQuestions.length === 0" description="暂无可用题目" />
+      <div v-else class="question-picker-list">
+        <label v-for="question in filteredQuestions" :key="question.id" class="question-picker-item">
+          <el-checkbox :model-value="questionSelection.includes(question.id)" :disabled="draftQuestionIds.has(question.id)" @change="toggleQuestionSelection(question.id)" />
+          <div class="question-picker-content"><div class="markdown-body" v-html="renderSnapshot(question.content)"></div><el-tag v-if="draftQuestionIds.has(question.id)" size="small" type="info">已添加</el-tag></div>
+        </label>
+      </div>
+      <template #footer><el-button @click="questionDialogVisible = false">取消</el-button><el-button type="primary" :disabled="questionSelection.length === 0" @click="addSelectedQuestions">添加所选题目</el-button></template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import axios from 'axios'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
-
 import { API_V1_BASE_URL } from '../config/api'
 import { renderMarkdown } from '@/utils/renderMarkdown'
 import PaperPreview from './PaperPreview.vue'
 
 const API_BASE = API_V1_BASE_URL
-
 const papers = ref([])
 const currentPaper = ref(null)
 const selectedPaperId = ref(null)
 const listLoading = ref(false)
 const detailLoading = ref(false)
 const previewLoading = ref(false)
+const saveLoading = ref(false)
 const errorMessage = ref('')
 const previewErrorMessage = ref('')
 const paperRenderModel = ref(null)
 const answerAreaMode = ref('after_each_question')
+const editMode = ref(false)
+const editDraft = ref(null)
+const editBaseline = ref('')
+const questionDialogVisible = ref(false)
+const questionLoading = ref(false)
+const questions = ref([])
+const questionKeyword = ref('')
+const questionSelection = ref([])
 
+const clone = (value) => JSON.parse(JSON.stringify(value))
+const draftQuestionIds = computed(() => new Set((editDraft.value?.items || []).map((item) => item.question_id)))
+const filteredQuestions = computed(() => {
+  const keyword = questionKeyword.value.trim().toLowerCase()
+  return keyword ? questions.value.filter((question) => (question.content || '').toLowerCase().includes(keyword)) : questions.value
+})
 const getErrorMessage = (error, fallback) => {
   const detail = error.response?.data?.detail
-  if (error.response?.status === 401 || error.response?.status === 403) {
-    return '登录状态或权限异常，请重新登录后再试。'
-  }
+  if (error.response?.status === 401 || error.response?.status === 403) return '登录状态或权限异常，请重新登录后再试。'
+  if (Array.isArray(detail)) return detail[0]?.msg || fallback
   return detail || fallback
 }
 
@@ -181,17 +145,27 @@ const fetchPapers = async () => {
     if (selectedPaperId.value && !papers.value.some((paper) => paper.id === selectedPaperId.value)) {
       selectedPaperId.value = null
       currentPaper.value = null
+      editMode.value = false
     }
   } catch (error) {
     console.error(error)
     errorMessage.value = getErrorMessage(error, '加载试卷列表失败。')
     ElMessage.error(errorMessage.value)
-  } finally {
-    listLoading.value = false
-  }
+  } finally { listLoading.value = false }
 }
 
+const confirmDiscard = async () => {
+  if (!editMode.value || JSON.stringify(editDraft.value) === editBaseline.value) return true
+  try {
+    await ElMessageBox.confirm('存在未保存修改，确认放弃吗？', '取消编辑', { confirmButtonText: '放弃修改', cancelButtonText: '继续编辑', type: 'warning' })
+    return true
+  } catch { return false }
+}
 const openPaperDetail = async (paperId) => {
+  if (paperId === selectedPaperId.value && currentPaper.value) return
+  if (!(await confirmDiscard())) return
+  editMode.value = false
+  editDraft.value = null
   selectedPaperId.value = paperId
   detailLoading.value = true
   errorMessage.value = ''
@@ -204,261 +178,163 @@ const openPaperDetail = async (paperId) => {
     console.error(error)
     errorMessage.value = getErrorMessage(error, '加载试卷详情失败。')
     ElMessage.error(errorMessage.value)
-  } finally {
-    detailLoading.value = false
-  }
+  } finally { detailLoading.value = false }
 }
-
 const fetchPaperRenderModel = async () => {
   if (!selectedPaperId.value) return
   previewLoading.value = true
   previewErrorMessage.value = ''
   try {
-    const response = await axios.post(`${API_BASE}/papers/${selectedPaperId.value}/render-model`, {
-      template_type: 'homework',
-      version: 'student',
-      paper_size: 'A4',
-      group_by: 'question_type',
-      sort_by: 'position',
-      answer_area_mode: answerAreaMode.value
-    })
+    const response = await axios.post(`${API_BASE}/papers/${selectedPaperId.value}/render-model`, { template_type: 'homework', version: 'student', paper_size: 'A4', group_by: 'question_type', sort_by: 'position', answer_area_mode: answerAreaMode.value })
     paperRenderModel.value = response.data
   } catch (error) {
     console.error(error)
     previewErrorMessage.value = getErrorMessage(error, '生成作业预览失败。')
     ElMessage.error(previewErrorMessage.value)
-  } finally {
-    previewLoading.value = false
+  } finally { previewLoading.value = false }
+}
+
+const startEditing = () => {
+  editDraft.value = { title: currentPaper.value.title, description: currentPaper.value.description || '', items: currentPaper.value.items.map((item) => ({ ...clone(item), kind: 'existing', localKey: `existing-${item.id}` })) }
+  editBaseline.value = JSON.stringify(editDraft.value)
+  editMode.value = true
+  paperRenderModel.value = null
+  previewErrorMessage.value = ''
+}
+const cancelEditing = async () => {
+  if (!(await confirmDiscard())) return
+  editMode.value = false
+  editDraft.value = null
+  editBaseline.value = ''
+}
+const moveItem = (index, offset) => {
+  const target = index + offset
+  if (target < 0 || target >= editDraft.value.items.length) return
+  const items = [...editDraft.value.items]
+  ;[items[index], items[target]] = [items[target], items[index]]
+  editDraft.value.items = items
+}
+const removeItem = async (index) => {
+  if (editDraft.value.items.length === 1) return ElMessage.warning('试卷至少需要保留一道题。')
+  try {
+    await ElMessageBox.confirm('确认从当前试卷中删除这道题吗？题库原题不会被删除。', '删除题目', { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' })
+    editDraft.value.items.splice(index, 1)
+  } catch { /* User cancelled. */ }
+}
+const loadQuestions = async () => {
+  questionLoading.value = true
+  try {
+    const response = await axios.get(`${API_BASE}/questions?limit=100`)
+    questions.value = response.data || []
+  } catch (error) {
+    console.error(error)
+    ElMessage.error(getErrorMessage(error, '加载题库失败。'))
+  } finally { questionLoading.value = false }
+}
+const openQuestionDialog = async () => {
+  questionSelection.value = []
+  questionKeyword.value = ''
+  questionDialogVisible.value = true
+  await loadQuestions()
+}
+const toggleQuestionSelection = (questionId) => {
+  if (draftQuestionIds.value.has(questionId)) return
+  questionSelection.value = questionSelection.value.includes(questionId) ? questionSelection.value.filter((id) => id !== questionId) : [...questionSelection.value, questionId]
+}
+const addSelectedQuestions = () => {
+  for (const questionId of questionSelection.value) {
+    if (draftQuestionIds.value.has(questionId)) continue
+    const question = questions.value.find((item) => item.id === questionId)
+    editDraft.value.items.push({ kind: 'question', localKey: `question-${questionId}`, question_id: questionId, score: 0, content_snapshot: question?.content || '', answer_snapshot: '', analysis_snapshot: '', snapshotOverrides: {} })
   }
+  questionDialogVisible.value = false
+  questionSelection.value = []
+}
+const markSnapshotOverride = (item, field) => {
+  if (item.kind === 'question') item.snapshotOverrides = { ...(item.snapshotOverrides || {}), [field]: true }
+}
+const buildUpdateItem = (item) => {
+  if (item.kind === 'existing') return { kind: 'existing', id: item.id, question_id: item.question_id, score: Number(item.score) || 0, content_snapshot: item.content_snapshot, answer_snapshot: item.answer_snapshot || null, analysis_snapshot: item.analysis_snapshot || null }
+  const payload = { kind: 'question', question_id: item.question_id, score: Number(item.score) || 0 }
+  for (const field of ['content_snapshot', 'answer_snapshot', 'analysis_snapshot']) if (item.snapshotOverrides?.[field]) payload[field] = item[field] || null
+  return payload
+}
+const savePaper = async () => {
+  const title = editDraft.value.title.trim()
+  if (!title) return ElMessage.warning('试卷标题不能为空。')
+  if (editDraft.value.items.length === 0) return ElMessage.warning('试卷至少需要保留一道题。')
+  if (editDraft.value.items.some((item) => !item.content_snapshot?.trim())) return ElMessage.warning('题干不能为空。')
+  saveLoading.value = true
+  try {
+    const response = await axios.patch(`${API_BASE}/papers/${currentPaper.value.id}`, { title, description: editDraft.value.description.trim() || null, items: editDraft.value.items.map(buildUpdateItem) })
+    currentPaper.value = response.data
+    papers.value = papers.value.map((paper) => paper.id === response.data.id ? { ...paper, title: response.data.title, status: response.data.status, item_count: response.data.item_count, total_score: response.data.total_score, updated_at: response.data.updated_at } : paper)
+    paperRenderModel.value = null
+    editMode.value = false
+    editDraft.value = null
+    editBaseline.value = ''
+    ElMessage.success('试卷修改已保存。')
+  } catch (error) {
+    console.error(error)
+    ElMessage.error(getErrorMessage(error, '保存试卷修改失败。'))
+  } finally { saveLoading.value = false }
 }
 
-const handlePaperCreated = async () => {
-  await fetchPapers()
-}
-
+const handlePaperCreated = async () => fetchPapers()
 const renderSnapshot = (content) => content ? renderMarkdown(content) : '<span style="color:#999">暂无内容</span>'
-
-const getTags = (item) => {
-  const rawTags = item?.knowledge_tags_snapshot || []
-  return rawTags.map((tag) => {
-    if (typeof tag === 'string') {
-      return { label: tag }
-    }
-    if (tag && typeof tag === 'object') {
-      return { label: tag.label || tag.name || String(tag) }
-    }
-    return { label: String(tag) }
-  })
-}
-
-const questionTypeLabels = {
-  single_choice: '单选题',
-  multiple_choice: '多选题',
-  fill_blank: '填空题',
-  solution: '解答题',
-  judge: '判断题',
-  unknown: '未知'
-}
-
+const getTags = (item) => (item?.knowledge_tags_snapshot || []).map((tag) => typeof tag === 'string' ? { label: tag } : tag && typeof tag === 'object' ? { label: tag.label || tag.name || String(tag) } : { label: String(tag) })
+const questionTypeLabels = { single_choice: '单选题', multiple_choice: '多选题', fill_blank: '填空题', solution: '解答题', judge: '判断题', unknown: '未知' }
 const formatQuestionType = (questionType) => questionTypeLabels[questionType] || '未知'
-
 const formatDifficultyStars = (difficultyLevel) => {
   const level = Number(difficultyLevel)
-  if (!Number.isInteger(level) || level < 1 || level > 5) return '未评估'
-  return `${'★'.repeat(level)}${'☆'.repeat(5 - level)}`
+  return Number.isInteger(level) && level >= 1 && level <= 5 ? `${'★'.repeat(level)}${'☆'.repeat(5 - level)}` : '未评估'
 }
-
 const formatTime = (value) => value ? new Date(value).toLocaleString() : '-'
-
-onMounted(() => {
-  fetchPapers()
-  window.addEventListener('paper-created', handlePaperCreated)
-})
-
-onBeforeUnmount(() => {
-  window.removeEventListener('paper-created', handlePaperCreated)
-})
+onMounted(() => { fetchPapers(); window.addEventListener('paper-created', handlePaperCreated) })
+onBeforeUnmount(() => window.removeEventListener('paper-created', handlePaperCreated))
 </script>
 
 <style scoped>
-.paper-container {
-  padding: 20px;
-}
-
-.header-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 20px;
-  margin-bottom: 16px;
-}
-
-.subtitle {
-  color: #666;
-  font-size: 13px;
-  margin-top: 6px;
-}
-
-.state-alert {
-  margin-bottom: 16px;
-}
-
-.empty-state {
-  margin-top: 30px;
-  text-align: center;
-}
-
-.paper-layout {
-  display: grid;
-  grid-template-columns: minmax(260px, 360px) minmax(0, 1fr);
-  gap: 18px;
-  align-items: start;
-}
-
-.paper-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.paper-card {
-  cursor: pointer;
-  border: 1px solid transparent;
-}
-
-.paper-card.active {
-  border-color: #409eff;
-}
-
-.paper-title-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  align-items: center;
-}
-
-.paper-title-row strong {
-  color: #1f3442;
-  word-break: break-word;
-}
-
-.paper-meta-grid {
-  display: grid;
-  gap: 6px;
-  margin-top: 12px;
-  color: #667780;
-  font-size: 13px;
-}
-
-.paper-detail {
-  min-height: 360px;
-  padding: 18px;
-  border: 1px solid #e5ece9;
-  border-radius: 8px;
-  background: #fff;
-}
-
-.detail-header {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 18px;
-}
-
-.detail-header h3 {
-  margin: 0 0 8px;
-  color: #1f3442;
-}
-
-.detail-header p {
-  margin: 0;
-  color: #667780;
-  line-height: 1.7;
-}
-
-.detail-stats {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-  justify-content: flex-end;
-  color: #667780;
-  font-size: 13px;
-}
-
-.preview-controls {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  padding: 12px;
-  margin-bottom: 16px;
-  border: 1px solid #e5ece9;
-  border-radius: 8px;
-  background: #f8fbfa;
-}
-
-.preview-config {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  color: #536471;
-  font-size: 13px;
-}
-
-.paper-items {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.paper-item {
-  border-radius: 8px;
-}
-
-.item-heading {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  color: #243846;
-  font-weight: 600;
-}
-
-.difficulty-text {
-  color: #8a6d1f;
-  font-size: 13px;
-  white-space: nowrap;
-}
-
-.item-content {
-  font-size: 15px;
-  line-height: 1.8;
-}
-
-.knowledge-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
+.paper-container { padding: 20px; }
+.header-row, .detail-header, .edit-actions, .edit-item-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.header-row { margin-bottom: 16px; }
+.subtitle { color: #666; font-size: 13px; margin-top: 6px; }
+.state-alert { margin-bottom: 16px; }
+.empty-state { margin-top: 30px; text-align: center; }
+.paper-layout { display: grid; grid-template-columns: minmax(260px, 360px) minmax(0, 1fr); gap: 18px; align-items: start; }
+.paper-list, .paper-items { display: flex; flex-direction: column; gap: 12px; }
+.paper-card { cursor: pointer; border: 1px solid transparent; }
+.paper-card.active { border-color: #409eff; }
+.paper-title-row { display: flex; justify-content: space-between; gap: 10px; align-items: center; }
+.paper-title-row strong { color: #1f3442; word-break: break-word; }
+.paper-meta-grid { display: grid; gap: 6px; margin-top: 12px; color: #667780; font-size: 13px; }
+.paper-detail { min-height: 360px; padding: 18px; border: 1px solid #e5ece9; border-radius: 8px; background: #fff; }
+.detail-header { margin-bottom: 18px; align-items: flex-start; }
+.detail-header h3 { margin: 0 0 8px; color: #1f3442; }
+.detail-header p { margin: 0; color: #667780; line-height: 1.7; }
+.detail-stats { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: flex-end; color: #667780; font-size: 13px; }
+.preview-controls { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px; margin-bottom: 16px; border: 1px solid #e5ece9; border-radius: 8px; background: #f8fbfa; }
+.preview-config, .item-heading, .knowledge-tags, .reorder-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.preview-config { color: #536471; font-size: 13px; }
+.paper-item { border-radius: 8px; }
+.item-heading { color: #243846; font-weight: 600; }
+.difficulty-text { color: #8a6d1f; font-size: 13px; white-space: nowrap; }
+.item-content { font-size: 15px; line-height: 1.8; }
+.edit-paper-meta { padding: 16px; margin-bottom: 16px; border: 1px solid #d9ecff; border-radius: 8px; background: #f5faff; }
+.edit-actions { margin-top: 8px; }
+.edit-items { gap: 16px; }
+.reorder-actions { margin-left: auto; }
+.item-edit-form { margin-top: 16px; }
+.snapshot-preview { padding: 10px 12px; margin: -8px 0 18px; border-left: 3px solid #d9ecff; background: #fafcfe; }
+.question-search { margin-bottom: 12px; }
+.question-picker-list { max-height: 460px; overflow: auto; display: flex; flex-direction: column; gap: 8px; }
+.question-picker-item { display: flex; gap: 10px; align-items: flex-start; padding: 10px; border: 1px solid #e5ece9; border-radius: 6px; cursor: pointer; }
+.question-picker-content { min-width: 0; flex: 1; }
 @media (max-width: 980px) {
-  .paper-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .detail-header {
-    flex-direction: column;
-  }
-
-  .detail-stats {
-    justify-content: flex-start;
-  }
-
-  .preview-controls {
-    flex-direction: column;
-    align-items: flex-start;
-  }
+  .paper-layout { grid-template-columns: 1fr; }
+  .detail-header, .edit-actions, .edit-item-heading { flex-direction: column; align-items: flex-start; }
+  .detail-stats { justify-content: flex-start; }
+  .preview-controls { flex-direction: column; align-items: flex-start; }
+  .reorder-actions { margin-left: 0; }
 }
 </style>
