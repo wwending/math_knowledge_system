@@ -2,6 +2,27 @@
 
 说明：本文件按时间倒序记录决策。较早决策中的“当前主链路”等表述保留为当时历史事实；如与顶部较新决策冲突，以较新决策和 `docs/STATUS.md` 当前 checkpoint 为准。
 
+## 决策 35：正常开发采用 Issue-first 与 PR 自动追溯门禁
+
+结论：
+
+- 正常 feature、fix、refactor、test、docs、chore、security 和 deploy 工作必须先有真实 GitHub Issue，再进入包含 Issue number 的任务分支与 PR 发布流程。
+- 每个正常 PR 必须使用 GitHub closing keyword 关联当前仓库 Issue，默认使用 `Closes #123`，使合并后自动关闭 Issue。
+- 独立的 `PR traceability` CI 检查会验证 closing reference、目标存在且不是 PR，并要求至少一个有效 Issue 早于 PR 创建。
+- 此规则自治理 PR 合并后向前生效，不追溯重命名历史分支，也不重写已合并 PR 或批量补造 Issue。
+
+原因：
+
+- Issue、branch、commit 和 PR 分别承载需求根、实现空间、变更历史与审查合并单元；统一关联后可以从需求追溯到交付。
+- 仅靠文档约定容易遗漏，最小只读 CI 门禁能在不引入 PAT、第三方 bot 或运行时服务的前提下稳定执行规则。
+
+边界：
+
+- 当前只接受本仓库 `#<number>` 形式的 Issue，不引入跨仓库追踪。
+- main ruleset 是否把新 check 设为 required 由仓库管理员另行授权配置，本决策不自动修改 ruleset。
+
+日期：2026-08-18
+
 ## 决策 34：试卷草稿编辑采用原子全量状态保存并保持题库快照隔离
 
 结论：
