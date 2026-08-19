@@ -58,6 +58,7 @@ Unless the user explicitly asks to change them:
 When the user asks to inspect, review, explain, audit, compare, or plan:
 
 - Work read-only by default.
+- Read-only work may use the permanent local Control Checkout because it does not change repository, index, or working-tree state.
 - Do not edit files, commit, push, create PRs, deploy, migrate, or change machine configuration unless explicitly requested.
 
 ### Implementation / fix / refactor
@@ -87,6 +88,11 @@ If the user explicitly requested one of these actions, do not ask a second time 
 
 - Normal feature, fix, refactor, test, docs, chore, security, and deploy work is Issue-first. Before implementation, confirm that a real GitHub Issue already exists as the task's traceability root; use an Issue supplied by the user, and do not invent a meaningless Issue merely to satisfy the workflow.
 - If no Issue exists, do not enter the normal branch/PR publication flow. The Issue should describe the requirement, defect, or task before implementation begins.
+- The permanent local Control Checkout is management/reference-only. Do not implement normal writable Issue work there.
+- Every writable Issue uses one Issue-numbered task branch, one linked dedicated worktree, and one Codex. Do not run concurrent repository or file writers in the same worktree.
+- Before writable work, confirm the Issue, designated branch and dedicated path, actual repository root, checked-out branch, intended base/HEAD, worktree inventory, clean working state, absence of unrelated changes, and expected directory ownership. Confirm there is no evidence that another Agent or external process is writing the same worktree.
+- If the branch or worktree mapping is wrong, ownership is unexpected, unknown files or unrelated changes appear, another Agent is active there, or repository state changes externally, stop repository writes and report the evidence.
+- Do not repair unknown or foreign work with `git reset --hard`, destructive `git clean`, `git stash`, checkout/switch over it, overwrite, force push, or worktree deletion. Preserve it until its owner decides what to do.
 - Never develop directly on `main`.
 - Start implementation from a clean worktree and an up-to-date base when practical.
 - Normal task branches must contain the Issue number, for example `feat/issue-123-description`, `fix/issue-123-description`, `chore/issue-123-description`, `docs/issue-123-description`, or `deploy/issue-123-description`. Do not rename historical branches solely to apply this rule retroactively.

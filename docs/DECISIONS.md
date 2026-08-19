@@ -2,6 +2,25 @@
 
 说明：本文件按时间倒序记录决策。较早决策中的“当前主链路”等表述保留为当时历史事实；如与顶部较新决策冲突，以较新决策和 `docs/STATUS.md` 当前 checkpoint 为准。
 
+## 决策 36：Control Checkout 与每 Issue 可写 worktree 分离
+
+结论：
+
+- `D:\math_knowledge_system` 固定为本地 Control Checkout，只用于管理、参考和只读 analysis/review/audit，不承载正常可写 Issue 实现。
+- 每个可写 feature、fix、refactor、test、docs、chore、security 或 deploy Issue 使用一条 Issue-numbered branch、一个 linked dedicated worktree 和一个 Codex；同一 worktree 不允许并发 repository/file writers。
+- 开始写入前必须核对 Issue、专用路径、branch/HEAD、worktree 映射、工作状态、无关改动和 ownership；发现未知或外部状态时 fail safe 停止，不用破坏性 Git 操作自行修复。
+
+原因：
+
+- 仅用 branch 不能隔离共享 checkout 的 index 和 working tree。一次真实并发 Codex 事故已造成 branch、index 与 working-tree 相互干扰的明确风险，因此工作空间本身也必须隔离。
+
+边界：
+
+- linked worktree 只隔离各 checkout 的 `HEAD`、index 和 working files，不是 VM/container 安全边界；repository objects、refs、remotes 和多数 configuration 仍共享，相关变更必须保持克制。
+- 完整预检、hotfix 与安全退役流程由 `docs/ENGINEERING_WORKFLOW.md` 定义；本决策不引入 daemon、locking service、远程开发基础设施或自动清理。
+
+日期：2026-08-19
+
 ## 决策 35：正常开发采用 Issue-first 与 PR 自动追溯门禁
 
 结论：

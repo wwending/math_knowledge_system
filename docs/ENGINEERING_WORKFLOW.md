@@ -4,7 +4,7 @@
 
 ### Windows workstation
 
-Primary coding environment.
+Primary local host environment. Writable development happens only in dedicated Task Worktrees.
 
 Responsibilities:
 
@@ -39,12 +39,33 @@ Responsibilities:
 - run only reviewed/validated commits;
 - practice backup, migration, exact-SHA deployment, health checks, smoke tests, and rollback discipline when a Demo deployment is actually requested.
 
+## Local checkout roles
+
+### Control Checkout
+
+`D:\math_knowledge_system` is the permanent local Control Checkout. It is management/reference-only: use it to inspect repository state, list or create linked worktrees, fetch deliberate updates, and perform read-only analysis/review/audit. Normal writable Issue implementation must never happen there.
+
+### Task Worktree
+
+Every writable feature, fix, refactor, test, docs, chore, security, or deploy Issue uses exactly one Issue-numbered task branch, one linked dedicated worktree, and one Codex. The Windows path convention is:
+
+```text
+D:\math_knowledge_system-worktrees\issue-<number>-<description>
+```
+
+The task prompt should identify the Issue, branch, dedicated path, and intended base. Only that task's Codex may write repository files or Git state in the Task Worktree; concurrent repository/file writers must not share it. Read-only analysis, review, and audit remain allowed in the Control Checkout and do not require a Task Worktree.
+
+Linked worktrees isolate each checkout's `HEAD`, index, and working files. They are not a VM, container, permission, or process security boundary: linked worktrees still share repository objects, refs, remotes, and most repository configuration. Avoid unnecessary remote, shared-ref, repository-configuration, global-configuration, or shared-history mutations, and never use them to work around an ownership or workspace mismatch.
+
 ## Normal change flow
 
 ```text
 GitHub Issue [required]
   -> issue-numbered local task branch
+  -> dedicated linked Task Worktree
+  -> one Codex assigned to that worktree
   -> local focused tests
+  -> commit
   -> push branch
   -> Draft PR linked with `Closes #<issue>`
   -> PR traceability gate
@@ -54,6 +75,7 @@ GitHub Issue [required]
   -> merge main
   -> linked Issue closes
   -> Demo exact-SHA deployment [when intentionally releasing to Demo]
+  -> safe Task Worktree retirement
 ```
 
 Documentation-only, governance-only, or other non-runtime changes normally do not require Staging or Demo deployment unless they change executable deployment commands, runtime contracts, infrastructure behavior, or release evidence.
@@ -85,6 +107,44 @@ Use one intent per branch:
 - `chore/issue-123-description`
 - `security/issue-123-description`
 - `deploy/issue-123-description`
+
+Ordinary work normally creates its issue-numbered branch and Task Worktree from the current `origin/main`. A production/Demo hotfix may deliberately start from either `origin/main` or the exact deployed/release SHA; record that selected base rather than assuming the newest branch tip is the correct operational base.
+
+## Writable-task preflight and fail-safe stop
+
+Before any repository write, confirm all of the following:
+
+- the real GitHub Issue exists and matches the requested scope;
+- the designated Issue-numbered branch and dedicated Task Worktree path are known;
+- the actual repository root is exactly that dedicated path and the expected branch is checked out there;
+- `HEAD`/base is the intended commit, or a legitimate upstream change is understood before continuing;
+- `git worktree list` maps the branch to that worktree and other worktrees will be preserved;
+- the worktree is clean, or every existing change and untracked file is known to belong to this Issue;
+- filesystem ownership is expected and there is no evidence of another Agent, external writer, or concurrent repository/file mutation in this worktree.
+
+If a branch/worktree mapping is wrong, ownership is unexpected, unknown or unrelated files appear, another Agent is using the worktree, or state changes externally during the task, stop repository writes and report the evidence. Do not try to recover by resetting, destructively cleaning, stashing unknown work, checking out or switching over foreign work, overwriting files, force-pushing, or deleting/recreating a worktree. Resume only after the workspace owner resolves the conflict or explicitly identifies the state as safe.
+
+Recheck the root, branch, `HEAD`, status, and intended diff before staging, committing, and pushing. Stage only files belonging to the Issue and push only its task branch.
+
+## Worktree lifecycle and urgent work
+
+The normal lifecycle is:
+
+```text
+Issue created
+  -> deliberately select base
+  -> create Issue-numbered branch and linked Task Worktree
+  -> assign one Codex
+  -> implement and run focused checks
+  -> commit, push, and open Draft PR with `Closes #<issue>`
+  -> CI / required Staging / review / merge or intentional abandonment
+  -> inspect unique work and remote divergence
+  -> retire only the known-safe Task Worktree
+```
+
+Before removal, verify that the exact Task Worktree has no unique uncommitted or untracked work, its branch has no unpushed commits, and the task is truly complete or intentionally abandoned. Remove and prune only explicitly identified, inspected worktrees; never auto-delete an unknown or occupied worktree. Branch deletion is a separate deliberate action and must not discard unique work.
+
+Urgency does not justify interrupting another Issue's checkout. For example, Issue #40 remains on its branch in worktree #40. Urgent Issue #41 gets its own Issue-numbered branch and worktree #41 from a deliberately selected `origin/main` or exact deployed/release SHA. Never switch, reset, clean, or stash #40 to make room for #41.
 
 ## PR lifecycle
 
@@ -170,6 +230,7 @@ Project-wide instructions live in the repository-tracked root `AGENTS.md`.
 Checkout-specific instructions for Windows, Staging, or Demo belong in a root `AGENTS.override.md` inside that checkout and are intentionally ignored by Git.
 
 Do not place `math_knowledge_system`-specific instructions into global `~/.codex/AGENTS.md` or `~/.codex/AGENTS.override.md` as part of this project workflow.
+Do not introduce dynamic override generation or synchronization: keep the tracked project-wide contract stable and use a simple ignored override only for facts specific to one checkout.
 
 ## Documentation ownership
 
