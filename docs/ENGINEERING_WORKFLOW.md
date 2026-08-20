@@ -95,11 +95,13 @@ The lease SHA-256 key includes the canonical repository identity, common Git dir
 
 The Worker prompt is sent over stdin rather than exposed in the command line. It includes the Issue number, branch, exact worktree path, requested/resolved base, actual branch HEAD, recognized working state, ownership boundaries, and a pointer to the repository instructions. Runtime files (`events.jsonl`, stderr, and the final Worker message) are stored under the OS temporary directory by default; `-ResultRoot` is rejected if it overlaps any linked repository worktree, including another active Issue's worktree. Stable terminal statuses include `DRY_RUN_OK`, `PROVISIONED`, `WORKER_STARTED`, `WORKER_SUCCEEDED`, `WORKER_FAILED`, and `BLOCKED`.
 
-The implementation was designed against locally installed `codex-cli 0.148.0` and rechecks the required `exec` capabilities at every run: `-C/--cd`, `--sandbox`, `--approve-for-me`, `--add-dir`, `--json`, and `--output-last-message`. The launch shape is:
+The launcher rechecks the required `exec` capabilities at every run instead of pinning behavior to a Codex CLI version. It fail-closed verifies `-C/--cd`, `--approve-for-me`, `--add-dir`, `--json`, and `--output-last-message`, and also verifies that the CLI help contract defines `--approve-for-me` as automatic approval review using the `workspace-write` sandbox. The launch shape is:
 
 ```text
-codex exec -C <dedicated-worktree> --sandbox workspace-write --approve-for-me --add-dir <git-common-dir> --json -o <temporary-result-file> -
+codex exec -C <dedicated-worktree> --approve-for-me --add-dir <git-common-dir> --json -o <temporary-result-file> -
 ```
+
+For this permission preset, `--approve-for-me` is the sole permission argv and implicitly selects the `workspace-write` sandbox. Adding an explicit `--sandbox workspace-write` would create a mutually exclusive CLI combination; omitting that redundant flag is a compatibility-expression fix, not a sandbox downgrade. Dry-run reports both the shared command shape and the effective automatic-review / `workspace-write` semantics from the same permission model used for the real Worker argv.
 
 The only additional writable directory passed with `--add-dir` is the repository's shared Git common-dir because linked-worktree commits update shared refs, objects, and worktree metadata there. The Control Checkout working directory itself is not added. This does not remove the shared-state risk or authorize unrelated ref/config/history changes. Do not replace this with `danger-full-access` or a bypass mode, and do not modify global Codex security settings. Authentication, PAT, MFA, private keys, and denied approval boundaries remain manual/trusted boundaries.
 

@@ -42,7 +42,11 @@ function createFixture() {
     fakeCodex,
     String.raw`$Rest = $args
 if ($Rest -contains '--version') { Write-Output 'codex-cli test-0.0.0'; exit 0 }
-if ($Rest -contains '--help') { Write-Output '--cd --sandbox --approve-for-me --add-dir --json --output-last-message'; exit 0 }
+if ($Rest -contains '--help') {
+  if ($env:FAKE_CODEX_HELP) { Write-Output $env:FAKE_CODEX_HELP }
+  else { Write-Output '-C, --cd <DIR> --approve-for-me Route approval requests through automatic review using the workspace-write sandbox --add-dir --json --output-last-message' }
+  exit 0
+}
 $stdinText = [Console]::In.ReadToEnd()
 $capture = $env:FAKE_CODEX_CAPTURE
 $descendantPid = $null
@@ -73,6 +77,7 @@ function buildLauncherInvocation(fixture, {
   spawnDescendant = false,
   resultRoot = fixture.resultRoot,
   omitControl = false,
+  helpText,
 } = {}) {
   const capture = join(fixture.root, `capture-${issue}-${Date.now()}-${++invocationCounter}.json`);
   const args = [
@@ -95,6 +100,7 @@ function buildLauncherInvocation(fixture, {
     FAKE_CODEX_EXIT: String(exitCode),
     FAKE_CODEX_SLEEP_MS: String(sleepMs),
     FAKE_CODEX_SPAWN_DESCENDANT: spawnDescendant ? "1" : "0",
+    ...(helpText === undefined ? {} : { FAKE_CODEX_HELP: helpText }),
   };
   return { args, env, capture, worktree, branch };
 }
@@ -175,6 +181,15 @@ test("dry-run resolves a new Issue without creating a branch, worktree, or Worke
   assert.equal(invocation.json.decision, "CREATE_BRANCH_AND_WORKTREE");
   assert.equal(invocation.json.branchHeadSha, null);
   assert.equal(invocation.json.intendedInitialHeadSha, fixture.baseSha);
+  assert.deepEqual(invocation.json.permission, {
+    preset: "approve-for-me",
+    argv: ["--approve-for-me"],
+    approvalMode: "automatic-review",
+    sandboxMode: "workspace-write",
+    sandboxSource: "implicit-by-approve-for-me",
+  });
+  assert.match(invocation.json.commandShape, /--approve-for-me/);
+  assert.doesNotMatch(invocation.json.commandShape, /--sandbox|danger-full-access|dangerously-bypass|yolo/i);
   const missingBranch = spawnSync("git", ["-C", fixture.control, "show-ref", "--verify", "--quiet", `refs/heads/${invocation.branch}`]);
   assert.equal(missingBranch.status, 1);
   assert.equal(git(fixture.control, "status", "--porcelain=v1", "--branch"), beforeStatus);
@@ -197,6 +212,8 @@ test("provisions a new branch/worktree and passes the real cwd plus -C to the Wo
   const cdIndex = capture.args.indexOf("-C");
   assert.ok(cdIndex >= 0);
   assert.equal(resolve(capture.args[cdIndex + 1]).toLowerCase(), resolve(invocation.worktree).toLowerCase());
+  assert.equal(capture.args.filter((value) => value === "--approve-for-me").length, 1);
+  assert.equal(capture.args.includes("--sandbox"), false);
   const addDirIndexes = capture.args.flatMap((value, index) => value === "--add-dir" ? [index] : []);
   assert.equal(addDirIndexes.length, 1);
   const commonGitDir = resolve(fixture.control, git(fixture.control, "rev-parse", "--git-common-dir"));
@@ -207,6 +224,41 @@ test("provisions a new branch/worktree and passes the real cwd plus -C to the Wo
   assert.ok(capture.prompt.includes(`Branch HEAD SHA: ${fixture.baseSha}`));
   assert.equal(git(fixture.control, "branch", "--show-current"), controlBranch);
   assert.equal(git(fixture.control, "status", "--porcelain=v1"), controlStatus);
+});
+
+test("dry-run command shape and effective permission semantics match the real Worker argv", () => {
+  const fixture = createFixture();
+  const dryRun = invokeLauncher(fixture, { issue: 121, dryRun: true });
+  const real = invokeLauncher(fixture, { issue: 121 });
+  assert.equal(dryRun.result.status, 0);
+  assert.equal(real.result.status, 0);
+  const capture = JSON.parse(readFileSync(real.capture, "utf8"));
+  const commonGitDir = resolve(fixture.control, git(fixture.control, "rev-parse", "--git-common-dir"));
+  const outputIndex = capture.args.indexOf("-o");
+  assert.ok(outputIndex >= 0);
+  const normalizedArgs = capture.args.map((value, index) => {
+    if (value === real.worktree) return "<dedicated-worktree>";
+    if (value === commonGitDir) return "<git-common-dir>";
+    if (index === outputIndex + 1) return "<temporary-result-file>";
+    return value;
+  });
+  assert.equal(dryRun.json.commandShape, ["codex", ...normalizedArgs].join(" "));
+  assert.deepEqual(dryRun.json.permission.argv, capture.args.filter((value) => value === "--approve-for-me"));
+  assert.equal(dryRun.json.permission.sandboxMode, "workspace-write");
+  assert.equal(dryRun.json.permission.sandboxSource, "implicit-by-approve-for-me");
+  assert.doesNotMatch(capture.args.join(" "), /--sandbox|danger-full-access|dangerously-bypass|yolo/i);
+});
+
+test("fails closed when exec help omits approve-for-me workspace-write semantics", () => {
+  const fixture = createFixture();
+  const invocation = invokeLauncher(fixture, {
+    issue: 122,
+    dryRun: true,
+    helpText: "-C, --cd <DIR> --approve-for-me --add-dir --json --output-last-message",
+  });
+  assert.equal(invocation.result.status, 2);
+  assert.equal(invocation.json.status, "BLOCKED");
+  assert.match(invocation.json.blocker, /automatic review using the workspace-write sandbox/);
 });
 
 test("reuses an existing correctly mapped clean worktree", () => {
