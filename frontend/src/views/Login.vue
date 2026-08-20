@@ -8,7 +8,7 @@
         <h1>Math Knowledge</h1>
         <p class="subtitle">高中数学错题与知识图谱系统</p>
         <p class="desc">
-          手机号登录、按环境能力开关控制的注册入口，以及统一的账号治理体验。
+          整理错题、识别知识点、沉淀题库并快速组卷。
         </p>
       </div>
       <div class="bg-circle circle-1"></div>
@@ -103,27 +103,27 @@ const publicSignupCapability = computed(() => getPublicSignupCapabilityState())
 
 const capabilityMessage = computed(() => {
   if (publicSignupCapability.value.loading) {
-    return '正在获取当前环境的注册能力信息。'
+    return '正在获取注册状态，请稍后。'
   }
   if (publicSignupCapability.value.failed) {
-    return '暂时无法确认当前环境是否开放公开注册，前端会按关闭状态处理，请稍后重试或联系管理员。'
+    return '暂时无法获取注册状态，请稍后重试或联系管理员。'
   }
 
   return publicSignupCapability.value.enabled
-    ? '当前环境已开启公开注册，可直接创建账号。'
-    : '当前环境未开放公开注册，请联系管理员创建账号。'
+    ? '当前支持自主注册，可直接创建账号。'
+    : '当前暂未开放自主注册，请联系管理员开通账号。'
 })
 
 const registerFooterText = computed(() => {
   if (publicSignupCapability.value.loading) {
-    return '正在确认注册能力...'
+    return '正在确认注册状态...'
   }
 
   return publicSignupCapability.value.enabled ? '还没有账号？' : '需要新账号？'
 })
 
 const registerClosedNote = computed(() => (
-  publicSignupCapability.value.loading ? '注册能力确认中' : '请联系管理员创建账号'
+  publicSignupCapability.value.loading ? '正在确认' : '请联系管理员开通账号'
 ))
 
 const syncCapabilities = async () => {
