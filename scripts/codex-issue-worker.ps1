@@ -16,7 +16,8 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$ExpectedRepository,
 
-    [string]$ControlPath = (Split-Path -Parent $PSScriptRoot),
+    [Parameter(Mandatory = $true)]
+    [string]$ControlPath,
 
     [Parameter(ParameterSetName = "Prompt", Mandatory = $true)]
     [string]$Prompt,
@@ -56,6 +57,30 @@ function Test-SamePath {
         (ConvertTo-NormalPath $Right),
         [System.StringComparison]::OrdinalIgnoreCase
     )
+}
+
+function Test-PathWithin {
+    param(
+        [Parameter(Mandatory = $true)][string]$Child,
+        [Parameter(Mandatory = $true)][string]$Parent
+    )
+
+    $normalizedChild = ConvertTo-NormalPath $Child
+    $normalizedParent = ConvertTo-NormalPath $Parent
+    if (Test-SamePath $normalizedChild $normalizedParent) {
+        return $true
+    }
+    $parentPrefix = "$normalizedParent$([System.IO.Path]::DirectorySeparatorChar)"
+    return $normalizedChild.StartsWith($parentPrefix, [System.StringComparison]::OrdinalIgnoreCase)
+}
+
+function Test-PathsOverlap {
+    param(
+        [Parameter(Mandatory = $true)][string]$Left,
+        [Parameter(Mandatory = $true)][string]$Right
+    )
+
+    return (Test-PathWithin -Child $Left -Parent $Right) -or (Test-PathWithin -Child $Right -Parent $Left)
 }
 
 function Invoke-Git {
@@ -163,6 +188,42 @@ function Get-CodexCapability {
     }
 }
 
+function New-WorkerLease {
+    param(
+        [Parameter(Mandatory = $true)][string]$CommonGitDirectory,
+        [Parameter(Mandatory = $true)][string]$RepositoryIdentity,
+        [Parameter(Mandatory = $true)][string]$CanonicalWorktree
+    )
+
+    $identity = @(
+        $RepositoryIdentity.ToLowerInvariant()
+        (ConvertTo-NormalPath $CommonGitDirectory).ToLowerInvariant()
+        (ConvertTo-NormalPath $CanonicalWorktree).ToLowerInvariant()
+    ) -join "`n"
+    $hashBytes = [System.Security.Cryptography.SHA256]::HashData([System.Text.Encoding]::UTF8.GetBytes($identity))
+    $leaseKey = [System.Convert]::ToHexString($hashBytes).ToLowerInvariant()
+    $leaseDirectory = Join-Path (ConvertTo-NormalPath $CommonGitDirectory) "codex-worker-leases"
+    [System.IO.Directory]::CreateDirectory($leaseDirectory) | Out-Null
+    $leasePath = Join-Path $leaseDirectory "$leaseKey.lock"
+    try {
+        $stream = [System.IO.FileStream]::new(
+            $leasePath,
+            [System.IO.FileMode]::OpenOrCreate,
+            [System.IO.FileAccess]::ReadWrite,
+            [System.IO.FileShare]::None
+        )
+    }
+    catch [System.IO.IOException] {
+        throw "Worker lease is already held for this repository/worktree: $CanonicalWorktree"
+    }
+
+    return [pscustomobject]@{
+        Key = $leaseKey
+        Path = $leasePath
+        Stream = $stream
+    }
+}
+
 function New-BlockedResult {
     param([Parameter(Mandatory = $true)][string]$Message)
 
@@ -174,6 +235,10 @@ function New-BlockedResult {
         blocker = $Message
     }
 }
+
+$workerLease = $null
+$workerLeaseStreamReleased = $false
+$workerProcess = $null
 
 try {
     if ($Branch -notmatch "^[A-Za-z0-9][A-Za-z0-9._/-]*$" -or $Branch -notmatch "(^|/)issue-$IssueNumber(?:-|$)") {
@@ -196,13 +261,11 @@ try {
     if (-not (Test-SamePath $control $controlRoot)) {
         throw "ControlPath is not the repository root: resolved root is $controlRoot"
     }
-    if ((Test-SamePath $control $target) -or $target.StartsWith("$control$([System.IO.Path]::DirectorySeparatorChar)", [System.StringComparison]::OrdinalIgnoreCase)) {
-        throw "WorktreePath must be a dedicated path outside the Control Checkout."
+    if (Test-PathsOverlap $control $target) {
+        throw "WorktreePath must be a non-overlapping dedicated path outside the Control Checkout."
     }
-    foreach ($repositoryPath in @($control, $target)) {
-        if ((Test-SamePath $repositoryPath $resultRootPath) -or $resultRootPath.StartsWith("$repositoryPath$([System.IO.Path]::DirectorySeparatorChar)", [System.StringComparison]::OrdinalIgnoreCase)) {
-            throw "ResultRoot must remain outside repository worktrees."
-        }
+    if (Test-PathsOverlap $control $resultRootPath) {
+        throw "ResultRoot must remain outside all linked repository worktrees."
     }
     if ((Split-Path -Leaf $target) -notmatch "^issue-$IssueNumber(?:-|$)") {
         throw "WorktreePath leaf must identify Issue #$IssueNumber."
@@ -218,7 +281,7 @@ try {
     if ($baseResult.ExitCode -ne 0 -or $baseResult.Output -notmatch "^[0-9a-fA-F]{40}$") {
         throw "BaseRef cannot be resolved to an exact commit: $BaseRef"
     }
-    $baseSha = $baseResult.Output.ToLowerInvariant()
+    $resolvedBaseSha = $baseResult.Output.ToLowerInvariant()
     $codex = Get-CodexCapability -Command $CodexCommand
     $taskPrompt = if ($PSCmdlet.ParameterSetName -eq "PromptFile") {
         (Get-Content -Raw -LiteralPath (ConvertTo-NormalPath $PromptFile))
@@ -230,6 +293,9 @@ try {
         throw "Worker prompt must not be empty."
     }
     $inventory = Get-WorktreeInventory -RepositoryPath $control
+    if ($inventory.Count -eq 0 -or -not (Test-SamePath $inventory[0].Path $control)) {
+        throw "ControlPath must identify the repository's primary permanent Control Checkout, not a linked Task Worktree."
+    }
     $expectedBranchRef = "refs/heads/$Branch"
     $branchEntry = @($inventory | Where-Object { $_.Branch -eq $expectedBranchRef })
     $pathEntry = @($inventory | Where-Object { Test-SamePath $_.Path $target })
@@ -242,6 +308,18 @@ try {
     if ($pathEntry.Count -eq 1 -and $pathEntry[0].Branch -ne $expectedBranchRef) {
         throw "Expected path is linked to a different branch: $($pathEntry[0].Branch)"
     }
+    foreach ($worktreeEntry in $inventory) {
+        $inventoryPath = ConvertTo-NormalPath $worktreeEntry.Path
+        if (-not (Test-SamePath $inventoryPath $target) -and (Test-PathsOverlap $inventoryPath $target)) {
+            throw "Requested worktree path overlaps another linked worktree: $inventoryPath"
+        }
+        if (Test-PathsOverlap $inventoryPath $resultRootPath) {
+            throw "ResultRoot overlaps a linked repository worktree: $inventoryPath"
+        }
+    }
+    if (Test-PathsOverlap $target $resultRootPath) {
+        throw "ResultRoot must remain outside the requested Task Worktree."
+    }
     if ((Test-Path -LiteralPath $target) -and $pathEntry.Count -eq 0) {
         throw "Expected path exists but is not the expected linked worktree: $target"
     }
@@ -250,6 +328,14 @@ try {
     $branchExists = $branchExistsResult.ExitCode -eq 0
     if ($branchExistsResult.ExitCode -notin @(0, 1)) {
         throw "Unable to inspect the expected branch."
+    }
+    $branchHeadBefore = $null
+    if ($branchExists) {
+        $branchHeadResult = Invoke-Git -RepositoryPath $control -Arguments @("rev-parse", "--verify", "$expectedBranchRef`^{commit}")
+        if ($branchHeadResult.Output -notmatch "^[0-9a-fA-F]{40}$") {
+            throw "Expected branch does not resolve to a commit: $Branch"
+        }
+        $branchHeadBefore = $branchHeadResult.Output.ToLowerInvariant()
     }
 
     if ($pathEntry.Count -eq 1) {
@@ -285,8 +371,10 @@ try {
             issue = $IssueNumber
             branch = $Branch
             worktree = $target
-            baseRef = $BaseRef
-            baseSha = $baseSha
+            requestedBaseRef = $BaseRef
+            resolvedBaseSha = $resolvedBaseSha
+            branchHeadSha = $branchHeadBefore
+            intendedInitialHeadSha = if ($decision -eq "CREATE_BRANCH_AND_WORKTREE") { $resolvedBaseSha } else { $null }
             decision = $decision
             workingState = $workingState
             codexVersion = $codex.Version
@@ -296,6 +384,11 @@ try {
         exit 0
     }
 
+    $workerLease = New-WorkerLease `
+        -CommonGitDirectory $commonGitDir `
+        -RepositoryIdentity $ExpectedRepository `
+        -CanonicalWorktree $target
+
     if ($BaseRef.StartsWith("origin/", [System.StringComparison]::Ordinal)) {
         $remoteBranch = $BaseRef.Substring(7)
         if ($remoteBranch.Length -eq 0) {
@@ -303,13 +396,13 @@ try {
         }
         Invoke-Git -RepositoryPath $control -Arguments @("fetch", "--no-tags", "origin", $remoteBranch) | Out-Null
         $freshBase = (Invoke-Git -RepositoryPath $control -Arguments @("rev-parse", "--verify", "$BaseRef`^{commit}")).Output.ToLowerInvariant()
-        if ($freshBase -ne $baseSha) {
-            throw "BaseRef changed during preflight ($baseSha -> $freshBase); rerun to accept the new exact base."
+        if ($freshBase -ne $resolvedBaseSha) {
+            throw "BaseRef changed during preflight ($resolvedBaseSha -> $freshBase); rerun to accept the new exact base."
         }
     }
 
     if ($decision -eq "CREATE_BRANCH_AND_WORKTREE") {
-        Invoke-Git -RepositoryPath $control -Arguments @("worktree", "add", "-b", $Branch, $target, $baseSha) | Out-Null
+        Invoke-Git -RepositoryPath $control -Arguments @("worktree", "add", "-b", $Branch, $target, $resolvedBaseSha) | Out-Null
     }
     elseif ($decision -eq "ATTACH_EXISTING_BRANCH") {
         Invoke-Git -RepositoryPath $control -Arguments @("worktree", "add", $target, $Branch) | Out-Null
@@ -322,6 +415,16 @@ try {
     }
     $actualBranch = (Invoke-Git -RepositoryPath $target -Arguments @("branch", "--show-current")).Output
     $actualRoot = (Invoke-Git -RepositoryPath $target -Arguments @("rev-parse", "--show-toplevel")).Output
+    $branchHeadSha = (Invoke-Git -RepositoryPath $target -Arguments @("rev-parse", "HEAD")).Output.ToLowerInvariant()
+    if ($branchHeadSha -notmatch "^[0-9a-f]{40}$") {
+        throw "Provisioned branch HEAD does not resolve to an exact commit."
+    }
+    if ($decision -eq "CREATE_BRANCH_AND_WORKTREE" -and $branchHeadSha -ne $resolvedBaseSha) {
+        throw "New branch HEAD does not equal the resolved base SHA."
+    }
+    if ($decision -ne "CREATE_BRANCH_AND_WORKTREE" -and $branchHeadSha -ne $branchHeadBefore) {
+        throw "Existing branch HEAD changed during provisioning; no reset, rebase, or history repair was attempted."
+    }
     $targetStatus = (Invoke-Git -RepositoryPath $target -Arguments @("status", "--porcelain=v1", "--untracked-files=all")).Output
     $acceptedDirtyState = $decision -eq "REUSE" -and $workingState -eq "DIRTY_ACCEPTED"
     if ($actualBranch -ne $Branch -or -not (Test-SamePath $actualRoot $target) -or ($targetStatus.Length -gt 0 -and -not $acceptedDirtyState)) {
@@ -332,7 +435,9 @@ try {
 Issue: #$IssueNumber
 Branch: $Branch
 Worktree: $target
-Base SHA: $baseSha
+Requested base ref: $BaseRef
+Resolved base SHA: $resolvedBaseSha
+Branch HEAD SHA: $branchHeadSha
 Working state: $workingState
 
 This worktree is dedicated to Issue #$IssueNumber. Perform writable repository operations only inside this task workspace, except for justified shared Git operations required by the repository workflow. Obey the repository AGENTS.md and any applicable AGENTS.override.md. Before writing, verify the Issue/branch/worktree mapping and stop on foreign, unknown, unrecognized dirty, or concurrently changing state. A DIRTY_ACCEPTED state means the launcher caller explicitly recognized the pre-existing changes as Issue #$IssueNumber work; inspect them and stop if that recognition is not supported by the evidence. Never repair another task with reset, destructive clean, stash, force push, branch deletion, history rewrite, or worktree deletion.
@@ -368,22 +473,25 @@ $taskPrompt
         $processInfo.ArgumentList.Add($argument)
     }
 
-    $process = [System.Diagnostics.Process]::new()
-    $process.StartInfo = $processInfo
-    if (-not $process.Start()) {
+    $workerProcess = [System.Diagnostics.Process]::new()
+    $workerProcess.StartInfo = $processInfo
+    if (-not $workerProcess.Start()) {
         throw "Worker process could not be started."
     }
-    $stdoutTask = $process.StandardOutput.ReadToEndAsync()
-    $stderrTask = $process.StandardError.ReadToEndAsync()
-    $process.StandardInput.Write($workerPrompt)
-    $process.StandardInput.Close()
-    $process.WaitForExit()
+    $stdoutTask = $workerProcess.StandardOutput.ReadToEndAsync()
+    $stderrTask = $workerProcess.StandardError.ReadToEndAsync()
+    $workerProcess.StandardInput.Write($workerPrompt)
+    $workerProcess.StandardInput.Close()
+    $workerProcess.WaitForExit()
     $stdout = $stdoutTask.GetAwaiter().GetResult()
     $stderr = $stderrTask.GetAwaiter().GetResult()
+    $workerExitCode = $workerProcess.ExitCode
+    $workerLease.Stream.Dispose()
+    $workerLeaseStreamReleased = $true
     [System.IO.File]::WriteAllText($eventFile, $stdout, [System.Text.UTF8Encoding]::new($false))
     [System.IO.File]::WriteAllText($errorFile, $stderr, [System.Text.UTF8Encoding]::new($false))
 
-    $workerStatus = if ($process.ExitCode -eq 0) { "WORKER_SUCCEEDED" } else { "WORKER_FAILED" }
+    $workerStatus = if ($workerExitCode -eq 0) { "WORKER_SUCCEEDED" } else { "WORKER_FAILED" }
     [ordered]@{
         status = $workerStatus
         statuses = @("PROVISIONED", "WORKER_STARTED", $workerStatus)
@@ -391,20 +499,36 @@ $taskPrompt
         issue = $IssueNumber
         branch = $Branch
         worktree = $target
-        baseRef = $BaseRef
-        baseSha = $baseSha
+        requestedBaseRef = $BaseRef
+        resolvedBaseSha = $resolvedBaseSha
+        branchHeadSha = $branchHeadSha
         decision = $decision
         workingState = if ($targetStatus.Length -gt 0) { "DIRTY_ACCEPTED" } else { "CLEAN" }
+        workerLeaseKey = $workerLease.Key
         codexVersion = $codex.Version
-        workerExitCode = $process.ExitCode
+        workerExitCode = $workerExitCode
         resultDirectory = $runDirectory
         finalMessageFile = $finalFile
         eventFile = $eventFile
         stderrFile = $errorFile
     } | ConvertTo-Json -Depth 5
-    exit $process.ExitCode
+    exit $workerExitCode
 }
 catch {
-    (New-BlockedResult -Message $_.Exception.Message) | ConvertTo-Json -Depth 5
+    $blocker = $_.Exception.Message
+    if ($null -ne $workerProcess) {
+        try {
+            if (-not $workerProcess.HasExited) {
+                $workerProcess.WaitForExit()
+            }
+        }
+        catch {
+            # Preserve the original blocker; the OS still releases handles on process termination.
+        }
+    }
+    if ($null -ne $workerLease -and -not $workerLeaseStreamReleased) {
+        $workerLease.Stream.Dispose()
+    }
+    (New-BlockedResult -Message $blocker) | ConvertTo-Json -Depth 5
     exit 2
 }
