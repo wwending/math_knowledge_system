@@ -188,7 +188,7 @@ function Get-CodexCapability {
     }
 }
 
-function New-WorkerLease {
+function Get-WorkerLeaseIdentity {
     param(
         [Parameter(Mandatory = $true)][string]$CommonGitDirectory,
         [Parameter(Mandatory = $true)][string]$RepositoryIdentity,
@@ -203,24 +203,11 @@ function New-WorkerLease {
     $hashBytes = [System.Security.Cryptography.SHA256]::HashData([System.Text.Encoding]::UTF8.GetBytes($identity))
     $leaseKey = [System.Convert]::ToHexString($hashBytes).ToLowerInvariant()
     $leaseDirectory = Join-Path (ConvertTo-NormalPath $CommonGitDirectory) "codex-worker-leases"
-    [System.IO.Directory]::CreateDirectory($leaseDirectory) | Out-Null
     $leasePath = Join-Path $leaseDirectory "$leaseKey.lock"
-    try {
-        $stream = [System.IO.FileStream]::new(
-            $leasePath,
-            [System.IO.FileMode]::OpenOrCreate,
-            [System.IO.FileAccess]::ReadWrite,
-            [System.IO.FileShare]::None
-        )
-    }
-    catch [System.IO.IOException] {
-        throw "Worker lease is already held for this repository/worktree: $CanonicalWorktree"
-    }
 
     return [pscustomobject]@{
         Key = $leaseKey
         Path = $leasePath
-        Stream = $stream
     }
 }
 
@@ -237,8 +224,8 @@ function New-BlockedResult {
 }
 
 $workerLease = $null
-$workerLeaseStreamReleased = $false
-$workerProcess = $null
+$supervisorProcess = $null
+$outerJob = [IntPtr]::Zero
 
 try {
     if ($Branch -notmatch "^[A-Za-z0-9][A-Za-z0-9._/-]*$" -or $Branch -notmatch "(^|/)issue-$IssueNumber(?:-|$)") {
@@ -362,6 +349,10 @@ try {
     else {
         ConvertTo-NormalPath (Join-Path $control $commonGitDirRaw)
     }
+    $workerLease = Get-WorkerLeaseIdentity `
+        -CommonGitDirectory $commonGitDir `
+        -RepositoryIdentity $ExpectedRepository `
+        -CanonicalWorktree $target
     $commandShape = "codex exec -C <dedicated-worktree> --sandbox workspace-write --approve-for-me --add-dir <git-common-dir> --json -o <temporary-result-file> -"
 
     if ($DryRun) {
@@ -384,10 +375,62 @@ try {
         exit 0
     }
 
-    $workerLease = New-WorkerLease `
-        -CommonGitDirectory $commonGitDir `
-        -RepositoryIdentity $ExpectedRepository `
-        -CanonicalWorktree $target
+    if (-not $IsWindows) {
+        throw "Windows Job Objects are required for Worker lifetime coupling."
+    }
+    $jobHelperPath = Join-Path $PSScriptRoot "codex-worker-job.ps1"
+    $supervisorPath = Join-Path $PSScriptRoot "codex-worker-supervisor.ps1"
+    if (-not (Test-Path -LiteralPath $jobHelperPath -PathType Leaf) -or -not (Test-Path -LiteralPath $supervisorPath -PathType Leaf)) {
+        throw "Worker lifetime-coupling helpers are missing."
+    }
+    . $jobHelperPath
+
+    $runDirectory = Join-Path $resultRootPath ("issue-{0}\{1}" -f $IssueNumber, (Get-Date -Format "yyyyMMdd-HHmmss-fff"))
+    [System.IO.Directory]::CreateDirectory($runDirectory) | Out-Null
+    $eventFile = Join-Path $runDirectory "events.jsonl"
+    $errorFile = Join-Path $runDirectory "stderr.log"
+    $finalFile = Join-Path $runDirectory "final-message.txt"
+    $invocationFile = Join-Path $runDirectory "worker-invocation.json"
+
+    $outerJob = New-CodexKillOnCloseJob
+    $supervisorInfo = [System.Diagnostics.ProcessStartInfo]::new()
+    $supervisorInfo.FileName = (Get-Process -Id $PID).Path
+    $supervisorInfo.WorkingDirectory = $control
+    $supervisorInfo.UseShellExecute = $false
+    $supervisorInfo.RedirectStandardInput = $true
+    $supervisorInfo.RedirectStandardOutput = $true
+    $supervisorInfo.RedirectStandardError = $true
+    foreach ($argument in @(
+        "-NoProfile", "-File", $supervisorPath,
+        "-InvocationFile", $invocationFile,
+        "-LeasePath", $workerLease.Path,
+        "-JobHelperPath", $jobHelperPath
+    )) {
+        $supervisorInfo.ArgumentList.Add($argument)
+    }
+    $supervisorProcess = [System.Diagnostics.Process]::new()
+    $supervisorProcess.StartInfo = $supervisorInfo
+    if (-not $supervisorProcess.Start()) {
+        throw "Worker supervisor could not be started."
+    }
+    $supervisorStderrTask = $supervisorProcess.StandardError.ReadToEndAsync()
+    Add-CodexProcessToJob -Job $outerJob -ProcessHandle $supervisorProcess.Handle
+    if (-not (Test-CodexProcessInJob -Job $outerJob -ProcessHandle $supervisorProcess.Handle)) {
+        throw "Worker supervisor could not verify its outer Job Object membership."
+    }
+    $supervisorProcess.StandardInput.WriteLine("CODEX_SUPERVISOR_ESTABLISH_V1")
+    $supervisorProcess.StandardInput.Flush()
+    $supervisorHandshake = $supervisorProcess.StandardOutput.ReadLine()
+    if ($supervisorHandshake -ne "CODEX_SUPERVISOR_READY") {
+        if ($supervisorHandshake -match "^CODEX_SUPERVISOR_BLOCKED (?<message>[A-Za-z0-9+/=]+)$") {
+            $supervisorBlocker = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Matches.message))
+            if ($supervisorBlocker -match "^Worker lease is already held") {
+                throw "Worker lease is already held for this repository/worktree: $target"
+            }
+            throw $supervisorBlocker
+        }
+        throw "Worker supervisor failed before establishing lifetime coupling."
+    }
 
     if ($BaseRef.StartsWith("origin/", [System.StringComparison]::Ordinal)) {
         $remoteBranch = $BaseRef.Substring(7)
@@ -445,21 +488,9 @@ This worktree is dedicated to Issue #$IssueNumber. Perform writable repository o
 $taskPrompt
 "@
 
-    $runDirectory = Join-Path $resultRootPath ("issue-{0}\{1}" -f $IssueNumber, (Get-Date -Format "yyyyMMdd-HHmmss-fff"))
-    [System.IO.Directory]::CreateDirectory($runDirectory) | Out-Null
-    $eventFile = Join-Path $runDirectory "events.jsonl"
-    $errorFile = Join-Path $runDirectory "stderr.log"
-    $finalFile = Join-Path $runDirectory "final-message.txt"
-
-    $processInfo = [System.Diagnostics.ProcessStartInfo]::new()
-    $processInfo.FileName = $codex.FileName
-    $processInfo.WorkingDirectory = $target
-    $processInfo.UseShellExecute = $false
-    $processInfo.RedirectStandardInput = $true
-    $processInfo.RedirectStandardOutput = $true
-    $processInfo.RedirectStandardError = $true
+    $workerArguments = @()
     foreach ($argument in $codex.PrefixArguments) {
-        $processInfo.ArgumentList.Add($argument)
+        $workerArguments += $argument
     }
     foreach ($argument in @(
         "exec", "-C", $target,
@@ -470,24 +501,25 @@ $taskPrompt
         "-o", $finalFile,
         "-"
     )) {
-        $processInfo.ArgumentList.Add($argument)
+        $workerArguments += $argument
     }
+    $invocationJson = [ordered]@{
+        fileName = $codex.FileName
+        workingDirectory = $target
+        arguments = $workerArguments
+    } | ConvertTo-Json -Depth 5
+    [System.IO.File]::WriteAllText($invocationFile, $invocationJson, [System.Text.UTF8Encoding]::new($false))
 
-    $workerProcess = [System.Diagnostics.Process]::new()
-    $workerProcess.StartInfo = $processInfo
-    if (-not $workerProcess.Start()) {
-        throw "Worker process could not be started."
-    }
-    $stdoutTask = $workerProcess.StandardOutput.ReadToEndAsync()
-    $stderrTask = $workerProcess.StandardError.ReadToEndAsync()
-    $workerProcess.StandardInput.Write($workerPrompt)
-    $workerProcess.StandardInput.Close()
-    $workerProcess.WaitForExit()
+    $stdoutTask = $supervisorProcess.StandardOutput.ReadToEndAsync()
+    $supervisorProcess.StandardInput.WriteLine("CODEX_WORKER_GATE_V1")
+    $supervisorProcess.StandardInput.Write($workerPrompt)
+    $supervisorProcess.StandardInput.Close()
+    $supervisorProcess.WaitForExit()
     $stdout = $stdoutTask.GetAwaiter().GetResult()
-    $stderr = $stderrTask.GetAwaiter().GetResult()
-    $workerExitCode = $workerProcess.ExitCode
-    $workerLease.Stream.Dispose()
-    $workerLeaseStreamReleased = $true
+    $stderr = $supervisorStderrTask.GetAwaiter().GetResult()
+    $workerExitCode = $supervisorProcess.ExitCode
+    Close-CodexJob -Job $outerJob
+    $outerJob = [IntPtr]::Zero
     [System.IO.File]::WriteAllText($eventFile, $stdout, [System.Text.UTF8Encoding]::new($false))
     [System.IO.File]::WriteAllText($errorFile, $stderr, [System.Text.UTF8Encoding]::new($false))
 
@@ -516,18 +548,23 @@ $taskPrompt
 }
 catch {
     $blocker = $_.Exception.Message
-    if ($null -ne $workerProcess) {
+    if ($outerJob -ne [IntPtr]::Zero) {
         try {
-            if (-not $workerProcess.HasExited) {
-                $workerProcess.WaitForExit()
-            }
+            Close-CodexJob -Job $outerJob
+            $outerJob = [IntPtr]::Zero
         }
         catch {
-            # Preserve the original blocker; the OS still releases handles on process termination.
+            # Preserve the original blocker.
         }
     }
-    if ($null -ne $workerLease -and -not $workerLeaseStreamReleased) {
-        $workerLease.Stream.Dispose()
+    if ($null -ne $supervisorProcess) {
+        try {
+            $supervisorProcess.StandardInput.Close()
+            $null = $supervisorProcess.WaitForExit(5000)
+        }
+        catch {
+            # Preserve the original blocker after kill-on-close teardown was requested.
+        }
     }
     (New-BlockedResult -Message $blocker) | ConvertTo-Json -Depth 5
     exit 2

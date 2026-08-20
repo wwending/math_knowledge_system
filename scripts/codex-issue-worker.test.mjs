@@ -45,7 +45,12 @@ if ($Rest -contains '--version') { Write-Output 'codex-cli test-0.0.0'; exit 0 }
 if ($Rest -contains '--help') { Write-Output '--cd --sandbox --approve-for-me --add-dir --json --output-last-message'; exit 0 }
 $stdinText = [Console]::In.ReadToEnd()
 $capture = $env:FAKE_CODEX_CAPTURE
-[ordered]@{ cwd = (Get-Location).Path; args = $Rest; prompt = $stdinText } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $capture -Encoding utf8NoBOM
+$descendantPid = $null
+if ($env:FAKE_CODEX_SPAWN_DESCENDANT -eq '1') {
+  $descendant = Start-Process -FilePath (Get-Process -Id $PID).Path -ArgumentList @('-NoProfile', '-Command', 'Start-Sleep -Seconds 60') -WindowStyle Hidden -PassThru
+  $descendantPid = $descendant.Id
+}
+[ordered]@{ cwd = (Get-Location).Path; args = $Rest; prompt = $stdinText; workerPid = $PID; descendantPid = $descendantPid } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $capture -Encoding utf8NoBOM
 $sleepMs = [int]($env:FAKE_CODEX_SLEEP_MS ?? '0')
 if ($sleepMs -gt 0) { Start-Sleep -Milliseconds $sleepMs }
 $outputIndex = [Array]::IndexOf($Rest, '-o')
@@ -65,6 +70,7 @@ function buildLauncherInvocation(fixture, {
   allowDirty = false,
   exitCode = 0,
   sleepMs = 0,
+  spawnDescendant = false,
   resultRoot = fixture.resultRoot,
   omitControl = false,
 } = {}) {
@@ -88,6 +94,7 @@ function buildLauncherInvocation(fixture, {
     FAKE_CODEX_CAPTURE: capture,
     FAKE_CODEX_EXIT: String(exitCode),
     FAKE_CODEX_SLEEP_MS: String(sleepMs),
+    FAKE_CODEX_SPAWN_DESCENDANT: spawnDescendant ? "1" : "0",
   };
   return { args, env, capture, worktree, branch };
 }
@@ -138,6 +145,25 @@ async function waitForFile(path, timeoutMs = 5000) {
     await new Promise((resolvePromise) => setTimeout(resolvePromise, 25));
   }
   throw new Error(`Timed out waiting for ${path}`);
+}
+
+function isProcessAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    if (error.code === "ESRCH") return false;
+    throw error;
+  }
+}
+
+async function waitForProcessExit(pid, timeoutMs = 5000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!isProcessAlive(pid)) return;
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 25));
+  }
+  throw new Error(`Timed out waiting for process ${pid} to exit`);
 }
 
 test("dry-run resolves a new Issue without creating a branch, worktree, or Worker", () => {
@@ -264,6 +290,10 @@ test("propagates a non-zero Worker exit as WORKER_FAILED", () => {
   assert.equal(invocation.result.status, 7);
   assert.equal(invocation.json.status, "WORKER_FAILED");
   assert.equal(invocation.json.workerExitCode, 7);
+
+  const afterFailure = invokeLauncher(fixture, { issue: 105 });
+  assert.equal(afterFailure.result.status, 0);
+  assert.equal(afterFailure.json.status, "WORKER_SUCCEEDED");
 });
 
 test("blocks a concurrent Worker on the same worktree and releases the lease after exit", async () => {
@@ -281,11 +311,57 @@ test("blocks a concurrent Worker on the same worktree and releases the lease aft
   assert.equal(completedFirst.json.status, "WORKER_SUCCEEDED");
   assert.deepEqual(completedFirst.json.statuses, ["PROVISIONED", "WORKER_STARTED", "WORKER_SUCCEEDED"]);
 
+  const commonGitDir = resolve(fixture.control, git(fixture.control, "rev-parse", "--git-common-dir"));
+  assert.equal(existsSync(join(commonGitDir, "codex-worker-leases", `${completedFirst.json.workerLeaseKey}.lock`)), true);
   const afterRelease = invokeLauncher(fixture, { issue: 108 });
   assert.equal(afterRelease.result.status, 0);
   assert.equal(afterRelease.json.status, "WORKER_SUCCEEDED");
   assert.equal(afterRelease.json.decision, "REUSE");
   assert.equal(afterRelease.json.workerLeaseKey, completedFirst.json.workerLeaseKey);
+});
+
+test("forcibly terminating the launcher kills its Worker tree before ownership becomes available", async () => {
+  const fixture = createFixture();
+  const first = startLauncher(fixture, {
+    issue: 120,
+    sleepMs: 60000,
+    spawnDescendant: true,
+  });
+  const ignoredCompletion = first.completed.catch(() => null);
+  await waitForFile(first.capture, 10000);
+  const capture = JSON.parse(readFileSync(first.capture, "utf8"));
+  assert.equal(isProcessAlive(capture.workerPid), true);
+  assert.equal(isProcessAlive(capture.descendantPid), true);
+
+  assert.equal(first.child.kill("SIGKILL"), true);
+  const second = startLauncher(fixture, { issue: 120 });
+  let secondClosed = false;
+  second.child.once("close", () => { secondClosed = true; });
+  const observationDeadline = Date.now() + 10000;
+  while (!existsSync(second.capture) && !secondClosed && Date.now() < observationDeadline) {
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 10));
+  }
+  if (existsSync(second.capture)) {
+    assert.equal(isProcessAlive(capture.workerPid), false);
+    assert.equal(isProcessAlive(capture.descendantPid), false);
+  }
+  const immediate = await second.completed;
+  if (immediate.result.status === 0) {
+    assert.equal(immediate.json.status, "WORKER_SUCCEEDED");
+    assert.equal(existsSync(second.capture), true);
+    assert.equal(isProcessAlive(capture.workerPid), false);
+    assert.equal(isProcessAlive(capture.descendantPid), false);
+  } else {
+    assert.equal(immediate.result.status, 2);
+    assert.equal(immediate.json.status, "BLOCKED");
+    assert.match(immediate.json.blocker, /lease is already held/);
+    await waitForProcessExit(capture.workerPid);
+    await waitForProcessExit(capture.descendantPid);
+    const afterTeardown = invokeLauncher(fixture, { issue: 120 });
+    assert.equal(afterTeardown.result.status, 0);
+    assert.equal(afterTeardown.json.status, "WORKER_SUCCEEDED");
+  }
+  await ignoredCompletion;
 });
 
 test("allows Workers for different sibling worktrees to run independently", async () => {
@@ -387,7 +463,11 @@ test("attaches an existing branch without moving its HEAD and reports base separ
 });
 
 test("source contains no forbidden destructive Git recovery commands", () => {
-  const source = readFileSync(launcher, "utf8");
+  const source = [
+    launcher,
+    join(scriptDir, "codex-worker-job.ps1"),
+    join(scriptDir, "codex-worker-supervisor.ps1"),
+  ].map((path) => readFileSync(path, "utf8")).join("\n");
   const gitInvocationLines = source.split(/\r?\n/).filter((line) => line.includes("Invoke-Git") && line.includes("-Arguments"));
   const invokedCommands = gitInvocationLines.join("\n");
   for (const forbidden of [

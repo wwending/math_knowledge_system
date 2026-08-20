@@ -10,7 +10,7 @@
 - 每个可写 feature、fix、refactor、test、docs、chore、security 或 deploy Issue 使用一条 Issue-numbered branch、一个 linked dedicated worktree 和一个 Codex；同一 worktree 不允许并发 repository/file writers。
 - 开始写入前必须核对 Issue、专用路径、branch/HEAD、worktree 映射、工作状态、无关改动和 ownership；发现未知或外部状态时 fail safe 停止，不用破坏性 Git 操作自行修复。
 - 使用薄的本地 launcher 完成显式 base 解析、branch/worktree 安全 create-or-reuse，并通过新的 `codex exec -C <dedicated-worktree>` 进程启动 Worker；仅在旧 Codex shell 中 `cd` 到 sibling worktree 不等价于重新建立 Worker workspace/sandbox ownership。
-- launcher 必须显式接收并验证 primary Control Checkout，拒绝 linked worktree 之间的祖先/后代路径重叠，并在 Worker 全生命周期持有按 repository/worktree identity 区分的 OS 独占文件 lease，确保同一 Task Worktree 同时只有一个 Worker；不同 worktree 的 lease 相互独立。
+- launcher 必须显式接收并验证 primary Control Checkout，拒绝 linked worktree 之间的祖先/后代路径重叠，并将按 repository/worktree identity 区分的 OS 独占文件 lease 与完整 Worker 进程树的生命周期耦合，确保不存在“旧 Worker 仍存活但 ownership 已可用”的状态；不同 worktree 的 lease 相互独立。
 
 原因：
 
@@ -20,10 +20,10 @@
 边界：
 
 - linked worktree 只隔离各 checkout 的 `HEAD`、index 和 working files，不是 VM/container 安全边界；repository objects、refs、remotes 和多数 configuration 仍共享，相关变更必须保持克制。
-- 完整预检、launcher 参数、hotfix 与安全退役流程由 `docs/ENGINEERING_WORKFLOW.md` 定义；per-worktree lease 只是执行既有 ownership 规则的进程级原语，不是 locking service。本决策不引入 daemon、持久队列/数据库、远程 runner、自动 merge 或自动清理。
+- 完整预检、launcher 参数、hotfix 与安全退役流程由 `docs/ENGINEERING_WORKFLOW.md` 定义；Windows kill-on-close Job Object 与 supervisor-owned per-worktree lease 只是执行既有 ownership 规则的本地进程级原语，不是 locking service。本决策不引入 daemon、持久队列/数据库、远程 runner、自动 merge 或自动清理。
 - Worker 使用 `workspace-write`、自动审批复核和仅指向 shared Git common-dir 的附加写目录；不默认使用 unrestricted/dangerous 模式，也不修改全局 Codex 安全配置。linked worktree 共享 Git 状态的风险仍由 branch/worktree 映射检查和 Worker 规则约束。
 
-日期：2026-08-20（V2/V2.1 launcher 与 lease 补充；原决策于 2026-08-19 建立）
+日期：2026-08-20（V2/V2.1 launcher 与 lease、V2.2 进程树生命周期耦合补充；原决策于 2026-08-19 建立）
 
 ## 决策 35：正常开发采用 Issue-first 与 PR 自动追溯门禁
 
