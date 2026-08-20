@@ -151,8 +151,44 @@ function Get-WorktreeInventory {
     return @($entries)
 }
 
+function Get-CodexPermissionPreset {
+    $preset = [pscustomobject]@{
+        Name = "approve-for-me"
+        Arguments = [string[]]@("--approve-for-me")
+        ApprovalMode = "automatic-review"
+        SandboxMode = "workspace-write"
+        SandboxSource = "implicit-by-approve-for-me"
+    }
+    if ($preset.Arguments.Count -ne 1 -or $preset.Arguments[0] -ne "--approve-for-me") {
+        throw "Internal Codex permission preset is invalid."
+    }
+    return $preset
+}
+
+function Get-CodexWorkerExecArguments {
+    param(
+        [Parameter(Mandatory = $true)]$PermissionPreset,
+        [Parameter(Mandatory = $true)][string]$WorkerPath,
+        [Parameter(Mandatory = $true)][string]$CommonGitDirectory,
+        [Parameter(Mandatory = $true)][string]$OutputFile
+    )
+
+    $arguments = @("exec", "-C", $WorkerPath)
+    $arguments += @($PermissionPreset.Arguments)
+    $arguments += @(
+        "--add-dir", $CommonGitDirectory,
+        "--json",
+        "-o", $OutputFile,
+        "-"
+    )
+    return $arguments
+}
+
 function Get-CodexCapability {
-    param([Parameter(Mandatory = $true)][string]$Command)
+    param(
+        [Parameter(Mandatory = $true)][string]$Command,
+        [Parameter(Mandatory = $true)]$PermissionPreset
+    )
 
     $resolved = Get-Command $Command -ErrorAction Stop
     $versionOutput = & $resolved.Source --version 2>&1
@@ -164,10 +200,24 @@ function Get-CodexCapability {
         throw "Codex CLI exec help check failed."
     }
     $helpText = ($helpOutput | ForEach-Object { $_.ToString() }) -join "`n"
-    foreach ($requiredOption in @("--cd", "--sandbox", "--approve-for-me", "--add-dir", "--json", "--output-last-message")) {
+    if ($helpText -notmatch "(?m)^\s*-C,\s*--cd(?:\s|<)") {
+        throw "Codex CLI is incompatible: exec help does not advertise -C/--cd."
+    }
+    foreach ($requiredOption in @("--approve-for-me", "--add-dir", "--json", "--output-last-message")) {
         if (-not $helpText.Contains($requiredOption, [System.StringComparison]::Ordinal)) {
             throw "Codex CLI is incompatible: exec help does not advertise $requiredOption."
         }
+    }
+    $normalizedHelp = [regex]::Replace($helpText, "\s+", " ").Trim()
+    $permissionContract = "--approve-for-me Route approval requests through automatic review using the workspace-write sandbox"
+    if (-not $normalizedHelp.Contains($permissionContract, [System.StringComparison]::Ordinal)) {
+        throw "Codex CLI is incompatible: exec help does not define --approve-for-me as automatic review using the workspace-write sandbox."
+    }
+    if ($PermissionPreset.Name -ne "approve-for-me" -or
+        $PermissionPreset.ApprovalMode -ne "automatic-review" -or
+        $PermissionPreset.SandboxMode -ne "workspace-write" -or
+        $PermissionPreset.SandboxSource -ne "implicit-by-approve-for-me") {
+        throw "Internal Codex permission preset does not match the validated exec help contract."
     }
 
     $source = $resolved.Source
@@ -269,7 +319,8 @@ try {
         throw "BaseRef cannot be resolved to an exact commit: $BaseRef"
     }
     $resolvedBaseSha = $baseResult.Output.ToLowerInvariant()
-    $codex = Get-CodexCapability -Command $CodexCommand
+    $permissionPreset = Get-CodexPermissionPreset
+    $codex = Get-CodexCapability -Command $CodexCommand -PermissionPreset $permissionPreset
     $taskPrompt = if ($PSCmdlet.ParameterSetName -eq "PromptFile") {
         (Get-Content -Raw -LiteralPath (ConvertTo-NormalPath $PromptFile))
     }
@@ -353,7 +404,12 @@ try {
         -CommonGitDirectory $commonGitDir `
         -RepositoryIdentity $ExpectedRepository `
         -CanonicalWorktree $target
-    $commandShape = "codex exec -C <dedicated-worktree> --sandbox workspace-write --approve-for-me --add-dir <git-common-dir> --json -o <temporary-result-file> -"
+    $commandShapeArguments = Get-CodexWorkerExecArguments `
+        -PermissionPreset $permissionPreset `
+        -WorkerPath "<dedicated-worktree>" `
+        -CommonGitDirectory "<git-common-dir>" `
+        -OutputFile "<temporary-result-file>"
+    $commandShape = "codex $($commandShapeArguments -join ' ')"
 
     if ($DryRun) {
         [ordered]@{
@@ -370,6 +426,13 @@ try {
             workingState = $workingState
             codexVersion = $codex.Version
             commandShape = $commandShape
+            permission = [ordered]@{
+                preset = $permissionPreset.Name
+                argv = @($permissionPreset.Arguments)
+                approvalMode = $permissionPreset.ApprovalMode
+                sandboxMode = $permissionPreset.SandboxMode
+                sandboxSource = $permissionPreset.SandboxSource
+            }
             validation = "OK"
         } | ConvertTo-Json -Depth 5
         exit 0
@@ -492,15 +555,12 @@ $taskPrompt
     foreach ($argument in $codex.PrefixArguments) {
         $workerArguments += $argument
     }
-    foreach ($argument in @(
-        "exec", "-C", $target,
-        "--sandbox", "workspace-write",
-        "--approve-for-me",
-        "--add-dir", $commonGitDir,
-        "--json",
-        "-o", $finalFile,
-        "-"
-    )) {
+    $workerExecArguments = Get-CodexWorkerExecArguments `
+        -PermissionPreset $permissionPreset `
+        -WorkerPath $target `
+        -CommonGitDirectory $commonGitDir `
+        -OutputFile $finalFile
+    foreach ($argument in $workerExecArguments) {
         $workerArguments += $argument
     }
     $invocationJson = [ordered]@{
