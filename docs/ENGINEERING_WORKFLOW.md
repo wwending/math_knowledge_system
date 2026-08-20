@@ -57,6 +57,48 @@ The task prompt should identify the Issue, branch, dedicated path, and intended 
 
 Linked worktrees isolate each checkout's `HEAD`, index, and working files. They are not a VM, container, permission, or process security boundary: linked worktrees still share repository objects, refs, remotes, and most repository configuration. Avoid unnecessary remote, shared-ref, repository-configuration, global-configuration, or shared-history mutations, and never use them to work around an ownership or workspace mismatch.
 
+### Control launcher and Worker startup
+
+`scripts/codex-issue-worker.ps1` is the thin local handoff layer between the Control Codex and a writable Worker Codex. It accepts explicit Issue, branch, dedicated worktree, base, repository identity, and task-prompt inputs; validates the Control Checkout and linked-worktree inventory; resolves the base to an exact commit; safely creates or reuses the expected branch/worktree; and starts a new Worker process whose process cwd and Codex workspace are both the dedicated Task Worktree.
+
+The launcher does not implement the Issue, maintain a service or task queue, merge, deploy, or clean up worktrees. Its scope is `provision -> isolate -> launch -> observe`. A shell `cd` performed by the existing Control Codex is not a substitute for the new `codex exec -C <dedicated-worktree>` process because it does not reinitialize the original process's workspace and sandbox ownership.
+
+Use `-DryRun` first. Dry-run resolves only locally available refs and reports `DRY_RUN_OK` or `BLOCKED`; it does not fetch, create a branch/worktree, launch Codex, commit, or publish. Example:
+
+```powershell
+pwsh -NoProfile -File .\scripts\codex-issue-worker.ps1 `
+  -IssueNumber 41 `
+  -Branch hotfix/issue-41-example `
+  -WorktreePath D:\math_knowledge_system-worktrees\issue-41-example `
+  -BaseRef origin/main `
+  -ExpectedRepository wwending/math_knowledge_system `
+  -ControlPath D:\math_knowledge_system `
+  -PromptFile D:\tasks\issue-41.txt `
+  -DryRun
+```
+
+After reviewing that report, omit `-DryRun` to provision and start the Worker. For an `origin/<branch>` base, the write-mode run performs a narrow `git fetch --no-tags origin <branch>` and refuses to continue if the ref changed after preflight; rerun to deliberately accept and record the new SHA. An exact release/deployed commit may be supplied directly as `-BaseRef`. The Control Checkout's current branch, index, dirty files, and working files are never used as the task base and are not switched, stashed, reset, cleaned, or overwritten.
+
+Create-or-reuse is fail closed:
+
+- absent branch and path: create both from the resolved base SHA;
+- existing expected branch and exact clean linked worktree: reuse;
+- existing unattached expected branch and absent exact path: attach that branch at the exact path;
+- branch attached elsewhere, path linked to another branch, or an existing non-worktree path: `BLOCKED`;
+- dirty expected worktree: `BLOCKED` unless the caller explicitly supplies `-AllowDirtyIssueWorktree` after recognizing every change as belonging to that Issue; the launcher never cleans, resets, or stashes it.
+
+The Worker prompt is sent over stdin rather than exposed in the command line. It includes the Issue number, branch, exact worktree path, resolved base SHA, recognized working state, ownership boundaries, and a pointer to the repository instructions. Runtime files (`events.jsonl`, stderr, and the final Worker message) are stored under the OS temporary directory by default; `-ResultRoot` is rejected if it points inside the Control Checkout or Task Worktree. Stable terminal statuses include `DRY_RUN_OK`, `PROVISIONED`, `WORKER_STARTED`, `WORKER_SUCCEEDED`, `WORKER_FAILED`, and `BLOCKED`.
+
+The implementation was designed against locally installed `codex-cli 0.148.0` and rechecks the required `exec` capabilities at every run: `-C/--cd`, `--sandbox`, `--approve-for-me`, `--add-dir`, `--json`, and `--output-last-message`. The launch shape is:
+
+```text
+codex exec -C <dedicated-worktree> --sandbox workspace-write --approve-for-me --add-dir <git-common-dir> --json -o <temporary-result-file> -
+```
+
+The additional writable directory is limited to the repository's shared Git common-dir because linked-worktree commits update shared Git metadata. This does not remove the shared-state risk or authorize unrelated ref/config/history changes. Do not replace this with `danger-full-access` or a bypass mode, and do not modify global Codex security settings. Authentication, PAT, MFA, private keys, and denied approval boundaries remain manual/trusted boundaries.
+
+The current local Codex approval and network setup supports Model A: the Control launcher may require an automatically reviewed host approval to inspect/provision the external sibling worktree, and a Worker may request the same narrow boundary for `git fetch`/`git push`; keyring-backed `gh` operations run outside the sandbox as required by `AGENTS.md`. A restricted offline sandbox identity can otherwise trigger Windows Git dubious-ownership checks, which must remain a `BLOCKED` result rather than being bypassed with a global `safe.directory` change. The Worker, not the launcher, performs any task-authorized commit, push, and Draft PR create/update. If approval, network, or authentication is unavailable, the Worker reports the boundary and stops; the launcher does not weaken security or write through the Control Checkout to compensate.
+
 ## Normal change flow
 
 ```text
@@ -144,7 +186,7 @@ Issue created
 
 Before removal, verify that the exact Task Worktree has no unique uncommitted or untracked work, its branch has no unpushed commits, and the task is truly complete or intentionally abandoned. Remove and prune only explicitly identified, inspected worktrees; never auto-delete an unknown or occupied worktree. Branch deletion is a separate deliberate action and must not discard unique work.
 
-Urgency does not justify interrupting another Issue's checkout. For example, Issue #40 remains on its branch in worktree #40. Urgent Issue #41 gets its own Issue-numbered branch and worktree #41 from a deliberately selected `origin/main` or exact deployed/release SHA. Never switch, reset, clean, or stash #40 to make room for #41.
+Urgency does not justify interrupting another Issue's checkout. For example, Issue #40 remains on its branch in worktree #40. The Control launcher gives urgent Issue #41 its own Issue-numbered branch and worktree #41 from a deliberately selected `origin/main` or exact deployed/release SHA, then starts a separate Worker rooted there. Never switch, reset, clean, or stash #40 to make room for #41.
 
 ## PR lifecycle
 
