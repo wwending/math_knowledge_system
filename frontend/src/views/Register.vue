@@ -6,9 +6,9 @@
           <el-icon :size="40"><DataAnalysis /></el-icon>
         </div>
         <h1>Math Knowledge</h1>
-        <p class="subtitle">公开注册是否可用由当前环境 capability 决定</p>
+        <p class="subtitle">高中数学错题与知识图谱系统</p>
         <p class="desc">
-          在 capability 未确认前保持安全关闭状态；确认开启后才展示可提交注册表单。
+          创建账号后即可使用题目录入、题库和组卷功能。
         </p>
       </div>
       <div class="bg-circle circle-1"></div>
@@ -18,15 +18,15 @@
     <section class="register-right">
       <div class="form-wrapper">
         <template v-if="publicSignupCapability.loading">
-          <h2>正在确认注册能力</h2>
-          <p class="form-tip">在 capability 未确认前，此页不会展示可提交注册表单。</p>
+          <h2>正在确认注册状态</h2>
+          <p class="form-tip">正在确认当前是否开放注册，请稍后。</p>
 
           <el-alert
             type="info"
             :closable="false"
             show-icon
             class="register-alert"
-            title="正在获取当前环境的注册能力信息，请稍后。"
+            title="正在确认当前是否开放注册，请稍后。"
           />
 
           <div class="form-footer single-action">
@@ -146,19 +146,19 @@ const rules = {
 const publicSignupCapability = computed(() => getPublicSignupCapabilityState())
 
 const closedStateTitle = computed(() => (
-  publicSignupCapability.value.failed ? '暂时无法确认注册能力' : '当前未开放公开注册'
+  publicSignupCapability.value.failed ? '暂时无法获取注册状态' : '当前暂未开放自主注册'
 ))
 
 const closedStateTip = computed(() => (
   publicSignupCapability.value.failed
-    ? '能力获取失败时前端会按安全关闭状态处理，请稍后重试或联系管理员。'
-    : '请联系管理员创建账号，或返回登录页继续使用已有账号。'
+    ? '请稍后重试或联系管理员。'
+    : '请联系管理员开通账号，或返回登录页继续使用已有账号。'
 ))
 
 const closedStateAlert = computed(() => (
   publicSignupCapability.value.failed
-    ? '暂时无法确认当前环境是否开放公开注册，此页不提供注册表单。'
-    : '当前环境未开放公开注册，此页不提供注册表单。'
+    ? '暂时无法获取注册状态，请稍后重试或联系管理员。'
+    : '当前暂未开放自主注册，请联系管理员开通账号。'
 ))
 
 const syncPublicSignupCapability = async ({ force = false } = {}) => {
@@ -167,7 +167,7 @@ const syncPublicSignupCapability = async ({ force = false } = {}) => {
 
 const handleDisabledSignup = async () => {
   await syncPublicSignupCapability({ force: true })
-  ElMessage.error('当前环境未开放公开注册，请联系管理员创建账号。')
+  ElMessage.error('当前暂未开放自主注册，请联系管理员开通账号。')
   router.replace('/login')
 }
 
@@ -175,7 +175,7 @@ const getRegisterErrorMessage = (error) => {
   const detail = error.response?.data?.detail
 
   if (detail === PUBLIC_SIGNUP_DISABLED_DETAIL || error.response?.status === 403) {
-    return '当前环境未开放公开注册，请联系管理员创建账号。'
+    return '当前暂未开放自主注册，请联系管理员开通账号。'
   }
   if (Array.isArray(detail)) {
     return detail.map((item) => item?.msg).filter(Boolean).join('；') || '注册失败，请检查输入后重试。'

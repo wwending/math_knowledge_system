@@ -7,7 +7,7 @@
         </div>
         <div>
           <strong>Math Knowledge</strong>
-          <span>生产鉴权后台</span>
+          <span>高中数学错题与知识图谱系统</span>
         </div>
       </div>
 
@@ -61,7 +61,7 @@
         <section v-if="activeMenu === 'upload'" class="content-panel">
           <div class="section-heading">
             <h2>题目录入</h2>
-            <p>上传图片或 PDF 进入 OCR / AI 识别流程。鉴权失效时会自动清理会话并重新登录。</p>
+            <p>上传图片或 PDF，系统将自动识别并整理题目内容。登录状态失效时会提示重新登录。</p>
           </div>
 
           <div v-if="step === 'select-file'" class="upload-box">
