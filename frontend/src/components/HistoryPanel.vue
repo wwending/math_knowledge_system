@@ -17,8 +17,8 @@
       <el-card v-for="item in list" :key="item.id" class="history-item" shadow="hover">
         <div class="list-item-content">
           <div class="thumb-box" @click="openDetail(item)">
-             <el-image 
-                :src="getImageUrl(item)" 
+             <el-image
+                :src="getImageUrl(item)"
                 fit="cover"
                 class="thumb-img"
              >
@@ -70,12 +70,12 @@
         <div class="detail-left">
           <div class="image-wrapper">
             
-            <el-image 
-              :src="getImageUrl(currentItem)" 
-              :preview-src-list="[getImageUrl(currentItem)]"
+            <el-image
+              :src="getImageUrl(currentItem)"
+              :preview-src-list="previewSources"
               fit="scale-down"
               class="detail-image"
-                
+
 
             >
                <template #error>
@@ -111,10 +111,11 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import axios from 'axios'
 import { Refresh, Picture as IconPicture } from '@element-plus/icons-vue'
-import { API_V1_BASE_URL, resolveQuestionImageUrl } from '../config/api'
+import { API_V1_BASE_URL } from '../config/api'
+import { createQuestionImageLoader } from '../utils/questionImageLoader'
 import { renderMarkdown } from '@/utils/renderMarkdown'
 
 const API_BASE = API_V1_BASE_URL
@@ -123,6 +124,19 @@ const loading = ref(false)
 const list = ref([])
 const dialogVisible = ref(false)
 const currentItem = ref(null)
+
+// 题目图片经鉴权接口以 blob 方式加载（#44），不再使用公开静态 URL。
+const { syncItems, imageUrlFor, dispose: disposeImageLoader } = createQuestionImageLoader()
+
+watch(list, (items) => syncItems(items))
+
+const getImageUrl = (item) => imageUrlFor(item)
+
+const previewSources = computed(() =>
+  [imageUrlFor(currentItem.value)].filter(Boolean)
+)
+
+onBeforeUnmount(disposeImageLoader)
 
 const fetchHistory = async () => {
   loading.value = true
@@ -153,8 +167,6 @@ const getPreviewText = (text) => {
 }
 
 const formatTime = (str) => new Date(str).toLocaleString()
-
-const getImageUrl = (item) => resolveQuestionImageUrl(item)
 
 onMounted(() => {
   fetchHistory()

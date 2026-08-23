@@ -57,11 +57,9 @@ export const buildAssetUrl = (path) => {
   return `${API_BASE_URL}/${normalizedPath.replace(/^\/+/, '')}`
 }
 
-export const resolveQuestionImageUrl = (item) => {
-  if (!item) {
-    return ''
-  }
-  return buildAssetUrl(item.image_url || item.origin_image || '')
-}
+// Authenticated image channel (#44): question images are served by
+// GET /api/v1/questions/{id}/image and must be fetched with an Authorization
+// header, then rendered via blob URLs.
+export const buildQuestionImageUrl = (questionId) => `${API_V1_BASE_URL}/questions/${questionId}/image`
 
 export const buildUploadUrl = buildAssetUrl
