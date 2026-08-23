@@ -2,6 +2,29 @@
 
 说明：本文件按时间倒序记录决策。较早决策中的“当前主链路”等表述保留为当时历史事实；如与顶部较新决策冲突，以较新决策和 `docs/STATUS.md` 当前 checkpoint 为准。
 
+## 决策 38：后端可观测性采用请求编号 + 双通道日志，测试证据本地落盘 + CI artifact
+
+结论：
+
+- 每个请求由 `RequestContextMiddleware`（纯 ASGI）分配或透传 `X-Request-ID`（非法入参替换为新 id），经 loguru `contextualize` 使既有全部 `logger.*` 调用自动携带编号，零调用点改动；响应头回传编号，请求结束写 `[Access] method/path/status/elapsed_ms` 行。
+- 日志双通道：stderr + 滚动文件（rotation 10MB × retention 10、`enqueue=True`、`backtrace/diagnose=false`）；stdlib 与 uvicorn 日志经 InterceptHandler 汇入同一 sink。本地 `LOG_DIR=logs`（即 `backend/logs`，gitignore），生产 `LOG_DIR=/data/logs` 复用现有 `/data` 挂载，不新增 volume；`docker compose logs` 保持可用。
+- 未捕获异常统一由全局 handler 返回 `500 {"detail": <中文提示>, "request_id": ...}` 并附响应头，完整堆栈带编号进日志文件；`/healthz` 增加 SQLite `SELECT 1`、`app_env`、`git_sha`，数据库故障返回 503 使容器 HEALTHCHECK 如实变红。
+- 前端在识别调试面板条件渲染 `ocr_error`（error）/`llm_error`（warning），5xx 提示语附带请求编号；`backend/pytest.ini` 固定 `testpaths=tests` 与 `addopts=-q --tb=short -ra`；CI backend job 生成 JUnit XML 并以官方 SHA 固定的 upload-artifact v4.6.2 上传（`if: always()`）；`scripts/run_local_checks.ps1` 一键执行 compileall → pytest → 前端 contract → build，输出 tee 到 gitignored 的 `test_evidence/<时间戳>/` 并写 summary.txt。
+
+原因：
+
+- Issue #26 的核心痛点是报错无法溯源、测试证据无处可找。request_id 是把前端现象与后端堆栈关联起来的最小机制；文件日志解决“终端一关证据即失”；`diagnose=false` 防止 loguru 把变量值（可能含提示词/密钥片段）内联进日志。
+- `/healthz` 引入 DB 检查是因为静态 200 无法暴露数据层故障；503 让 `docker compose ps` 直接可见。
+- 本决策显式修订决策 31 “不改变 pytest 配置”的边界：`testpaths` 从根上消除根目录散落脚本破坏测试发现的历史故障模式（决策 31 的起因），`addopts` 统一人读与 CI 的报告格式。
+
+边界：
+
+- 不新增任何 Python/npm 依赖（loguru 已有）；不改动 OCR/LLM 业务逻辑；不触碰 `api/v1/endpoints.py`。
+- Nginx access log 暂不加 `$request_id` 格式；`ocr_runs`/`llm_runs` 暂不做管理查询界面；compose 不自定义 json-file retention——均记入 KNOWN_ISSUES 作为可选后续。
+- `/healthz` 从静态 200 变为 DB 检查语义属预期行为变化，已确认消费方（backend/web HEALTHCHECK、nginx 代理）均按非 2xx 视为不健康。
+
+日期：2026-08-23
+
 ## 决策 37：题目图片只经鉴权接口服务，uploads 移出公开 static 挂载
 
 结论：

@@ -1,5 +1,13 @@
 # STATUS
 
+## 2026-08-23 后端可观测性与测试证据闭环(#45/#46/#47/#48)
+
+- 后端新增统一日志（loguru stderr + 滚动文件 sink，接管 stdlib/uvicorn 输出）、每请求 `X-Request-ID`（响应头回传、所有日志行自动携带、`[Access]` 访问行）、全局异常处理器（未捕获异常返回 500 中文提示 + `request_id`，完整堆栈带编号落日志）；`/healthz` 增强 SQLite 连通检查、`app_env`、`git_sha` 字段，数据库故障返回 503。配置项 `LOG_LEVEL` / `LOG_DIR` / `GIT_SHA`，生产日志写入 `/data/logs` 复用现有挂载。
+- Dashboard 识别调试面板新增 `ocr_error`（红）/`llm_error`（黄）alert；5xx 错误提示语附带「请求编号」，可与日志检索联动。
+- `backend/pytest.ini` 钉死 `testpaths=tests` 并统一 `-q --tb=short -ra`；CI backend job 生成并上传 JUnit artifact（`backend-pytest-junit`）；新增 `scripts/run_local_checks.ps1` 一键全量本地验证，输出归档到 gitignored 的 `test_evidence/<时间戳>/` 并生成 summary.txt。
+- 新增 `docs/TROUBLESHOOTING.md` 排查手册（系统地图、一个请求的一生、按症状 playbook、证据索引、AI 改动验收清单）；决策边界见决策 38。
+- 本地验证：各子 issue worktree 内 compileall、pytest（最终基线 178 passed）、unittest discover、contract tests 10/10、build 全部通过；三个 PR（#50/#51/#52）CI 五项检查全绿且 artifact 可下载。
+
 ## 2026-08-23 题目图片访问改为鉴权通道(#44)
 
 - 新增 `GET /api/v1/questions/{id}/image`:未认证 401、非 owner 403、owner 经 `FileResponse` 流式取回原图;所有权校验挂在 Question 层,`SourceAsset` 按 sha256 全局去重仅作共享字节仓库(不同用户可通过各自题目引用同一份文件)。
