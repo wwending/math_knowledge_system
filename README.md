@@ -305,6 +305,14 @@
   npm run build
   ```
 
+  一键全量本地检查（推荐；自动把全部输出归档到 `test_evidence/<时间戳>/` 并生成 summary）：
+
+  ```powershell
+  pwsh scripts\run_local_checks.ps1
+  ```
+
+  出问题时的排查指引（日志位置、请求编号用法、证据索引、按症状的 playbook）见 [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md)。
+
   ## 当前状态
 
   当前为 `v0.1 Release Candidate`，已具备：

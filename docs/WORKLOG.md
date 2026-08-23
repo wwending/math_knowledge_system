@@ -2,6 +2,25 @@
 
 说明：本文件按时间倒序记录每轮工作。较早轮次中的“当前主链路”等表述保留为当时历史事实；当前状态以 `docs/STATUS.md` 最新 checkpoint 和较新的 DECISIONS 为准。
 
+## 2026-08-23 Issue #45/#46/#47/#48 后端可观测性、错误显示、测试证据与排查手册
+
+目标：
+
+- 解决 #26「后端测试黑盒、报错无法溯源、测试证据无处可找」：拆四个子 issue 串行交付，每个独立分支/worktree/PR。
+
+结果：
+
+- #45 后端可观测性：新增 `app/core/logging.py`、`request_context.py`、`error_handlers.py` 三模块并在 `main.py` 接线；`/healthz` 增强 DB 检查与版本信息；config/env/compose/Dockerfile 配套。
+- #46 前端错误显示：Dashboard 调试面板渲染 `ocr_error`/`llm_error` alert，5xx 提示语附带请求编号。
+- #47 测试证据管道：`backend/pytest.ini`、CI JUnit artifact（backend-pytest-junit）、`scripts/run_local_checks.ps1` 一键检查并落盘 `test_evidence/`。
+- #48 排查手册：`docs/TROUBLESHOOTING.md` + STATUS/DECISIONS(38)/KNOWN_ISSUES/README/AGENTS 记账。
+
+验证结果：
+
+- 各 worktree 全量验证通过：compileall、pytest（最终基线 178 passed）、unittest discover OK、contract tests 10/10、npm build 成功。
+- `run_local_checks.ps1` 端到端 4/4 PASS，`test_evidence/<时间戳>/` 六个产物齐全且 git status 干净。
+- PR #50/#51/#52 CI 五项检查全绿，`backend-pytest-junit` artifact 确认可下载。
+
 ## 2026-08-17 Issue #28 组卷答题留白
 
 - 将 render model 的答题区从 `lines=4` 调整为 `height_mm=50`，保留 `answer_area_mode=after_each_question` 枚举；前端默认改为“每题后留白”。
