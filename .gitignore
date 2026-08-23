@@ -50,6 +50,7 @@ backend/temp_uploads/
 test_data/results/
 test_data/output_images/
 *.log
+backend/logs/
 backend/test/output/
 
 # --- Testing & Quality ---
