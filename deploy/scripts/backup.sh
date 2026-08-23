@@ -42,7 +42,10 @@ else
     echo "No existing SQLite database found; database backup skipped."
 fi
 
-if [[ -d "${DATA_ROOT}/static/uploads" ]]; then
+if [[ -d "${DATA_ROOT}/uploads" ]]; then
+    tar -C "${DATA_ROOT}" -czf "${backup_dir}/uploads.tar.gz" uploads
+elif [[ -d "${DATA_ROOT}/static/uploads" ]]; then
+    # Pre-#44 layout; kept so backups still work before deploy.sh migrates the files.
     tar -C "${DATA_ROOT}/static" -czf "${backup_dir}/uploads.tar.gz" uploads
 fi
 

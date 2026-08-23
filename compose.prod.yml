@@ -29,7 +29,7 @@ services:
     environment:
       DATABASE_URL: sqlite:////data/math_knowledge.db
       STATIC_DIR: /data/static
-      UPLOAD_DIR: /data/static/uploads
+      UPLOAD_DIR: /data/uploads
       PDF_TEMP_DIR: /data/pdf_temp
       PDF_SERVICE_URL: http://gotenberg:3000
       PDF_SERVICE_CONNECT_TIMEOUT_SECONDS: ${PDF_SERVICE_CONNECT_TIMEOUT_SECONDS:-5}

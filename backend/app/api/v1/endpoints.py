@@ -7,11 +7,13 @@ import shutil
 import time
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, List, Optional
 from urllib.parse import quote
 
 import fitz
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Response, UploadFile
+from fastapi.responses import FileResponse
 from loguru import logger
 from PIL import Image
 from pydantic import BaseModel
@@ -117,32 +119,49 @@ def normalize_tags(raw_tags: Any) -> List[KnowledgeTag]:
     return tags
 
 
-def build_upload_image_url(raw_path: Optional[str]) -> Optional[str]:
-    if not raw_path:
+def build_question_image_url(question_id: int) -> str:
+    # Authenticated image channel. Replaces the retired public /static/uploads URLs (#44).
+    return f"{settings.API_V1_STR}/questions/{question_id}/image"
+
+
+def _resolve_upload_file_path(raw_path: Optional[str]) -> Optional[str]:
+    """Resolve a stored upload reference to a file inside UPLOAD_DIR_PATH.
+
+    Stored values are bare filenames written by the upload pipelines. Legacy rows may
+    still carry a "/static/uploads/..." URL or an "uploads/..." prefix, so both forms
+    are tolerated and resolved against the (now relocated) uploads directory. Absolute
+    paths are accepted for parity with _asset_file_path, but resolution is always
+    contained to UPLOAD_DIR_PATH so a tampered DB row cannot read arbitrary files.
+    """
+    normalized = str(raw_path or "").strip()
+    if not normalized or normalized.startswith(("http://", "https://")):
         return None
 
-    normalized_path = str(raw_path).strip()
-    if not normalized_path:
+    static_prefix = f"{settings.STATIC_URL_PREFIX_NORMALIZED}/"
+    if normalized.startswith(static_prefix):
+        normalized = normalized[len(static_prefix):]
+    normalized = normalized.lstrip("/").replace("\\", "/")
+    if not normalized:
         return None
 
-    if normalized_path.startswith(("http://", "https://")):
-        return normalized_path
+    candidates = [normalized]
+    uploads_segment = "uploads/"
+    if normalized.startswith(uploads_segment):
+        candidates.append(normalized[len(uploads_segment):])
 
-    if normalized_path.startswith(f"{settings.STATIC_URL_PREFIX_NORMALIZED}/"):
-        return normalized_path
-
-    upload_relative_dir = os.path.relpath(
-        str(settings.UPLOAD_DIR_PATH),
-        str(settings.STATIC_DIR_PATH),
-    ).replace("\\", "/").strip("./")
-
-    relative_path = normalized_path.lstrip("/")
-    if relative_path.startswith("static/"):
-        relative_path = relative_path[len("static/"):]
-    elif upload_relative_dir and not relative_path.startswith(f"{upload_relative_dir}/"):
-        relative_path = f"{upload_relative_dir}/{os.path.basename(relative_path)}"
-
-    return f"{settings.STATIC_URL_PREFIX_NORMALIZED}/{relative_path.lstrip('/')}"
+    upload_root = settings.UPLOAD_DIR_PATH.resolve()
+    for candidate_name in candidates:
+        candidate = (
+            Path(candidate_name)
+            if os.path.isabs(candidate_name)
+            else upload_root / candidate_name
+        )
+        resolved = candidate.resolve()
+        if resolved != upload_root and upload_root not in resolved.parents:
+            continue
+        if resolved.is_file():
+            return str(resolved)
+    return None
 
 
 def _safe_remove_file(path: str) -> None:
@@ -480,7 +499,7 @@ def read_history(
                 content=question.content or "",
                 knowledge=normalize_tags(question.knowledge_tags),
                 cost_seconds=0.0,
-                image_url=build_upload_image_url(question.origin_image),
+                image_url=build_question_image_url(question.id),
                 id=question.id,
                 created_at=question.created_at,
             )
@@ -1068,7 +1087,6 @@ def recognize_image(
     file_ext = os.path.splitext(file.filename or "")[1].lower()
     unique_filename = f"{uuid.uuid4()}{file_ext}"
     file_path = str(settings.UPLOAD_DIR_PATH / unique_filename)
-    image_url = build_upload_image_url(unique_filename)
 
     logger.info("Saving recognize upload user_id={} path={}", current_user.id, file_path)
     try:
@@ -1197,7 +1215,7 @@ def recognize_image(
         content=final_content,
         knowledge=knowledge_tags,
         cost_seconds=time.time() - start_total,
-        image_url=image_url,
+        image_url=build_question_image_url(new_question.id),
         question_id=new_question.id,
         created_at=new_question.created_at,
         partial_success=partial_success,
@@ -1242,7 +1260,7 @@ def list_questions(
             metadata_started_at=item.metadata_started_at,
             metadata_finished_at=item.metadata_finished_at,
             origin_image=item.origin_image,
-            image_url=build_upload_image_url(item.origin_image),
+            image_url=build_question_image_url(item.id),
             created_at=item.created_at,
         )
         for item in questions
@@ -1277,6 +1295,28 @@ def get_question_detail(
         metadata_started_at=question.metadata_started_at,
         metadata_finished_at=question.metadata_finished_at,
         origin_image=question.origin_image,
-        image_url=build_upload_image_url(question.origin_image),
+        image_url=build_question_image_url(question.id),
         created_at=question.created_at,
     )
+
+
+@router.get("/questions/{question_id}/image")
+def get_question_image(
+    question_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_active_user),
+):
+    question = db.query(Question).filter(Question.id == question_id).first()
+    if not question:
+        raise HTTPException(status_code=404, detail=NOT_FOUND_MESSAGE)
+    if question.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail=FORBIDDEN_MESSAGE)
+
+    # Ownership is enforced above on the Question row on purpose: SourceAsset rows are
+    # deduplicated by sha256 across users, so the asset itself carries no owner
+    # semantics and only marks where the shared bytes live.
+    file_path = _resolve_upload_file_path(question.origin_image)
+    if not file_path:
+        raise HTTPException(status_code=404, detail=NOT_FOUND_MESSAGE)
+
+    return FileResponse(file_path)
