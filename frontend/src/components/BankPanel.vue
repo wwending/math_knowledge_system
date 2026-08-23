@@ -60,7 +60,7 @@
             />
           </div>
 
-          <div class="thumb-box" v-if="getImageUrl(item)">
+          <div class="thumb-box" v-if="hasImageField(item)">
             <el-image
               :src="getImageUrl(item)"
               fit="cover"
@@ -118,10 +118,10 @@
 
       <div class="detail-layout" v-else-if="currentItem">
         <div class="detail-left">
-          <div class="image-wrapper" v-if="getImageUrl(currentItem)">
+          <div class="image-wrapper" v-if="hasImageField(currentItem)">
             <el-image
               :src="getImageUrl(currentItem)"
-              :preview-src-list="[getImageUrl(currentItem)]"
+              :preview-src-list="previewSources"
               fit="scale-down"
               class="detail-image"
             >
@@ -205,11 +205,12 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 import { Refresh, Search, Picture as IconPicture } from '@element-plus/icons-vue'
-import { API_V1_BASE_URL, resolveQuestionImageUrl } from '../config/api'
+import { API_V1_BASE_URL } from '../config/api'
+import { createQuestionImageLoader } from '../utils/questionImageLoader'
 import { renderMarkdown } from '@/utils/renderMarkdown'
 
 const API_BASE = API_V1_BASE_URL
@@ -228,6 +229,19 @@ const paperForm = ref({
   title: '',
   description: ''
 })
+
+// 题目图片经鉴权接口以 blob 方式加载（#44），不再使用公开静态 URL。
+const { hasImageField, syncItems, imageUrlFor, dispose: disposeImageLoader } = createQuestionImageLoader()
+
+watch(list, (items) => syncItems(items))
+
+const getImageUrl = (item) => imageUrlFor(item)
+
+const previewSources = computed(() =>
+  [imageUrlFor(currentItem.value)].filter(Boolean)
+)
+
+onBeforeUnmount(disposeImageLoader)
 
 const canSubmitPaper = computed(() => {
   return selectedQuestionIds.value.length > 0 && paperForm.value.title.trim().length > 0 && !creatingPaper.value
@@ -391,8 +405,6 @@ const getPreviewText = (text) => {
 }
 
 const formatTime = (value) => value ? new Date(value).toLocaleString() : '-'
-
-const getImageUrl = (item) => resolveQuestionImageUrl(item)
 
 const handleGoUpload = () => {
   ElMessage.info('请切换到“题目采集”上传题目')

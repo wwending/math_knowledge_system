@@ -1,5 +1,12 @@
 # STATUS
 
+## 2026-08-23 题目图片访问改为鉴权通道(#44)
+
+- 新增 `GET /api/v1/questions/{id}/image`:未认证 401、非 owner 403、owner 经 `FileResponse` 流式取回原图;所有权校验挂在 Question 层,`SourceAsset` 按 sha256 全局去重仅作共享字节仓库(不同用户可通过各自题目引用同一份文件)。
+- `UPLOAD_DIR` 默认移出公开 `/static` 挂载(本地 `backend/uploads`,生产 `/data/uploads`),启动时 fail-closed 校验 uploads 不落在 `STATIC_DIR` 内;`deploy.sh` 自动把旧 `${DATA_ROOT}/static/uploads` 一次性迁移到 `${DATA_ROOT}/uploads`(两目录并存时拒绝并要求人工合并),`backup.sh` 兼容新旧布局。
+- API 的 `image_url` 字段改指鉴权端点;前端 HistoryPanel / BankPanel 经全局 axios(带 Authorization、复用 401 refresh 重试)预取 Blob 后以 object URL 渲染,卸载时释放;Dashboard 预览本就走本地 File objectURL,不受影响。浏览器自动缓存的 ETag/Cache-Control 补偿列为后续可选项。
+- 本地验证:`python -m compileall app` 通过;`python -m pytest -q` 169 passed + 7 subtests(含新增 10 个图片访问回归);`npm run test:stage3-contract` 与 `npm run build` 通过。真实 Linux/Docker/HTTPS 环境验证与 uploads 文件迁移演练待 Staging 执行。
+
 ## 2026-08-18 digest-pinned Staging 与 HTTPS production-mode Demo 验收完成
 
 - 首次真实 first-party digest-pinned Staging rollout 已通过：部署 Git SHA `45b604bbde646e0f41b219c1fbaad6d506525fe1`，backend/web trusted digest 分别为 `sha256:a9fc71f85461a8360d44e8b76bbb8798a703d828fa041fa81e829ba31dcf9018` 与 `sha256:3c69c38858ee402b45d7e557ebde292c466b3d758238fa80fc881a2ddbf47af6`；`repository@sha256` runtime、exact RepoDigest、OCI revision、备份、Alembic、SQLite `quick_check`、uploads、HTTP、PDF.js `.mjs` MIME、backend 到 Gotenberg 的真实 PDF smoke 和服务健康均已验证，结论为 `DIGEST-PINNED STAGING DEPLOYMENT PASS`。

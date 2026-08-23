@@ -101,6 +101,7 @@ If the user explicitly requested one of these actions, do not ask a second time 
 - Do not use `git push --force`, `git reset --hard`, destructive `git clean`, or rewrite shared history unless the user explicitly asks and the consequences are understood.
 - Do not amend or squash existing shared commits without explicit instruction.
 - Prefer logical commits with meaningful messages.
+- Commit messages must not include AI assistant attribution trailers such as `Co-Authored-By: Claude`. Committer/author metadata stays as the real account; traceability lives in the Issue -> Branch -> Commit -> PR chain, not in commit trailers.
 - After implementation, push only the task branch and create/update a Draft PR unless the user asks for a different workflow.
 - Every normal PR must link at least one existing Issue in this repository with a GitHub closing keyword. Use `Closes #123` by default; `Fixes #123` and `Resolves #123` are also accepted. `Addresses #123` alone does not satisfy this rule because it does not express automatic closure after merge.
 - Before creating a Draft PR, confirm that the Issue exists, its number is correct, the PR body contains the closing relationship, and the PR scope matches the Issue scope.

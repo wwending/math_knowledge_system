@@ -73,7 +73,9 @@ class Settings(BaseSettings):
 
     STATIC_URL_PREFIX: str = "/static"
     STATIC_DIR: str = "static"
-    UPLOAD_DIR: str = "static/uploads"
+    # Uploads must live outside the publicly mounted static dir (#44): question images
+    # are served only through the authenticated /questions/{id}/image endpoint.
+    UPLOAD_DIR: str = "uploads"
     PDF_TEMP_DIR: str = "static/pdf_temp"
 
     DATABASE_URL: str = "sqlite:///./math_knowledge.db"
@@ -249,6 +251,18 @@ class Settings(BaseSettings):
         if not self.ALLOW_RUNTIME_SCHEMA_MUTATIONS:
             raise RuntimeError(
                 "Runtime schema mutations require ALLOW_RUNTIME_SCHEMA_MUTATIONS=true outside production"
+            )
+
+    def validate_upload_dir_isolation(self) -> None:
+        # Fail closed on misconfiguration: an uploads directory inside the mounted
+        # static tree would re-expose question image bytes without authentication.
+        upload_dir = self.UPLOAD_DIR_PATH
+        static_dir = self.STATIC_DIR_PATH
+        if upload_dir == static_dir or static_dir in upload_dir.parents:
+            raise RuntimeError(
+                "UPLOAD_DIR must live outside STATIC_DIR so uploads stay off the public "
+                f"/static mount (got UPLOAD_DIR={self.UPLOAD_DIR!r}, STATIC_DIR={self.STATIC_DIR!r}). "
+                "Move existing upload files out of the static dir once and update UPLOAD_DIR."
             )
 
     def ensure_runtime_dirs(self) -> None:

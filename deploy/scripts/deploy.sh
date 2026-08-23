@@ -80,10 +80,23 @@ require_release_image_digests
 BACKEND_IMAGE="${BACKEND_REPOSITORY}@${BACKEND_IMAGE_DIGEST}"
 WEB_IMAGE="${WEB_REPOSITORY}@${WEB_IMAGE_DIGEST}"
 
+# One-time migration (#44): question image uploads must live outside the publicly
+# served static dir so they are reachable only through the authenticated image API.
+legacy_uploads_dir="${DATA_ROOT}/static/uploads"
+uploads_dir="${DATA_ROOT}/uploads"
+if [[ -d "${legacy_uploads_dir}" ]]; then
+    if [[ -e "${uploads_dir}" ]]; then
+        echo "Both ${legacy_uploads_dir} and ${uploads_dir} exist; merge them manually, remove ${legacy_uploads_dir}, then redeploy." >&2
+        exit 1
+    fi
+    mv "${legacy_uploads_dir}" "${uploads_dir}"
+    echo "Migrated question image uploads: ${legacy_uploads_dir} -> ${uploads_dir}"
+fi
+
 install -d -m 0775 -o 10001 -g 10001 \
     "${DATA_ROOT}" \
     "${DATA_ROOT}/static" \
-    "${DATA_ROOT}/static/uploads" \
+    "${DATA_ROOT}/uploads" \
     "${DATA_ROOT}/pdf_temp"
 install -d -m 0775 "${BACKUP_ROOT}"
 

@@ -2,6 +2,27 @@
 
 说明：本文件按时间倒序记录决策。较早决策中的“当前主链路”等表述保留为当时历史事实；如与顶部较新决策冲突，以较新决策和 `docs/STATUS.md` 当前 checkpoint 为准。
 
+## 决策 37：题目图片只经鉴权接口服务，uploads 移出公开 static 挂载
+
+结论：
+
+- 题目相关图片字节只能通过 `GET /api/v1/questions/{question_id}/image` 读取；接口复用 `require_active_user` 并在 Question 层做所有权校验（404/403 语义与题目详情一致），以 `FileResponse` 流式返回磁盘文件。
+- 所有权校验挂在 Question 上而不是 SourceAsset 上：`source_assets.sha256` 全局唯一去重，不同用户可能通过各自的 Question 引用同一 asset 行与同一份磁盘文件，asset 只是共享字节仓库。
+- `UPLOAD_DIR` 默认值与生产布局改为公开 `/static` 挂载之外的独立目录（本地 `backend/uploads`、生产 `/data/uploads`），启动时 fail-closed 校验 uploads 不落在 `STATIC_DIR` 内；`deploy.sh` 负责把旧 `${DATA_ROOT}/static/uploads` 一次性迁移到新位置。
+- API 返回的 `image_url` 改为指向鉴权端点；前端经全局 axios 实例（携带 Authorization、复用 401 refresh 重试）预取为 Blob 并以 object URL 渲染，组件卸载时释放。
+
+原因：
+
+- 公开 `/static/uploads` 使任何持有 URL 者绕过用户数据隔离读取图片字节，与 “User ownership/data isolation checks are security boundaries” 不变量冲突。
+- cookie 会话方案会把图片鉴权语义扩散进静态服务层，短时签名 URL 方案引入额外密钥与时钟依赖；Blob 预取在现有 JWT 架构下改动最小。代价是失去浏览器自动缓存，后续可用 ETag/Cache-Control 找回。
+
+边界：
+
+- `/static` 挂载本身保留给非敏感资源（PDF.js 等前端资产）；`pdf_temp` 目录的公开可达性是遗留风险，单独记录于 `KNOWN_ISSUES.md`。
+- 无数据模型变更、无新增 Alembic 迁移；历史 `origin_image` 值（裸文件名及遗留 `/static/uploads/...` 前缀）由后端解析层兼容。
+
+日期：2026-08-23
+
 ## 决策 36：Control Checkout 与每 Issue 可写 worktree 分离
 
 结论：
