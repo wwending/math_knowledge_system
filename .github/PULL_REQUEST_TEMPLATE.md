@@ -1,11 +1,12 @@
 ## Linked Issue
 
-Closes #<issue-number>
+Refs #<issue-number>
 
 <!--
-Every normal PR must link an Issue that was created before the PR.
-Use a real closing relationship such as "Closes #123" by default.
-Replace the placeholder above; do not submit it unchanged.
+Link the Issue that was created before this PR.
+Do NOT use closing keywords (Closes/Fixes/Resolves #N): the traceability
+check rejects them. Issues are closed manually after acceptance, never
+automatically at merge.
 -->
 
 ## Summary / Scope
@@ -19,6 +20,10 @@ Replace the placeholder above; do not submit it unchanged.
 ## Tests not run
 
 <!-- List omitted checks and why, or write "None". -->
+
+## Acceptance steps
+
+<!-- 验收步骤：在哪个环境、执行什么、看到什么算通过。验收人将照此执行后手动关闭关联 Issue。 -->
 
 ## Deployment / migration impact
 
