@@ -18,6 +18,7 @@ DEFAULT_DEV_CORS_ALLOW_ORIGINS = (
 )
 ALLOWED_COOKIE_SAMESITE_VALUES = {"lax", "strict", "none"}
 ALLOWED_SECURE_TRANSPORT_MODES = {"direct_https", "trusted_proxy_tls", "insecure_http"}
+ALLOWED_LOG_LEVELS = {"TRACE", "DEBUG", "INFO", "SUCCESS", "WARNING", "ERROR", "CRITICAL"}
 
 
 def _resolve_path(value: str | Path, *, base_dir: Path) -> Path:
@@ -116,6 +117,10 @@ class Settings(BaseSettings):
     PDF_SERVICE_CONNECT_TIMEOUT_SECONDS: float = 5
     PDF_SERVICE_READ_TIMEOUT_SECONDS: float = 60
 
+    LOG_LEVEL: str = "INFO"
+    LOG_DIR: str = "logs"
+    GIT_SHA: str = "unknown"
+
     model_config = SettingsConfigDict(
         env_file=ENV_FILE_PATH,
         case_sensitive=True,
@@ -147,6 +152,10 @@ class Settings(BaseSettings):
         return _resolve_path(self.PDF_TEMP_DIR, base_dir=self.BASE_DIR)
 
     @property
+    def LOG_DIR_PATH(self) -> Path:
+        return _resolve_path(self.LOG_DIR, base_dir=self.BASE_DIR)
+
+    @property
     def DATABASE_URL_RESOLVED(self) -> str:
         return _resolve_sqlite_url(self.DATABASE_URL, base_dir=self.BASE_DIR)
 
@@ -157,6 +166,11 @@ class Settings(BaseSettings):
     @property
     def APP_ENV_NORMALIZED(self) -> str:
         return self.APP_ENV.strip().lower()
+
+    @property
+    def LOG_LEVEL_NORMALIZED(self) -> str:
+        candidate = self.LOG_LEVEL.strip().upper()
+        return candidate if candidate in ALLOWED_LOG_LEVELS else "INFO"
 
     @property
     def IS_PRODUCTION(self) -> bool:
