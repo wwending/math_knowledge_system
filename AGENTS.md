@@ -33,6 +33,7 @@ Before a non-trivial task:
    - architecture / API / data-model / process change -> `docs/DECISIONS.md`
    - deployment / migration / backup / rollback -> `deploy/README.md` and relevant deployment docs/scripts
    - public API behavior -> `docs/API.md`
+   - troubleshooting / observability / evidence locations -> `docs/TROUBLESHOOTING.md`
    - release or real-service verification -> `docs/MVP_RELEASE_CHECKLIST.md` and smoke docs
    - dependency/security work -> `SECURITY.md`
    - historical investigation only -> search `docs/WORKLOG.md`; do not read the whole file by default

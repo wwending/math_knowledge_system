@@ -1,5 +1,13 @@
 # KNOWN_ISSUES
 
+## 0.19 可观测性后续增强项（#45-#48 遗留的可选项）
+
+request_id、双通道日志、healthz 增强、前端错误显示与测试证据管道已交付，排查主链路闭环。以下为可选后续，当前不构成风险：
+
+- Nginx access log 未加 `$request_id` 日志格式：后端已通过响应头与 500 JSON 字段提供编号，grep 文件日志即可定位，Nginx 侧暂无必要。
+- `ocr_runs` / `llm_runs` 无管理查询界面：深度排查仍需直接 SQL（见 TROUBLESHOOTING 手册示例）。
+- Compose 未自定义 json-file 驱动的 rotation 上限：`docker compose logs` 输出无界增长，服务器磁盘紧张时需配置或定期清理。
+
 ## 0.18 `static/pdf_temp` 仍位于公开 `/static` 挂载之下
 
 #44 已把题目图片 uploads 移出公开 static 目录并改为鉴权接口服务，但 legacy `POST /upload_pdf` 解析产生的 `pdf_temp` 页面渲染图仍在 `STATIC_DIR` 下：持有任务级 UUID 前缀 URL 者理论上仍可读取（隐蔽性不是访问控制）。当前前端不构造也不请求这些 URL（Dashboard 对本地选择的 PDF 使用客户端渲染），实际暴露面限于历史调用方。
