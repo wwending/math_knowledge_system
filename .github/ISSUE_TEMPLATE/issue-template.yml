@@ -1,0 +1,24 @@
+name: Issue
+description: 默认模板——开工前想清楚验收标准，关闭时才闭环得起来
+body:
+  - type: textarea
+    id: background
+    attributes:
+      label: 背景 / 问题
+      description: 现象、期望与实际的差距。fix 类尽量给出根因线索（日志、request id、截图）。
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 验收标准
+      description: 怎么测试、看到什么结果才算通过。敏捷阶段可以粗粒度；拿不准就写「与我讨论后确定」。
+    validations:
+      required: false
+  - type: textarea
+    id: notes
+    attributes:
+      label: 补充 / 边界
+      description: 不做什么、相关 Issue、约束等。可留空。
+    validations:
+      required: false
