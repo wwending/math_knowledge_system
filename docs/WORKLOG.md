@@ -2,6 +2,23 @@
 
 说明：本文件按时间倒序记录每轮工作。较早轮次中的“当前主链路”等表述保留为当时历史事实；当前状态以 `docs/STATUS.md` 最新 checkpoint 和较新的 DECISIONS 为准。
 
+## 2026-08-23 Issue #55 Issue 闭环契约：验收后手动关闭 + 存量审计与工作区清理
+
+目标：
+
+- 修复「merge 即自动关闭 issue」导致的已关闭未闭环：验收、文档记账、工作区回收发生在关闭之后且无跟踪落点（#44/#45/#46/#47 零评论自动关闭、三次合并未记账、5 个已完结任务 worktree 残留）。
+
+结果：
+
+- PR 关联改为 `Refs #N`；traceability CI 拒绝关闭关键词（标题+正文），保留存在性/类型/时序校验；PR 模板同步，新增含「验收标准」字段的 issue 模板。
+- AGENTS.md 与 ENGINEERING_WORKFLOW.md 落地「merge 后实现报告评论 + 用户（可批量）验收手动关闭」流程与 Issue 级 definition of done；DECISIONS 决策 39 取代决策 35 的自动关闭约定。
+- 存量审计与工作区清理按 #55 描述执行，结果记录在对应 issue 页面。
+
+验证结果：
+
+- `node --test scripts/check-pr-traceability.test.mjs` 全绿（11 用例，含标题/正文关闭关键词拒绝、HTML 注释豁免、裸 `#N` 接受）。
+- 本 Draft PR 的 traceability 检查实测新门禁（`Refs #55` 放行）。
+
 ## 2026-08-23 Issue #45/#46/#47/#48 后端可观测性、错误显示、测试证据与排查手册
 
 目标：

@@ -11,18 +11,36 @@ function stripNonProseMarkdown(body) {
     .replace(/`[^`\n]*`/g, " ");
 }
 
-export function extractClosingIssueNumbers(body) {
-  const matches = stripNonProseMarkdown(typeof body === "string" ? body : "").matchAll(CLOSING_REFERENCE);
+const ISSUE_REFERENCE = /#([1-9]\d*)\b/g;
+const CLOSING_KEYWORD_ERROR =
+  'Closing keywords (Closes/Fixes/Resolves #N) are disabled: Issues are closed manually after acceptance, never automatically at merge. Remove them from the PR title/body and link with "Refs #<issue-number>" instead.';
+
+// GitHub treats the closing grammar as keyword immediately followed by #N, so the
+// same regex drives the rejection list here.
+export function extractClosingIssueNumbers(text) {
+  const matches = stripNonProseMarkdown(typeof text === "string" ? text : "").matchAll(CLOSING_REFERENCE);
   return [...new Set(Array.from(matches, (match) => Number(match[1])))];
 }
 
-export async function validateTraceability({ body, prCreatedAt, getIssue }) {
-  const issueNumbers = extractClosingIssueNumbers(body);
+export function extractIssueNumbers(text) {
+  const matches = stripNonProseMarkdown(typeof text === "string" ? text : "").matchAll(ISSUE_REFERENCE);
+  return [...new Set(Array.from(matches, (match) => Number(match[1])))];
+}
+
+export async function validateTraceability({ title, body, prCreatedAt, getIssue }) {
+  const prose = stripNonProseMarkdown(`${typeof title === "string" ? title : ""}\n\n${typeof body === "string" ? body : ""}`);
+
+  // Merging must never auto-close an Issue: closure happens only after user acceptance.
+  if (extractClosingIssueNumbers(prose).length > 0) {
+    return [CLOSING_KEYWORD_ERROR];
+  }
+
+  const issueNumbers = extractIssueNumbers(prose);
   if (issueNumbers.length === 0) {
-    return ['PR must link an existing GitHub Issue using "Closes #<issue-number>".'];
+    return ['PR must link an existing GitHub Issue using "Refs #<issue-number>".'];
   }
   if (issueNumbers.length > MAX_REFERENCES) {
-    return [`PR contains too many closing Issue references (maximum ${MAX_REFERENCES}).`];
+    return [`PR contains too many Issue references (maximum ${MAX_REFERENCES}).`];
   }
 
   const prCreated = Date.parse(prCreatedAt);
@@ -82,6 +100,7 @@ async function main() {
   }
 
   const errors = await validateTraceability({
+    title: event.pull_request.title,
     body: event.pull_request.body,
     prCreatedAt: event.pull_request.created_at,
     getIssue: async (issueNumber) => {

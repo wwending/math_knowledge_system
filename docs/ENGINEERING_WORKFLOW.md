@@ -117,13 +117,14 @@ GitHub Issue [required]
   -> local focused tests
   -> commit
   -> push branch
-  -> Draft PR linked with `Closes #<issue>`
+  -> Draft PR linked with `Refs #<issue>`
   -> PR traceability gate
   -> GitHub Actions
   -> Staging exact-SHA validation [when runtime/integration dependent]
   -> review + fixes
   -> merge main
-  -> linked Issue closes
+  -> implementation-report comment on the Issue (what / root cause / tests / acceptance steps)
+  -> user acceptance (batch allowed) -> manual Issue close with evidence
   -> Demo exact-SHA deployment [when intentionally releasing to Demo]
   -> safe Task Worktree retirement
 ```
@@ -139,9 +140,9 @@ The development records have distinct roles:
 - Issue: why the change is needed and what outcome is required;
 - branch: the isolated implementation workspace, with the Issue number in its name;
 - commit: the concrete change history;
-- PR: the review, validation, and merge unit, linked with a closing keyword.
+- PR: the review, validation, and merge unit, linked with a non-closing reference.
 
-Together they form `Issue -> Branch -> Commit -> PR -> Merge`, with each layer traceable to the same Issue. Every normal PR must include a same-repository closing relationship such as `Closes #123` (preferred), `Fixes #123`, or `Resolves #123`. A plain mention such as `Addresses #123` is not sufficient. The automated `PR traceability` check verifies that the referenced target exists, is an Issue rather than a PR, and that at least one valid linked Issue predates the PR.
+Together they form `Issue -> Branch -> Commit -> PR -> Merge -> Acceptance -> Close`, with each layer traceable to the same Issue. Every normal PR must include a same-repository reference such as `Refs #123`; a plain `#123` mention is also accepted. Closing keywords (`Closes #123`, `Fixes #123`, `Resolves #123`) are forbidden in PR titles and bodies and are rejected by the automated `PR traceability` check, because merging must never auto-close an Issue: closure happens only after user acceptance (see "Issue acceptance and closure"). The check still verifies that the referenced target exists, is an Issue rather than a PR, and that at least one valid linked Issue predates the PR.
 
 This policy applies prospectively after the governance change is merged. Historical branches and merged PRs are not renamed or rewritten.
 
@@ -186,7 +187,7 @@ Issue created
   -> create Issue-numbered branch and linked Task Worktree
   -> assign one Codex
   -> implement and run focused checks
-  -> commit, push, and open Draft PR with `Closes #<issue>`
+  -> commit, push, and open Draft PR with `Refs #<issue>`
   -> CI / required Staging / review / merge or intentional abandonment
   -> inspect unique work and remote divergence
   -> retire only the known-safe Task Worktree
@@ -216,6 +217,47 @@ Only after:
 ### Merge
 
 Merge is a human-controlled release decision, not an automatic consequence of green tests.
+
+## Issue acceptance and closure
+
+Merging does not close an Issue. GitHub auto-close is deliberately disabled: PRs link Issues with `Refs #<n>`, never with closing keywords, and the `PR traceability` check rejects them. An Issue is closed only after the user has accepted the delivered change, so "closed" always means "accepted and closed-loop".
+
+### Implementation report — posted by the implementing agent right after merge
+
+One concise comment on the Issue (Chinese is fine):
+
+```text
+## 实现报告
+- 做了什么：<要点>
+- 根因：<fix 类必填；feature/ docs 类可省>
+- 已跑测试：<命令 + 结果>；未跑：<及原因>
+- 验收步骤：在哪个环境、执行什么、看到什么算通过
+- 遗留风险 / 后续 Issue：<或“无”>
+```
+
+The acceptance steps must be concrete enough for the user to execute verbatim later, including the environment (local / Staging / Demo), the exact SHA when runtime-dependent, commands or clicks to perform, and observable pass criteria.
+
+### Acceptance and manual close — done by the user
+
+- Batch acceptance is normal: several merged Issues may be verified in one session against one `main` build/deployment.
+- Each Issue is still closed individually with a short evidence comment, e.g.:
+
+```text
+验收通过：Staging main@<sha>，<按验收步骤执行后观察到的结果>
+```
+
+- If acceptance fails: comment the findings (现象、日志/request id、截图), keep the Issue open (or reopen it), and fix forward; link the new fix Issue if one is opened.
+- Agents may prepare or post the closure evidence comment only when explicitly instructed; the close action itself belongs to the user unless explicitly delegated.
+
+### Definition of done for an Issue
+
+An Issue is closed-loop when all of the following hold:
+
+- its linked PR is merged with a valid `Refs #<n>` reference;
+- an implementation-report comment exists on the Issue;
+- docs bookkeeping is decided (`STATUS`/`WORKLOG`/`KNOWN_ISSUES` updated where semantics changed, or explicitly justified as not needed);
+- the user recorded acceptance by manually closing the Issue with evidence, or deliberately kept it open/reopened with findings;
+- Task Worktree and branch retirement state is decided (verified-safe removal, or an intentional keep).
 
 ## Exact-SHA principle
 
@@ -296,7 +338,7 @@ A normal PR is done when:
 
 - scope is complete and unrelated changes are absent;
 - a linked same-repository Issue exists and predates the PR;
-- the PR body contains a valid closing relationship, normally `Closes #<issue-number>`;
+- the PR body links the Issue with a valid non-closing reference, normally `Refs #<issue-number>`;
 - the automated `PR traceability` check passes;
 - regression tests exist for meaningful behavior changes;
 - relevant local checks pass;

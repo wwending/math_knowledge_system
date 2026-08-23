@@ -104,9 +104,10 @@ If the user explicitly requested one of these actions, do not ask a second time 
 - Prefer logical commits with meaningful messages.
 - Commit messages must not include AI assistant attribution trailers such as `Co-Authored-By: Claude`. Committer/author metadata stays as the real account; traceability lives in the Issue -> Branch -> Commit -> PR chain, not in commit trailers.
 - After implementation, push only the task branch and create/update a Draft PR unless the user asks for a different workflow.
-- Every normal PR must link at least one existing Issue in this repository with a GitHub closing keyword. Use `Closes #123` by default; `Fixes #123` and `Resolves #123` are also accepted. `Addresses #123` alone does not satisfy this rule because it does not express automatic closure after merge.
-- Before creating a Draft PR, confirm that the Issue exists, its number is correct, the PR body contains the closing relationship, and the PR scope matches the Issue scope.
+- Every normal PR must link at least one existing Issue in this repository with a non-closing reference: `Refs #123` by default; a plain `#123` mention is also accepted. Closing keywords (`Closes`, `Fixes`, `Resolves` before an Issue number) are forbidden in PR titles and bodies and rejected by the `PR traceability` check, because merging must never auto-close an Issue.
+- Before creating a Draft PR, confirm that the Issue exists, its number is correct, the PR body contains the `Refs #<issue>` link, and the PR scope matches the Issue scope.
 - Do not mark a PR ready, approve it, enable auto-merge, or merge it unless explicitly requested.
+- Merging a PR does not close its Issue. After merge, the implementing agent posts one implementation-report comment on the Issue (what changed, root cause for fixes, tests run/not run, concrete acceptance steps with pass criteria) as defined in `docs/ENGINEERING_WORKFLOW.md`. Only the user's acceptance closes an Issue: manual close with a short evidence comment; batch acceptance across Issues is normal. Acceptance failures go back as Issue comments and the Issue stays open or is reopened.
 - PR descriptions must state: scope, architecture/behavior changes, tests run, tests not run, deployment/migration impact, and known risks.
 - Keep checkout-specific Codex instructions in root `AGENTS.override.md`; do not commit that file or move these project-specific rules into global `~/.codex` configuration.
 
@@ -204,3 +205,4 @@ End implementation tasks with:
 - **Docs Updated** — and why; or why none were needed.
 - **Known Risks / Follow-up** — only real remaining items.
 - **Git / PR State** — branch, commit(s), push/PR status when applicable.
+- **Issue State** — left open pending user acceptance (default), or closed with evidence when acceptance already happened.
