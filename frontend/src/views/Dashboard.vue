@@ -230,6 +230,22 @@
             </el-alert>
             <el-collapse v-if="recognitionDebug" class="recognition-debug-collapse">
               <el-collapse-item title="识别调试信息" name="recognition-debug">
+                <el-alert
+                  v-if="recognitionDebug.ocr_error"
+                  type="error"
+                  :closable="false"
+                  class="recognition-debug-alert"
+                >
+                  OCR 错误：{{ recognitionDebug.ocr_error }}
+                </el-alert>
+                <el-alert
+                  v-if="recognitionDebug.llm_error"
+                  type="warning"
+                  :closable="false"
+                  class="recognition-debug-alert"
+                >
+                  LLM 错误：{{ recognitionDebug.llm_error }}
+                </el-alert>
                 <div class="recognition-debug-grid">
                   <section class="recognition-debug-block">
                     <h4>原始 OCR 文本</h4>
@@ -471,6 +487,9 @@ const getRequestErrorMessage = (error) => {
     return '当前草稿已保存或状态不允许重复保存。'
   }
   if (status >= 500) {
+    if (data.request_id) {
+      return `服务端处理失败，请稍后重试或联系管理员。（请求编号：${data.request_id}，可提供给管理员用于日志排查）`
+    }
     return '服务端处理失败，请稍后重试或联系管理员。'
   }
   if (data.error_type || data.error) {
@@ -1327,6 +1346,14 @@ onBeforeUnmount(() => {
   border-radius: 8px;
   background: #fbfdfc;
   overflow: hidden;
+}
+
+.recognition-debug-alert {
+  margin-bottom: 12px;
+}
+
+.recognition-debug-alert + .recognition-debug-alert {
+  margin-top: -4px;
 }
 
 .recognition-debug-grid {

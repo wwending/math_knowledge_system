@@ -31,6 +31,11 @@ requireMatch(/draftStatus === 'draft_ready' && !editMode/, 'edit mode must hide 
 requireMatch(/const resetDraftState = \(\) => \{[\s\S]*editMode\.value = false[\s\S]*editContent\.value = ''[\s\S]*editSaving\.value = false/, 'Draft reset must clear edit state')
 requireMatch(/const resetUpload = \(\) => \{[\s\S]*resetDraftState\(\)/, 'upload reset must reset Draft edit state')
 requireMatch(/renderedEditPreview = computed\(\(\) => \(editContent\.value \? renderMarkdown\(editContent\.value\)/, 'manual preview must use the safe Markdown renderer')
+requireMatch(/v-if="recognitionDebug\.ocr_error"[\s\S]{0,120}type="error"/, 'recognition debug panel must surface OCR errors as an error alert')
+requireMatch(/v-if="recognitionDebug\.llm_error"[\s\S]{0,120}type="warning"/, 'recognition debug panel must surface LLM errors as a warning alert')
+requireMatch(/OCR 错误：\{\{ recognitionDebug\.ocr_error \}\}/, 'OCR error alert must render the ocr_error field')
+requireMatch(/LLM 错误：\{\{ recognitionDebug\.llm_error \}\}/, 'LLM error alert must render the llm_error field')
+requireMatch(/if \(status >= 500\) \{[\s\S]{0,300}请求编号/, '5xx error message must include the backend request id when present')
 
 if (failures.length > 0) {
   console.error('Draft manual edit contract failed:')
