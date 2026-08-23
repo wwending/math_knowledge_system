@@ -58,6 +58,8 @@ backend/test/output/
 .mypy_cache/
 htmlcov/
 .coverage
+test_evidence/
+backend/test-reports/
 
 # --- Database ---
 *.sqlite3
