@@ -83,10 +83,10 @@
       <el-skeleton v-if="questionLoading" :rows="5" animated />
       <el-empty v-else-if="filteredQuestions.length === 0" description="暂无可用题目" />
       <div v-else class="question-picker-list">
-        <label v-for="question in filteredQuestions" :key="question.id" class="question-picker-item">
+        <div v-for="question in filteredQuestions" :key="question.id" class="question-picker-item" @click="onPickerItemClick($event, question.id)">
           <el-checkbox :aria-label="`选择题目 #${question.id}`" :model-value="questionSelection.includes(question.id)" :disabled="draftQuestionIds.has(question.id)" @change="toggleQuestionSelection(question.id)" />
           <div class="question-picker-content"><div class="markdown-body" v-html="renderSnapshot(question.content)"></div><el-tag v-if="draftQuestionIds.has(question.id)" size="small" type="info">已添加</el-tag></div>
-        </label>
+        </div>
       </div>
       <template #footer><el-button @click="questionDialogVisible = false">取消</el-button><el-button type="primary" :disabled="questionSelection.length === 0" @click="addSelectedQuestions">添加所选题目</el-button></template>
     </el-dialog>
@@ -240,6 +240,11 @@ const openQuestionDialog = async () => {
 const toggleQuestionSelection = (questionId) => {
   if (draftQuestionIds.value.has(questionId)) return
   questionSelection.value = questionSelection.value.includes(questionId) ? questionSelection.value.filter((id) => id !== questionId) : [...questionSelection.value, questionId]
+}
+const onPickerItemClick = (event, questionId) => {
+  // Clicks inside the checkbox are handled by its own change event; handling them here too would toggle twice.
+  if (event.target.closest('.el-checkbox')) return
+  toggleQuestionSelection(questionId)
 }
 const addSelectedQuestions = () => {
   for (const questionId of questionSelection.value) {
