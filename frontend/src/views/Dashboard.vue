@@ -87,15 +87,18 @@
             </div>
 
             <div v-loading="pdfLoading" class="pdf-grid">
-              <div
+              <!-- #68: native buttons so keyboard users can pick a page
+                   (Enter/Space for free); name comes from the visible 第 N 页 text. -->
+              <button
                 v-for="(pageData, index) in pdfPages"
                 :key="index"
+                type="button"
                 class="pdf-page-card"
                 @click="selectPdfPage(pageData)"
               >
-                <img :src="pageData.src" class="pdf-thumb" />
-                <div class="page-number">第 {{ index + 1 }} 页</div>
-              </div>
+                <img :src="pageData.src" class="pdf-thumb" alt="" />
+                <span class="page-number">第 {{ index + 1 }} 页</span>
+              </button>
             </div>
           </div>
 
@@ -1378,6 +1381,8 @@ onBeforeUnmount(() => {
 
 .pdf-page-card {
   cursor: pointer;
+  font: inherit; /* button UA reset: keep the page's type, not the small system font */
+  color: inherit; /* button UA reset: keep inherited text color */
   border: 1px solid #e6ece9;
   border-radius: 16px;
   padding: 14px;
@@ -1386,9 +1391,15 @@ onBeforeUnmount(() => {
   box-shadow: 0 10px 24px rgba(18, 49, 66, 0.05);
 }
 
-.pdf-page-card:hover {
+.pdf-page-card:hover,
+.pdf-page-card:focus-visible {
   transform: translateY(-4px);
   box-shadow: 0 16px 36px rgba(18, 49, 66, 0.12);
+}
+
+.pdf-page-card:focus-visible {
+  outline: 2px solid #1f3d35;
+  outline-offset: 3px;
 }
 
 .pdf-thumb {
@@ -1398,6 +1409,7 @@ onBeforeUnmount(() => {
 }
 
 .page-number {
+  display: block; /* span inside <button>: keep the old div's block layout */
   margin-top: 10px;
   text-align: center;
   color: #5f7077;
