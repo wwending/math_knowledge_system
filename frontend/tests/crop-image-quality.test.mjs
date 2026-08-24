@@ -148,4 +148,25 @@ assert.match(dashboardSource, /onBeforeUnmount\(\(\) => \{[\s\S]*revokeImageObje
 assert.doesNotMatch(dashboardSource, /crop_question\.jpg/)
 assert.doesNotMatch(dashboardSource, /new File\(\[blob\], 'crop_question[^']*', \{ type: 'image\/jpeg' \}\)/)
 
+assert.match(dashboardSource, /一页多题请逐题框选录入/, 'cropper toolbar must guide per-question framing')
+assert.match(dashboardSource, /const cropPreviewUrl = ref\(''\)/, 'Dashboard must track the actual crop product for preview')
+assert.match(
+  dashboardSource,
+  /setCropPreviewSource\(URL\.createObjectURL\(blob\)\)/,
+  'crop upload must snapshot the encoded crop blob as the confirmation preview'
+)
+assert.match(dashboardSource, /setCropPreviewSource\(''\)/, 'upload reset must revoke the crop preview')
+assert.match(
+  dashboardSource,
+  /processMode\.value === 'crop' \? cropPreviewUrl\.value : currentImageUrl\.value/,
+  'confirmation preview must show the framed selection in crop mode and the full page otherwise'
+)
+// #22 integration: the confirmation preview owns the pre-result phase; once
+// the recognition result renders, the split-layout reference panel takes over.
+assert.match(
+  dashboardSource,
+  /v-if="resultImageUrl && !ocrResult"/,
+  'confirmation preview must render before the result arrives and yield to the reference panel after'
+)
+
 console.log('Crop image quality tests passed.')

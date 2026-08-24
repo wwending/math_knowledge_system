@@ -45,9 +45,9 @@ requireAbsent(
   'reference image must not be a bare <img> bound to the API URL'
 )
 
-// Server asset first, local full-page fallback second.
+// Server asset first, local capture preview (framed crop / full page) second.
 requireMatch(
-  /const resultImageSrc = computed\(\(\) => draftImageObjectUrl\.value \|\| currentImageUrl\.value\)/,
+  /const resultImageSrc = computed\(\(\) => draftImageObjectUrl\.value \|\| resultImageUrl\.value\)/,
   'reference image must prefer the draft asset blob and fall back to the local preview'
 )
 

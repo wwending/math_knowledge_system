@@ -132,7 +132,10 @@
                   mode="cover"
                 />
                 <div class="cropper-toolbar">
-                  <span>拖动图片定位题目，可使用滚轮或 +/- 缩放。</span>
+                  <div class="cropper-hints">
+                    <span>拖动图片定位题目，可使用滚轮或 +/- 缩放。</span>
+                    <span class="cropper-hint-image">一页多题请逐题框选录入；题目含图可直接框入，确认环节会显示本次送识别的内容。</span>
+                  </div>
                   <el-button-group>
                     <el-button aria-label="缩小裁剪图片" @click="changeCropperScale(-10)">−</el-button>
                     <el-button aria-label="放大裁剪图片" @click="changeCropperScale(10)">+</el-button>
@@ -192,6 +195,29 @@
               :closable="false"
               class="result-alert"
             />
+            <!-- #61 confirmation preview: shown while recognition runs; once the
+                 result arrives the split layout below takes over and the same
+                 pixels stay visible in the persistent reference panel. -->
+            <el-card v-if="resultImageUrl && !ocrResult" shadow="never" class="result-image-card">
+              <div class="result-image-head">
+                <h3>本次录入图</h3>
+                <span class="result-image-caption">{{ resultImageCaption }}</span>
+              </div>
+              <el-image
+                :src="resultImageUrl"
+                :preview-src-list="[resultImageUrl]"
+                :preview-teleported="true"
+                fit="scale-down"
+                class="result-image"
+              >
+                <template #error>
+                  <div class="result-image-slot">
+                    <el-icon><Picture /></el-icon>
+                    <span>预览加载失败，请重新上传。</span>
+                  </div>
+                </template>
+              </el-image>
+            </el-card>
             <div v-if="ocrResult" class="result-split-layout">
               <div class="result-main-column">
                 <el-card shadow="hover">
@@ -318,7 +344,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import axios from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Clock, Collection, DataAnalysis, Document, UploadFilled, UserFilled } from '@element-plus/icons-vue'
+import { Clock, Collection, DataAnalysis, Document, Picture, UploadFilled, UserFilled } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import 'vue-cropper/dist/index.css'
 import { VueCropper } from 'vue-cropper'
@@ -356,6 +382,7 @@ const step = ref('select-file')
 const processMode = ref('full')
 
 const currentImageUrl = ref('')
+const cropPreviewUrl = ref('')
 const pdfPages = ref([])
 const pdfLoading = ref(false)
 const ocrLoading = ref(false)
@@ -684,6 +711,13 @@ const setCurrentImageSource = (source) => {
   currentImageUrl.value = source
 }
 
+const setCropPreviewSource = (source) => {
+  if (cropPreviewUrl.value !== source) {
+    revokeImageObjectUrl(cropPreviewUrl.value)
+  }
+  cropPreviewUrl.value = source
+}
+
 const renderPdfToImages = async (file) => {
   setCurrentImageSource('')
   step.value = 'preview-pdf'
@@ -741,6 +775,7 @@ const confirmCropAndUpload = () => {
       if (generation !== cropEncodingGeneration) {
         return
       }
+      setCropPreviewSource(URL.createObjectURL(blob))
       runRecognition(file)
     } catch (error) {
       if (generation !== cropEncodingGeneration) {
@@ -989,6 +1024,7 @@ const resetUpload = () => {
   cropEncodingGeneration += 1
   step.value = 'select-file'
   setCurrentImageSource('')
+  setCropPreviewSource('')
   cropperMaxImgSize.value = CROPPER_MAX_EDGE
   cropEncoding.value = false
   pdfPages.value = []
@@ -1000,10 +1036,18 @@ const resetUpload = () => {
 const renderedContent = computed(() => (ocrResult.value ? renderMarkdown(ocrResult.value) : ''))
 const renderedEditPreview = computed(() => (editContent.value ? renderMarkdown(editContent.value) : ''))
 
+const resultImageUrl = computed(() => (processMode.value === 'crop' ? cropPreviewUrl.value : currentImageUrl.value))
+const resultImageCaption = computed(() =>
+  processMode.value === 'crop'
+    ? '裁剪识别：显示本次框选并送识别的内容'
+    : '整页识别：显示本次上传的整页原图'
+)
+
 // Prefer the persisted SourceAsset behind the draft (the exact recognized
-// region); fall back to the local full-page preview when the draft image is
-// unavailable (legacy flow or load failure).
-const resultImageSrc = computed(() => draftImageObjectUrl.value || currentImageUrl.value)
+// region); fall back to the local capture preview (framed crop in crop mode,
+// full page otherwise) while the blob loads or when it is unavailable
+// (legacy flow or load failure).
+const resultImageSrc = computed(() => draftImageObjectUrl.value || resultImageUrl.value)
 
 const releaseDraftImageObjectUrl = () => {
   if (draftImageObjectUrl.value) {
@@ -1066,6 +1110,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   cropEncodingGeneration += 1
   revokeImageObjectUrl(currentImageUrl.value)
+  revokeImageObjectUrl(cropPreviewUrl.value)
   draftImageRequestId += 1
   releaseDraftImageObjectUrl()
 })
@@ -1339,6 +1384,18 @@ onBeforeUnmount(() => {
   pointer-events: auto;
 }
 
+.cropper-hints {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cropper-hints .cropper-hint-image {
+  font-size: 12px;
+  opacity: 0.82;
+}
+
 .confirm-btn {
   position: absolute;
   right: 22px;
@@ -1429,12 +1486,17 @@ onBeforeUnmount(() => {
   }
 }
 
+/* Shared placeholder look for the confirmation preview error slot (#61) and
+   the reference panel error/empty states (#22). */
 .result-image-slot,
 .result-image-empty {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 6px;
   min-height: 160px;
+  padding: 16px;
   color: #8a9a94;
   font-size: 13px;
   border: 1px dashed #dbe7e2;
@@ -1454,6 +1516,36 @@ onBeforeUnmount(() => {
   padding-left: 18px;
   color: #7a4d00;
   line-height: 1.7;
+}
+
+.result-image-card :deep(.el-card__body) {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.result-image-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.result-image-head h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.result-image-caption {
+  color: #667a73;
+  font-size: 12px;
+}
+
+.result-image {
+  display: block;
+  width: 100%;
+  max-height: 420px;
+  border-radius: 10px;
+  background: #f5f7f6;
 }
 
 .draft-edit-panel {
