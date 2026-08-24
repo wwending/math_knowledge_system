@@ -6,7 +6,7 @@
         <span>{{ renderModel.paper.item_count }} 题 / {{ renderModel.paper.total_score }} 分</span>
       </div>
       <div class="preview-actions">
-        <el-tag size="small" effect="plain">{{ renderModel.template_type }}</el-tag>
+        <el-tag size="small" effect="plain">{{ formatTemplateType(renderModel.template_type) }}</el-tag>
         <el-button
           type="primary"
           size="small"
@@ -93,6 +93,10 @@ const props = defineProps({
 })
 
 const downloadLoading = ref(false)
+
+// #77: 模板类型做中文映射，未知类型回退显示原始值。
+const templateTypeLabels = { homework: '作业' }
+const formatTemplateType = (templateType) => templateTypeLabels[templateType] || templateType
 
 const renderContent = (content) => content ? renderMarkdown(content) : '<span style="color:#999">暂无内容</span>'
 
