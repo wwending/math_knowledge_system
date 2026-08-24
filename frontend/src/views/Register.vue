@@ -254,7 +254,8 @@ onMounted(() => {
 
 .password-rules {
   margin: -10px 0 18px;
-  color: #7b8794;
+  /* #77 引入的规则提示沿用批次一的次级灰标准：#767676 起满足 WCAG AA。 */
+  color: #767676;
   font-size: 13px;
   line-height: 1.6;
 }

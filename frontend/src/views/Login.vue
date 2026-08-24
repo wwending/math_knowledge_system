@@ -124,7 +124,7 @@ const capabilityMessage = computed(() => {
 
 const registerFooterText = computed(() => {
   if (publicSignupCapability.value.loading) {
-    return '正在确认注册状态...'
+    return '正在确认注册状态…'
   }
 
   return publicSignupCapability.value.enabled ? '还没有账号？' : '需要新账号？'
@@ -212,12 +212,12 @@ onMounted(() => {
 
 .password-help {
   margin: 0 0 18px;
-  color: #8d96a0;
+  color: #767676;
   font-size: 13px;
   line-height: 1.6;
 }
 
 .footer-note {
-  color: #7b8794;
+  color: #767676;
 }
 </style>

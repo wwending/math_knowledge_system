@@ -104,6 +104,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { API_V1_BASE_URL } from '../config/api'
 import { readStringQuery, replaceQueryValues } from '../utils/urlQueryState'
 import { renderMarkdown } from '@/utils/renderMarkdown'
+import { formatDateTime } from '../utils/formatDateTime'
 import PaperPreview from './PaperPreview.vue'
 
 const API_BASE = API_V1_BASE_URL
@@ -301,7 +302,7 @@ const savePaper = async () => {
 }
 
 const handlePaperCreated = async () => fetchPapers()
-const renderSnapshot = (content) => content ? renderMarkdown(content) : '<span style="color:#999">暂无内容</span>'
+const renderSnapshot = (content) => content ? renderMarkdown(content) : '<span style="color:#767676">暂无内容</span>'
 const getTags = (item) => (item?.knowledge_tags_snapshot || []).map((tag) => typeof tag === 'string' ? { label: tag } : tag && typeof tag === 'object' ? { label: tag.label || tag.name || String(tag) } : { label: String(tag) })
 const questionTypeLabels = { single_choice: '单选题', multiple_choice: '多选题', fill_blank: '填空题', solution: '解答题', judge: '判断题', unknown: '未知' }
 const formatQuestionType = (questionType) => questionTypeLabels[questionType] || '未知'
@@ -309,7 +310,7 @@ const formatDifficultyStars = (difficultyLevel) => {
   const level = Number(difficultyLevel)
   return Number.isInteger(level) && level >= 1 && level <= 5 ? `${'★'.repeat(level)}${'☆'.repeat(5 - level)}` : '未评估'
 }
-const formatTime = (value) => value ? new Date(value).toLocaleString() : '-'
+const formatTime = (value) => formatDateTime(value)
 onMounted(() => {
   fetchPapers()
   window.addEventListener('paper-created', handlePaperCreated)
@@ -339,12 +340,12 @@ onBeforeUnmount(() => window.removeEventListener('paper-created', handlePaperCre
 .paper-card.active { border-color: #409eff; }
 .paper-title-row { display: flex; justify-content: space-between; gap: 10px; align-items: center; }
 .paper-title-row strong { color: #1f3442; word-break: break-word; }
-.paper-meta-grid { display: grid; gap: 6px; margin-top: 12px; color: #667780; font-size: 13px; }
+.paper-meta-grid { display: grid; gap: 6px; margin-top: 12px; color: #667780; font-size: 13px; font-variant-numeric: tabular-nums; /* 题数/总分/时间列（#76） */ }
 .paper-detail { min-height: 360px; padding: 18px; border: 1px solid #e5ece9; border-radius: 8px; background: #fff; }
 .detail-header { margin-bottom: 18px; align-items: flex-start; }
 .detail-header h3 { margin: 0 0 8px; color: #1f3442; }
 .detail-header p { margin: 0; color: #667780; line-height: 1.7; }
-.detail-stats { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: flex-end; color: #667780; font-size: 13px; }
+.detail-stats { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: flex-end; color: #667780; font-size: 13px; font-variant-numeric: tabular-nums; }
 .preview-controls { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px; margin-bottom: 16px; border: 1px solid #e5ece9; border-radius: 8px; background: #f8fbfa; }
 .preview-config, .item-heading, .knowledge-tags, .reorder-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .preview-config { color: #536471; font-size: 13px; }

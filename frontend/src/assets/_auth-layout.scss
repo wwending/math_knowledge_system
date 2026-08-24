@@ -102,7 +102,8 @@
 
   .form-tip {
     margin: 0 0 24px;
-    color: #999;
+    /* #767676 起满足白底 WCAG AA 4.5:1；#999 系灰字一律不用（#76）。 */
+    color: #767676;
     font-size: 14px;
   }
 }
@@ -134,7 +135,7 @@
 }
 
 .footer-text {
-  color: #7b8794;
+  color: #767676;
 }
 
 .footer-link {
