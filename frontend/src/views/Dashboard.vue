@@ -102,7 +102,7 @@
           <div v-if="step === 'process-image'" class="image-process-section">
             <div class="section-toolbar">
               <h3>图片确认</h3>
-              <el-button size="small" @click="resetUpload">取消</el-button>
+              <el-button size="small" @click="cancelProcessStep">{{ pdfPages.length > 0 ? '重新选页' : '取消' }}</el-button>
             </div>
 
             <div class="process-options">
@@ -410,6 +410,8 @@ const qualityWarnings = ref([])
 const cropperMaxImgSize = ref(CROPPER_MAX_EDGE)
 const cropEncoding = ref(false)
 let cropEncodingGeneration = 0
+// #62: PDF 渲染会话代号，新文件选择即作废在途渲染，防止过期页面回填。
+let pdfRenderGeneration = 0
 const editMode = ref(false)
 const editContent = ref('')
 const editSaving = ref(false)
@@ -679,6 +681,9 @@ const handleFileSelect = async (uploadFile) => {
     return
   }
 
+  // #62：任何新的文件选择都作废仍在进行的 PDF 渲染。
+  pdfRenderGeneration += 1
+
   const fileType = file.name.split('.').pop().toLowerCase()
   if (fileType === 'pdf') {
     await renderPdfToImages(file)
@@ -690,6 +695,9 @@ const handleFileSelect = async (uploadFile) => {
     const dimensions = await loadImageDimensions(objectUrl)
     cropperMaxImgSize.value = calculateCropperMaxImageSize(dimensions.width, dimensions.height)
     setCurrentImageSource(objectUrl)
+    // 图片路径清掉可能残留的已解析 PDF 页面，
+    // 维持「pdfPages 非空 ⇔ 当前图来自 PDF 选页」的不变量。
+    pdfPages.value = []
     step.value = 'process-image'
     processMode.value = 'full'
   } catch (error) {
@@ -727,6 +735,7 @@ const setCropPreviewSource = (source) => {
 }
 
 const renderPdfToImages = async (file) => {
+  const generation = ++pdfRenderGeneration
   setCurrentImageSource('')
   step.value = 'preview-pdf'
   pdfLoading.value = true
@@ -737,6 +746,9 @@ const renderPdfToImages = async (file) => {
     const pdf = await pdfjsLib.getDocument(arrayBuffer).promise
 
     for (let index = 1; index <= pdf.numPages; index += 1) {
+      if (generation !== pdfRenderGeneration) {
+        return
+      }
       const page = await pdf.getPage(index)
       const viewport = page.getViewport({ scale: 2.5 })
       const canvas = document.createElement('canvas')
@@ -745,6 +757,9 @@ const renderPdfToImages = async (file) => {
       canvas.width = viewport.width
 
       await page.render({ canvasContext: context, viewport }).promise
+      if (generation !== pdfRenderGeneration) {
+        return
+      }
       pdfPages.value.push({
         src: canvas.toDataURL('image/jpeg'),
         width: canvas.width,
@@ -752,11 +767,16 @@ const renderPdfToImages = async (file) => {
       })
     }
   } catch (error) {
+    if (generation !== pdfRenderGeneration) {
+      return
+    }
     console.error(error)
     ElMessage.error('PDF 解析失败，可能是加密文件或文件损坏。')
     resetUpload()
   } finally {
-    pdfLoading.value = false
+    if (generation === pdfRenderGeneration) {
+      pdfLoading.value = false
+    }
   }
 }
 
@@ -1039,6 +1059,21 @@ const resetUpload = () => {
   ocrResult.value = ''
   recognizeWarning.value = ''
   resetDraftState()
+}
+
+// #62：图片确认的取消若来自 PDF 选页，保留已解析页面并回到选页器，
+// 用户换页不再需要重新上传和重新解析；普通图片上传保持原全量重置。
+const cancelProcessStep = () => {
+  if (pdfPages.value.length > 0) {
+    cropEncodingGeneration += 1
+    cropEncoding.value = false
+    setCurrentImageSource('')
+    setCropPreviewSource('')
+    cropperMaxImgSize.value = CROPPER_MAX_EDGE
+    step.value = 'preview-pdf'
+    return
+  }
+  resetUpload()
 }
 
 const renderedContent = computed(() => (ocrResult.value ? renderMarkdown(ocrResult.value) : ''))
