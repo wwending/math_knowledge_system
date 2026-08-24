@@ -117,6 +117,17 @@ class Settings(BaseSettings):
     PDF_SERVICE_CONNECT_TIMEOUT_SECONDS: float = 5
     PDF_SERVICE_READ_TIMEOUT_SECONDS: float = 60
 
+    # Layout analysis (#58): figure-region detection on question crops. Failure,
+    # timeout, or a missing model must degrade to the pre-#58 no-figure flow.
+    LAYOUT_ENABLED: bool = True
+    LAYOUT_MODEL_TYPE: str = "doclayout_docstructbench"
+    LAYOUT_MODEL_DIR: str = "weights"
+    LAYOUT_MODEL_PATH: str = ""
+    LAYOUT_TIMEOUT_SECONDS: float = 15
+    LAYOUT_CONF_THRESHOLD: float = 0.4
+    LAYOUT_MIN_AREA_RATIO: float = 0.01
+    LAYOUT_FIGURE_LABELS: str = "figure"
+
     LOG_LEVEL: str = "INFO"
     LOG_DIR: str = "logs"
     GIT_SHA: str = "unknown"
@@ -154,6 +165,14 @@ class Settings(BaseSettings):
     @property
     def LOG_DIR_PATH(self) -> Path:
         return _resolve_path(self.LOG_DIR, base_dir=self.BASE_DIR)
+
+    @property
+    def LAYOUT_MODEL_DIR_PATH(self) -> Path:
+        return _resolve_path(self.LAYOUT_MODEL_DIR, base_dir=self.BASE_DIR)
+
+    @property
+    def LAYOUT_FIGURE_LABELS_SET(self) -> set[str]:
+        return {label.strip().lower() for label in self.LAYOUT_FIGURE_LABELS.split(",") if label.strip()}
 
     @property
     def DATABASE_URL_RESOLVED(self) -> str:
@@ -280,7 +299,7 @@ class Settings(BaseSettings):
             )
 
     def ensure_runtime_dirs(self) -> None:
-        for path in (self.STATIC_DIR_PATH, self.UPLOAD_DIR_PATH, self.PDF_TEMP_DIR_PATH):
+        for path in (self.STATIC_DIR_PATH, self.UPLOAD_DIR_PATH, self.PDF_TEMP_DIR_PATH, self.LAYOUT_MODEL_DIR_PATH):
             path.mkdir(parents=True, exist_ok=True)
 
 

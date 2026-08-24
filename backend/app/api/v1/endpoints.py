@@ -41,8 +41,10 @@ from app.schemas.draft import (
     DraftCreate,
     DraftDetail,
     DraftRecognizeResponse,
+    DraftSaveToBankRequest,
     DraftSaveToBankResponse,
     DraftUpdate,
+    FigureDetection,
     RecognitionDebug,
 )
 from app.schemas.ocr import OCRResponse
@@ -51,6 +53,7 @@ from app.schemas.paper_render import PaperRenderModel, PaperRenderRequest
 from app.schemas.question import KnowledgeTag, QuestionDetail, QuestionListItem, QuestionUpdate
 from app.services.draft_state import transition_draft_status
 from app.services.llm import nlp_service
+from app.services.layout_service import layout_service, remove_quiet, write_masked_image
 from app.services.ocr_engine import ocr_service
 from app.services.ocr_providers.base import OCRResult
 from app.services.ocr_service import ocr_service as draft_ocr_service
@@ -390,6 +393,9 @@ def _build_draft_detail(draft: Draft) -> DraftDetail:
         id=draft.id,
         source_asset_id=draft.source_asset_id,
         crop_bbox=draft.crop_bbox,
+        detected_figures=[
+            FigureDetection(**figure) for figure in (draft.detected_figures or [])
+        ],
         status=draft.status,
         current_content=draft.current_content,
         content=content_text,
@@ -776,9 +782,41 @@ def recognize_draft(
     )
 
     file_path = _asset_file_path(asset)
+
+    # #58: detect figure regions before OCR so figure areas can be masked out
+    # of the OCR input. Any detection problem degrades to the pre-#58 flow
+    # (no figures recorded, original image sent to OCR).
+    layout_started_at = time.time()
+    try:
+        layout_result = layout_service.detect(file_path)
+    except Exception:
+        logger.exception("Unexpected layout crash draft_id={} user_id={}", draft.id, current_user.id)
+        layout_result = None
+    layout_ms = int((time.time() - layout_started_at) * 1000)
+
+    detected_figures: list[dict[str, Any]] = []
+    masked_temp_path = None
+    if layout_result is not None and layout_result.success and layout_result.boxes:
+        detected_figures = [
+            {"bbox": box.bbox, "label": box.label, "score": box.score}
+            for box in layout_result.boxes
+        ]
+        masked_temp_path = write_masked_image(file_path, layout_result.boxes)
+    elif layout_result is not None and not layout_result.success:
+        logger.warning(
+            "[LayoutDetect] degraded draft_id={} error_type={} detail={} latency_ms={}",
+            draft.id,
+            layout_result.error_type,
+            layout_result.detail,
+            layout_result.latency_ms,
+        )
+    draft.detected_figures = detected_figures
+
+    ocr_input_mode = "masked_with_figures" if masked_temp_path is not None else "original"
+    ocr_input_path = str(masked_temp_path) if masked_temp_path is not None else file_path
     ocr_started_at = time.time()
     try:
-        ocr_result = _ocr_result_to_legacy_payload(draft_ocr_service.recognize(file_path))
+        ocr_result = _ocr_result_to_legacy_payload(draft_ocr_service.recognize(ocr_input_path))
     except Exception:
         logger.exception("Unexpected Draft OCR crash draft_id={} user_id={}", draft.id, current_user.id)
         ocr_result = {
@@ -790,6 +828,8 @@ def recognize_draft(
             "error": "\u6587\u5b57\u8bc6\u522b\u670d\u52a1\u8c03\u7528\u5931\u8d25",
             "detail": "ocr_unexpected_error",
         }
+    finally:
+        remove_quiet(masked_temp_path)
     ocr_ms = int((time.time() - ocr_started_at) * 1000)
 
     raw_content = (ocr_result.get("content") or "").strip()
@@ -799,7 +839,11 @@ def recognize_draft(
         draft_id=draft.id,
         provider=ocr_provider,
         endpoint=getattr(draft_ocr_service, "endpoint", None),
-        request_params_redacted={"source_asset_id": asset.id, "crop_bbox": draft.crop_bbox},
+        request_params_redacted={
+            "source_asset_id": asset.id,
+            "crop_bbox": draft.crop_bbox,
+            "ocr_input": ocr_input_mode,
+        },
         response_raw_json=ocr_result,
         parsed_blocks=[{"text": raw_content}] if raw_content else [],
         latency_ms=ocr_latency_ms,
@@ -828,7 +872,7 @@ def recognize_draft(
             commit=True,
         )
         logger.info(
-            "[DraftRecognizePerf] draft_id={} asset_id={} ocr_provider={} ocr_ms={} llm_text_ms={} total_ms={} model={} ocr_text_len={} corrected_text_len={} llm_fallback={} fallback_reason={} failure_stage={}",
+            "[DraftRecognizePerf] draft_id={} asset_id={} ocr_provider={} ocr_ms={} llm_text_ms={} total_ms={} model={} ocr_text_len={} corrected_text_len={} llm_fallback={} fallback_reason={} failure_stage={} layout_ms={} layout_boxes={}",
             draft.id,
             asset.id,
             ocr_provider,
@@ -841,6 +885,8 @@ def recognize_draft(
             True,
             ocr_result.get("error_type"),
             "ocr",
+            layout_ms,
+            len(detected_figures),
         )
         detail = _build_draft_detail(draft)
         return DraftRecognizeResponse(
@@ -923,7 +969,7 @@ def recognize_draft(
     )
 
     logger.info(
-        "[DraftRecognizePerf] draft_id={} asset_id={} ocr_provider={} ocr_ms={} llm_text_ms={} total_ms={} model={} ocr_text_len={} corrected_text_len={} llm_fallback={} fallback_reason={} failure_stage={}",
+        "[DraftRecognizePerf] draft_id={} asset_id={} ocr_provider={} ocr_ms={} llm_text_ms={} total_ms={} model={} ocr_text_len={} corrected_text_len={} llm_fallback={} fallback_reason={} failure_stage={} layout_ms={} layout_boxes={}",
         draft.id,
         asset.id,
         ocr_provider,
@@ -936,6 +982,8 @@ def recognize_draft(
         partial_success,
         llm_result.get("error_type") if partial_success else None,
         "llm" if partial_success else None,
+        layout_ms,
+        len(detected_figures),
     )
 
     detail = _build_draft_detail(draft)
@@ -948,10 +996,95 @@ def recognize_draft(
     )
 
 
+def _valid_figure_bbox(figure_bbox: Any) -> Optional[list[float]]:
+    """Validate a user-confirmed figure bbox: [x, y, w, h] normalized to [0, 1]."""
+    try:
+        values = [float(v) for v in figure_bbox]
+    except (TypeError, ValueError):
+        return None
+    if len(values) != 4:
+        return None
+    x, y, w, h = values
+    if not all(0.0 <= value <= 1.0 for value in (x, y, w, h)):
+        return None
+    if w <= 0 or h <= 0 or (w * h) < float(settings.LAYOUT_MIN_AREA_RATIO):
+        return None
+    return [x, y, w, h]
+
+
+def _attach_question_figure(
+    db: Session,
+    question: Question,
+    revision: QuestionRevision,
+    asset: SourceAsset,
+    figure_bbox: Any,
+    draft_id: int,
+) -> None:
+    """Crop the confirmed figure region out of the original asset (#58).
+
+    Best-effort: any failure logs and leaves the question without a figure
+    instead of blocking save-to-bank.
+    """
+    normalized = _valid_figure_bbox(figure_bbox)
+    if normalized is None:
+        logger.warning("[FigureCrop] ignored invalid figure_bbox draft_id={} bbox={}", draft_id, figure_bbox)
+        return
+    try:
+        source_path = _asset_file_path(asset)
+        with Image.open(source_path) as img:
+            rgb = img.convert("RGB")
+            x, y, w, h = normalized
+            left = min(max(round(x * rgb.width), 0), rgb.width - 1)
+            top = min(max(round(y * rgb.height), 0), rgb.height - 1)
+            right = min(max(round((x + w) * rgb.width), left + 1), rgb.width)
+            bottom = min(max(round((y + h) * rgb.height), top + 1), rgb.height)
+            crop = rgb.crop((left, top, right, bottom))
+            crop.load()
+
+        filename = f"{uuid.uuid4().hex}_figure.jpg"
+        out_path = settings.UPLOAD_DIR_PATH / filename
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        crop.save(out_path, format="JPEG", quality=90)
+        data = out_path.read_bytes()
+        digest = hashlib.sha256(data).hexdigest()
+
+        existing = db.query(SourceAsset).filter(SourceAsset.sha256 == digest).first()
+        if existing is not None:
+            # Same crop bytes already stored (sha256 dedup): drop our duplicate file.
+            out_path.unlink(missing_ok=True)
+            figure_asset = existing
+        else:
+            figure_asset = SourceAsset(
+                user_id=question.user_id,
+                kind="figure",
+                original_path=filename,
+                mime="image/jpeg",
+                size_bytes=len(data),
+                width=crop.width,
+                height=crop.height,
+                sha256=digest,
+            )
+            db.add(figure_asset)
+            db.flush()
+
+        question.figure_image = figure_asset.normalized_path or figure_asset.original_path
+        question.figure_crop_bbox = normalized
+        revision.figure_asset_id = figure_asset.id
+        logger.info(
+            "[FigureCrop] attached figure asset_id={} question_id={} bbox={}",
+            figure_asset.id,
+            question.id,
+            normalized,
+        )
+    except Exception:
+        logger.exception("Figure crop failed; saving question without figure question_id={}", question.id)
+
+
 @router.post("/drafts/{draft_id}/save-to-bank", response_model=DraftSaveToBankResponse)
 def save_draft_to_bank(
     draft_id: int,
     background_tasks: BackgroundTasks,
+    payload: Optional[DraftSaveToBankRequest] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_active_user),
 ):
@@ -989,6 +1122,10 @@ def save_draft_to_bank(
     )
     db.add(revision)
     db.flush()
+
+    figure_bbox = payload.figure_bbox if payload else None
+    if figure_bbox is not None and draft.source_asset is not None:
+        _attach_question_figure(db, question, revision, draft.source_asset, figure_bbox, draft_id=draft.id)
 
     transition_draft_status(
         db,
@@ -1341,6 +1478,27 @@ def get_question_image(
     # deduplicated by sha256 across users, so the asset itself carries no owner
     # semantics and only marks where the shared bytes live.
     file_path = _resolve_upload_file_path(question.origin_image)
+    if not file_path:
+        raise HTTPException(status_code=404, detail=NOT_FOUND_MESSAGE)
+
+    return FileResponse(file_path)
+
+
+@router.get("/questions/{question_id}/figure")
+def get_question_figure(
+    question_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_active_user),
+):
+    question = db.query(Question).filter(Question.id == question_id).first()
+    if not question:
+        raise HTTPException(status_code=404, detail=NOT_FOUND_MESSAGE)
+    if question.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail=FORBIDDEN_MESSAGE)
+
+    # Same ownership rationale as get_question_image (#58): the Question row
+    # carries ownership; the referenced asset only marks where bytes live.
+    file_path = _resolve_upload_file_path(question.figure_image)
     if not file_path:
         raise HTTPException(status_code=404, detail=NOT_FOUND_MESSAGE)
 

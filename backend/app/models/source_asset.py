@@ -21,4 +21,8 @@ class SourceAsset(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     drafts = relationship("Draft", back_populates="source_asset")
-    question_revisions = relationship("QuestionRevision", back_populates="source_asset")
+    question_revisions = relationship(
+        "QuestionRevision",
+        back_populates="source_asset",
+        foreign_keys="QuestionRevision.source_asset_id",
+    )

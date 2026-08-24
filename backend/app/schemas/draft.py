@@ -31,12 +31,21 @@ class RecognitionQualityWarning(BaseModel):
     message: str
 
 
+class FigureDetection(BaseModel):
+    """One figure region detected in the draft asset (#58)."""
+
+    bbox: list[float]  # [x, y, w, h] normalized to [0, 1]
+    label: Optional[str] = None
+    score: Optional[float] = None
+
+
 class DraftDetail(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     source_asset_id: int
     crop_bbox: Any
+    detected_figures: list[FigureDetection] = Field(default_factory=list)
     status: str
     current_content: Optional[dict[str, Any]] = None
     content: str = ""
@@ -52,6 +61,16 @@ class DraftDetail(BaseModel):
     quality_warnings: list[RecognitionQualityWarning] = Field(default_factory=list)
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+
+
+class DraftSaveToBankRequest(BaseModel):
+    """Optional body for save-to-bank (#58).
+
+    figure_bbox is the user-confirmed figure region ([x, y, w, h] normalized).
+    Absent/None means the question has no figure; an invalid value is ignored.
+    """
+
+    figure_bbox: Optional[list[float]] = None
 
 
 class DraftRecognizeResponse(DraftDetail):

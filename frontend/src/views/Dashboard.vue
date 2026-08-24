@@ -119,7 +119,7 @@
                 <div class="cropper-toolbar">
                   <div class="cropper-hints">
                     <span>拖动图片定位题目，可使用滚轮或 +/- 缩放。</span>
-                    <span class="cropper-hint-image">一页多题请逐题框选录入；题目含图可直接框入，确认环节会显示本次送识别的内容。</span>
+                    <span class="cropper-hint-image">一页多题请逐题框选录入；题目含图可直接框入，识别时自动检出图形区域，确认页可修正后入库。</span>
                   </div>
                   <el-button-group>
                     <el-button aria-label="缩小裁剪图片" @click="changeCropperScale(-10)">−</el-button>
@@ -231,8 +231,18 @@
                   <h3>题目原图</h3>
                   <p class="result-image-hint">与送识别素材一致，栏内可滚动查看；点击可放大核对。</p>
                   <div v-loading="draftImageLoading" class="result-image-scroll">
+                    <!-- #58: with detected figure regions the editable overlay
+                         replaces the plain preview; without them the panel is
+                         unchanged from #63. -->
+                    <figure-overlay-editor
+                      v-if="detectedFigures.length > 0 && resultImageSrc"
+                      v-model="confirmedFigureBbox"
+                      :image-url="resultImageSrc"
+                      :initial-boxes="detectedFigures"
+                      class="result-figure-editor"
+                    />
                     <el-image
-                      v-if="resultImageSrc"
+                      v-else-if="resultImageSrc"
                       :src="resultImageSrc"
                       :preview-src-list="[resultImageSrc]"
                       fit="scale-down"
@@ -375,6 +385,7 @@ import {
 } from '../utils/auth'
 import HistoryPanel from '../components/HistoryPanel.vue'
 import BankPanel from '../components/BankPanel.vue'
+import FigureOverlayEditor from '../components/FigureOverlayEditor.vue'
 import PaperPanel from '../components/PaperPanel.vue'
 import UserManagementPanel from '../components/UserManagementPanel.vue'
 
@@ -420,6 +431,10 @@ const editSaving = ref(false)
 const draftImageObjectUrl = ref('')
 const draftImageLoading = ref(false)
 let draftImageRequestId = 0
+// Figure detection (#58): regions auto-detected in the draft asset, and the
+// user-confirmed bbox sent to save-to-bank (null = save without a figure).
+const detectedFigures = ref([])
+const confirmedFigureBbox = ref(null)
 
 const changeCropperScale = (amount) => {
   cropperRef.value?.changeScale(amount)
@@ -577,6 +592,8 @@ const resetDraftState = () => {
   editMode.value = false
   editContent.value = ''
   editSaving.value = false
+  detectedFigures.value = []
+  confirmedFigureBbox.value = null
   releaseDraftImageObjectUrl()
 }
 
@@ -596,10 +613,12 @@ const extractId = (payload, fields) => {
 const getDraftContent = (payload) => payload?.content || payload?.current_content?.text || ''
 const getRecognitionDebug = (payload) => payload?.recognition_debug || null
 const getQualityWarnings = (payload) => Array.isArray(payload?.quality_warnings) ? payload.quality_warnings : []
+const getDetectedFigures = (payload) => Array.isArray(payload?.detected_figures) ? payload.detected_figures : []
 const applyDraftDetail = (payload) => {
   ocrResult.value = getDraftContent(payload)
   recognitionDebug.value = getRecognitionDebug(payload)
   qualityWarnings.value = getQualityWarnings(payload)
+  detectedFigures.value = getDetectedFigures(payload)
   draftStatus.value = payload?.status || draftStatus.value
 }
 const formatQualityWarning = (warning) => {
@@ -888,6 +907,7 @@ const runRecognition = async (file) => {
       ocrResult.value = getDraftContent(payload)
       recognitionDebug.value = getRecognitionDebug(payload)
       qualityWarnings.value = getQualityWarnings(payload)
+      detectedFigures.value = getDetectedFigures(payload)
       step.value = 'result'
       if (payload.partial_success) {
         recognizeWarning.value =
@@ -1028,7 +1048,11 @@ const saveDraftToBank = async () => {
   draftError.value = ''
   setStageMessage('saving_to_bank')
   try {
-    const response = await axios.post(`${API_V1_BASE_URL}/drafts/${draftId.value}/save-to-bank`)
+    // #58: always send the explicit figure decision — confirmed bbox or null
+    // (no figure) — so the backend crops from the original asset on save.
+    const response = await axios.post(`${API_V1_BASE_URL}/drafts/${draftId.value}/save-to-bank`, {
+      figure_bbox: confirmedFigureBbox.value
+    })
     saveResult.value = {
       question_id: response.data?.question_id,
       question_revision_id: response.data?.question_revision_id
@@ -1535,6 +1559,11 @@ onBeforeUnmount(() => {
     height: auto;
     object-fit: scale-down;
   }
+}
+
+/* #58 figure overlay editor takes the same full width as the plain preview. */
+.result-figure-editor {
+  width: 100%;
 }
 
 /* Shared placeholder look for the confirmation preview error slot (#61) and

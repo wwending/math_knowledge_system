@@ -24,6 +24,9 @@ class Question(Base):
     metadata_started_at = Column(DateTime(timezone=True), nullable=True)
     metadata_finished_at = Column(DateTime(timezone=True), nullable=True)
     origin_image = Column(String, nullable=True)
+    # The question's own figure crop (#58); mirrors the origin_image pattern.
+    figure_image = Column(String, nullable=True)
+    figure_crop_bbox = Column(JSON, nullable=True)
     canonical_fingerprint = Column(String, nullable=True, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
