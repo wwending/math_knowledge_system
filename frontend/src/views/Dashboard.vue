@@ -113,24 +113,9 @@
             </div>
 
             <div class="preview-container">
-              <div v-if="processMode === 'crop'" class="cropper-wrapper">
-                <vue-cropper
-                  ref="cropperRef"
-                  :img="currentImageUrl"
-                  :output-size="1"
-                  :output-type="CROP_OUTPUT_TYPE"
-                  :max-img-size="cropperMaxImgSize"
-                  :auto-crop="true"
-                  :center-box="true"
-                  :can-move="true"
-                  :can-move-box="true"
-                  :can-scale="true"
-                  :fixed-box="false"
-                  :full="true"
-                  :high="true"
-                  :info-true="true"
-                  mode="cover"
-                />
+              <!-- #31: the toolbar stays in normal flow ABOVE the viewport so it can
+                   never cover the question; overlay bars used to hide top-of-page crops. -->
+              <div v-if="processMode === 'crop'" class="cropper-block">
                 <div class="cropper-toolbar">
                   <div class="cropper-hints">
                     <span>拖动图片定位题目，可使用滚轮或 +/- 缩放。</span>
@@ -141,15 +126,34 @@
                     <el-button aria-label="放大裁剪图片" @click="changeCropperScale(10)">+</el-button>
                   </el-button-group>
                 </div>
-                <el-button
-                  type="primary"
-                  class="confirm-btn"
-                  :loading="ocrLoading || cropEncoding"
-                  :disabled="isDraftBusy"
-                  @click="confirmCropAndUpload"
-                >
-                  确认裁剪并上传
-                </el-button>
+                <div class="cropper-wrapper">
+                  <vue-cropper
+                    ref="cropperRef"
+                    :img="currentImageUrl"
+                    :output-size="1"
+                    :output-type="CROP_OUTPUT_TYPE"
+                    :max-img-size="cropperMaxImgSize"
+                    :auto-crop="true"
+                    :center-box="true"
+                    :can-move="true"
+                    :can-move-box="true"
+                    :can-scale="true"
+                    :fixed-box="false"
+                    :full="true"
+                    :high="true"
+                    :info-true="true"
+                    mode="cover"
+                  />
+                  <el-button
+                    type="primary"
+                    class="confirm-btn"
+                    :loading="ocrLoading || cropEncoding"
+                    :disabled="isDraftBusy"
+                    @click="confirmCropAndUpload"
+                  >
+                    确认裁剪并上传
+                  </el-button>
+                </div>
               </div>
 
               <div v-else class="full-preview">
@@ -219,6 +223,29 @@
               </el-image>
             </el-card>
             <div v-if="ocrResult" class="result-split-layout">
+              <!-- #31: reference image leads on the LEFT at readable size; the
+                   panel scrolls internally so full-page captures stay legible
+                   without click-to-zoom round trips while editing. -->
+              <aside class="result-image-column">
+                <div class="result-image-panel">
+                  <h3>题目原图</h3>
+                  <p class="result-image-hint">与送识别素材一致，栏内可滚动查看；点击可放大核对。</p>
+                  <div v-loading="draftImageLoading" class="result-image-scroll">
+                    <el-image
+                      v-if="resultImageSrc"
+                      :src="resultImageSrc"
+                      :preview-src-list="[resultImageSrc]"
+                      fit="scale-down"
+                      class="result-reference-image"
+                    >
+                      <template #error>
+                        <div class="result-image-slot">原图加载失败</div>
+                      </template>
+                    </el-image>
+                    <div v-else class="result-image-empty">暂无原图</div>
+                  </div>
+                </div>
+              </aside>
               <div class="result-main-column">
                 <el-card shadow="hover">
                   <div v-if="editMode" class="draft-edit-panel">
@@ -273,25 +300,6 @@
                   </el-collapse-item>
                 </el-collapse>
               </div>
-              <aside class="result-image-column">
-                <div class="result-image-panel">
-                  <h3>题目原图</h3>
-                  <p class="result-image-hint">与送识别素材一致，点击图片可放大核对。</p>
-                  <el-image
-                    v-if="resultImageSrc"
-                    v-loading="draftImageLoading"
-                    :src="resultImageSrc"
-                    :preview-src-list="[resultImageSrc]"
-                    fit="scale-down"
-                    class="result-reference-image"
-                  >
-                    <template #error>
-                      <div class="result-image-slot">原图加载失败</div>
-                    </template>
-                  </el-image>
-                  <div v-else class="result-image-empty">暂无原图</div>
-                </div>
-              </aside>
             </div>
             <el-alert
               v-if="qualityWarnings.length > 0"
@@ -1362,26 +1370,27 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 
+.cropper-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Normal-flow bar above the viewport — never overlays the image (#31). */
 .cropper-toolbar {
-  position: absolute;
-  top: 16px;
-  left: 16px;
-  right: 16px;
-  z-index: 10;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   padding: 8px 10px 8px 14px;
-  color: #fff;
-  background: rgba(17, 38, 49, 0.78);
+  color: #33473f;
+  background: #eef4f1;
+  border: 1px solid #dce5e1;
   border-radius: 10px;
-  pointer-events: none;
 }
 
 .cropper-toolbar .el-button-group {
   flex: none;
-  pointer-events: auto;
 }
 
 .cropper-hints {
@@ -1445,9 +1454,16 @@ onBeforeUnmount(() => {
 }
 
 .result-image-column {
-  flex: 0 0 300px;
+  /* #31: readable width (~40%) instead of the old fixed 300px rail. */
+  flex: 0 0 min(42%, 560px);
   position: sticky;
   top: 16px;
+}
+
+.result-image-scroll {
+  overflow: auto;
+  max-height: 72vh;
+  border-radius: 8px;
 }
 
 .result-image-panel {
@@ -1473,15 +1489,15 @@ onBeforeUnmount(() => {
 }
 
 .result-reference-image {
+  display: block;
   width: 100%;
-  border-radius: 8px;
-  background: #fff;
   cursor: zoom-in;
 
+  /* No height cap here: the scroll container above bounds the panel, and the
+     image keeps its natural aspect so scrolling reaches the full pixels (#31). */
   :deep(.el-image__inner) {
     width: 100%;
     height: auto;
-    max-height: 70vh;
     object-fit: scale-down;
   }
 }
@@ -1650,7 +1666,7 @@ onBeforeUnmount(() => {
     width: 100%;
   }
 
-  .result-reference-image :deep(.el-image__inner) {
+  .result-image-scroll {
     max-height: 40vh;
   }
 
