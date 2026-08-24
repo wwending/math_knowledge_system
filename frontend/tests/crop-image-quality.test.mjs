@@ -149,6 +149,18 @@ assert.doesNotMatch(dashboardSource, /crop_question\.jpg/)
 assert.doesNotMatch(dashboardSource, /new File\(\[blob\], 'crop_question[^']*', \{ type: 'image\/jpeg' \}\)/)
 
 assert.match(dashboardSource, /一页多题请逐题框选录入/, 'cropper toolbar must guide per-question framing')
+// #31: the toolbar sits above the viewport in normal flow — an absolutely
+// positioned bar used to cover questions near the top of the page.
+assert.match(
+  dashboardSource,
+  /class="cropper-toolbar"[\s\S]*?<vue-cropper/,
+  'cropper toolbar must be rendered above the crop viewport, not after it'
+)
+assert.doesNotMatch(
+  dashboardSource,
+  /\.cropper-toolbar \{[^}]*position:\s*absolute/,
+  'cropper toolbar must not overlay the viewport via absolute positioning'
+)
 assert.match(dashboardSource, /const cropPreviewUrl = ref\(''\)/, 'Dashboard must track the actual crop product for preview')
 assert.match(
   dashboardSource,
