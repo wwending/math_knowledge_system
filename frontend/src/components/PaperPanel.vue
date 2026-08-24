@@ -100,11 +100,15 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import axios from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
+import { useRoute, useRouter } from 'vue-router'
 import { API_V1_BASE_URL } from '../config/api'
+import { readStringQuery, replaceQueryValues } from '../utils/urlQueryState'
 import { renderMarkdown } from '@/utils/renderMarkdown'
 import PaperPreview from './PaperPreview.vue'
 
 const API_BASE = API_V1_BASE_URL
+const route = useRoute()
+const router = useRouter()
 const papers = ref([])
 const currentPaper = ref(null)
 const selectedPaperId = ref(null)
@@ -160,6 +164,11 @@ const fetchPapers = async () => {
   } finally { listLoading.value = false }
 }
 
+// #75：选中试卷同步到 ?paper_id=。深链指向不存在/无权试卷时，fetchPapers 的
+// 陈旧校验会把选中清空，本 watcher 随之把该参数从 URL 移除，链接自动自愈。
+watch(selectedPaperId, (paperId) => {
+  replaceQueryValues(router, route, { paper_id: paperId ?? '' })
+})
 const confirmDiscard = async () => {
   if (!editMode.value || JSON.stringify(editDraft.value) === editBaseline.value) return true
   try {
@@ -301,7 +310,15 @@ const formatDifficultyStars = (difficultyLevel) => {
   return Number.isInteger(level) && level >= 1 && level <= 5 ? `${'★'.repeat(level)}${'☆'.repeat(5 - level)}` : '未评估'
 }
 const formatTime = (value) => value ? new Date(value).toLocaleString() : '-'
-onMounted(() => { fetchPapers(); window.addEventListener('paper-created', handlePaperCreated) })
+onMounted(() => {
+  fetchPapers()
+  window.addEventListener('paper-created', handlePaperCreated)
+  // #75：从 ?paper_id= 恢复选中的试卷；非法值直接忽略。
+  const requestedPaperId = Number.parseInt(readStringQuery(route, 'paper_id'), 10)
+  if (Number.isInteger(requestedPaperId) && requestedPaperId > 0) {
+    openPaperDetail(requestedPaperId)
+  }
+})
 onBeforeUnmount(() => window.removeEventListener('paper-created', handlePaperCreated))
 </script>
 
