@@ -192,28 +192,81 @@
               :closable="false"
               class="result-alert"
             />
-            <el-card v-if="ocrResult" shadow="hover">
-              <div v-if="editMode" class="draft-edit-panel">
-                <h3>编辑内容</h3>
-                <p class="draft-edit-hint">可直接修改题干、选项和 Markdown / LaTeX。</p>
-                <el-input
-                  v-model="editContent"
-                  type="textarea"
-                  :autosize="{ minRows: 8, maxRows: 24 }"
-                  :disabled="editSaving"
-                  placeholder="请输入题目正文"
-                />
-                <h3>预览</h3>
-                <div class="markdown-body draft-edit-preview" v-html="renderedEditPreview"></div>
-                <div class="result-actions">
-                  <el-button :disabled="editSaving" @click="cancelEdit">取消修改</el-button>
-                  <el-button type="primary" :loading="editSaving" @click="saveDraftEdit">
-                    {{ editSaving ? '正在保存...' : '保存修改' }}
-                  </el-button>
-                </div>
+            <div v-if="ocrResult" class="result-split-layout">
+              <div class="result-main-column">
+                <el-card shadow="hover">
+                  <div v-if="editMode" class="draft-edit-panel">
+                    <h3>编辑内容</h3>
+                    <p class="draft-edit-hint">可直接修改题干、选项和 Markdown / LaTeX。</p>
+                    <el-input
+                      v-model="editContent"
+                      type="textarea"
+                      :autosize="{ minRows: 8, maxRows: 24 }"
+                      :disabled="editSaving"
+                      placeholder="请输入题目正文"
+                    />
+                    <h3>预览</h3>
+                    <div class="markdown-body draft-edit-preview" v-html="renderedEditPreview"></div>
+                    <div class="result-actions">
+                      <el-button :disabled="editSaving" @click="cancelEdit">取消修改</el-button>
+                      <el-button type="primary" :loading="editSaving" @click="saveDraftEdit">
+                        {{ editSaving ? '正在保存...' : '保存修改' }}
+                      </el-button>
+                    </div>
+                  </div>
+                  <div v-else class="markdown-body" v-html="renderedContent"></div>
+                </el-card>
+                <el-collapse v-if="recognitionDebug" class="recognition-debug-collapse">
+                  <el-collapse-item title="识别调试信息" name="recognition-debug">
+                    <el-alert
+                      v-if="recognitionDebug.ocr_error"
+                      type="error"
+                      :closable="false"
+                      class="recognition-debug-alert"
+                    >
+                      OCR 错误：{{ recognitionDebug.ocr_error }}
+                    </el-alert>
+                    <el-alert
+                      v-if="recognitionDebug.llm_error"
+                      type="warning"
+                      :closable="false"
+                      class="recognition-debug-alert"
+                    >
+                      LLM 错误：{{ recognitionDebug.llm_error }}
+                    </el-alert>
+                    <div class="recognition-debug-grid">
+                      <section class="recognition-debug-block">
+                        <h4>原始 OCR 文本</h4>
+                        <pre>{{ recognitionDebug.ocr_raw_text || '暂无原始 OCR 文本' }}</pre>
+                      </section>
+                      <section class="recognition-debug-block">
+                        <h4>LLM 清洗文本</h4>
+                        <pre>{{ recognitionDebug.llm_cleaned_text || '暂无 LLM 清洗文本' }}</pre>
+                      </section>
+                    </div>
+                  </el-collapse-item>
+                </el-collapse>
               </div>
-              <div v-else class="markdown-body" v-html="renderedContent"></div>
-            </el-card>
+              <aside class="result-image-column">
+                <div class="result-image-panel">
+                  <h3>题目原图</h3>
+                  <p class="result-image-hint">与送识别素材一致，点击图片可放大核对。</p>
+                  <el-image
+                    v-if="resultImageSrc"
+                    v-loading="draftImageLoading"
+                    :src="resultImageSrc"
+                    :preview-src-list="[resultImageSrc]"
+                    fit="scale-down"
+                    class="result-reference-image"
+                  >
+                    <template #error>
+                      <div class="result-image-slot">原图加载失败</div>
+                    </template>
+                  </el-image>
+                  <div v-else class="result-image-empty">暂无原图</div>
+                </div>
+              </aside>
+            </div>
             <el-alert
               v-if="qualityWarnings.length > 0"
               title="识别风险提示"
@@ -228,36 +281,6 @@
                 </li>
               </ul>
             </el-alert>
-            <el-collapse v-if="recognitionDebug" class="recognition-debug-collapse">
-              <el-collapse-item title="识别调试信息" name="recognition-debug">
-                <el-alert
-                  v-if="recognitionDebug.ocr_error"
-                  type="error"
-                  :closable="false"
-                  class="recognition-debug-alert"
-                >
-                  OCR 错误：{{ recognitionDebug.ocr_error }}
-                </el-alert>
-                <el-alert
-                  v-if="recognitionDebug.llm_error"
-                  type="warning"
-                  :closable="false"
-                  class="recognition-debug-alert"
-                >
-                  LLM 错误：{{ recognitionDebug.llm_error }}
-                </el-alert>
-                <div class="recognition-debug-grid">
-                  <section class="recognition-debug-block">
-                    <h4>原始 OCR 文本</h4>
-                    <pre>{{ recognitionDebug.ocr_raw_text || '暂无原始 OCR 文本' }}</pre>
-                  </section>
-                  <section class="recognition-debug-block">
-                    <h4>LLM 清洗文本</h4>
-                    <pre>{{ recognitionDebug.llm_cleaned_text || '暂无 LLM 清洗文本' }}</pre>
-                  </section>
-                </div>
-              </el-collapse-item>
-            </el-collapse>
             <div v-if="draftStatus === 'draft_ready' && !editMode" class="result-actions">
               <el-button :disabled="saveLoading" @click="enterEditMode">编辑识别结果</el-button>
               <el-button type="primary" :loading="saveLoading" :disabled="!canSaveDraft" @click="saveDraftToBank">
@@ -292,7 +315,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import axios from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Clock, Collection, DataAnalysis, Document, UploadFilled, UserFilled } from '@element-plus/icons-vue'
@@ -300,7 +323,7 @@ import { useRouter } from 'vue-router'
 import 'vue-cropper/dist/index.css'
 import { VueCropper } from 'vue-cropper'
 
-import { API_V1_BASE_URL } from '../config/api'
+import { API_V1_BASE_URL, buildDraftImageUrl } from '../config/api'
 import { renderMarkdown } from '@/utils/renderMarkdown'
 import {
   CROPPER_MAX_EDGE,
@@ -355,6 +378,11 @@ let cropEncodingGeneration = 0
 const editMode = ref(false)
 const editContent = ref('')
 const editSaving = ref(false)
+// Draft reference image (#22): authenticated blob of the SourceAsset behind the
+// current draft, shown next to the recognition result for visual comparison.
+const draftImageObjectUrl = ref('')
+const draftImageLoading = ref(false)
+let draftImageRequestId = 0
 
 const changeCropperScale = (amount) => {
   cropperRef.value?.changeScale(amount)
@@ -512,6 +540,7 @@ const resetDraftState = () => {
   editMode.value = false
   editContent.value = ''
   editSaving.value = false
+  releaseDraftImageObjectUrl()
 }
 
 const setStageMessage = (stage) => {
@@ -971,6 +1000,50 @@ const resetUpload = () => {
 const renderedContent = computed(() => (ocrResult.value ? renderMarkdown(ocrResult.value) : ''))
 const renderedEditPreview = computed(() => (editContent.value ? renderMarkdown(editContent.value) : ''))
 
+// Prefer the persisted SourceAsset behind the draft (the exact recognized
+// region); fall back to the local full-page preview when the draft image is
+// unavailable (legacy flow or load failure).
+const resultImageSrc = computed(() => draftImageObjectUrl.value || currentImageUrl.value)
+
+const releaseDraftImageObjectUrl = () => {
+  if (draftImageObjectUrl.value) {
+    URL.revokeObjectURL(draftImageObjectUrl.value)
+    draftImageObjectUrl.value = ''
+  }
+}
+
+const loadDraftReferenceImage = async () => {
+  if (!draftId.value) {
+    return
+  }
+  const requestId = ++draftImageRequestId
+  draftImageLoading.value = true
+  try {
+    const response = await axios.get(buildDraftImageUrl(draftId.value), { responseType: 'blob' })
+    if (requestId !== draftImageRequestId) {
+      return
+    }
+    const objectUrl = URL.createObjectURL(response.data)
+    releaseDraftImageObjectUrl()
+    draftImageObjectUrl.value = objectUrl
+  } catch (error) {
+    console.warn('Failed to load draft reference image; falling back to the local preview.', error)
+  } finally {
+    if (requestId === draftImageRequestId) {
+      draftImageLoading.value = false
+    }
+  }
+}
+
+watch(draftId, (value) => {
+  draftImageRequestId += 1
+  releaseDraftImageObjectUrl()
+  draftImageLoading.value = false
+  if (value) {
+    loadDraftReferenceImage()
+  }
+})
+
 const handleLogout = async () => {
   await logout()
   router.replace('/login')
@@ -993,6 +1066,8 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   cropEncodingGeneration += 1
   revokeImageObjectUrl(currentImageUrl.value)
+  draftImageRequestId += 1
+  releaseDraftImageObjectUrl()
 })
 </script>
 
@@ -1297,6 +1372,75 @@ onBeforeUnmount(() => {
   gap: 14px;
 }
 
+.result-split-layout {
+  display: flex;
+  /* align-items: flex-start keeps the sticky image column from stretching. */
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.result-main-column {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.result-image-column {
+  flex: 0 0 300px;
+  position: sticky;
+  top: 16px;
+}
+
+.result-image-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid #dbe7e2;
+  border-radius: 12px;
+  background: #fbfdfc;
+
+  h3 {
+    margin: 0;
+    font-size: 15px;
+    color: #1f3d35;
+  }
+}
+
+.result-image-hint {
+  margin: 0;
+  font-size: 12px;
+  color: #667a73;
+}
+
+.result-reference-image {
+  width: 100%;
+  border-radius: 8px;
+  background: #fff;
+  cursor: zoom-in;
+
+  :deep(.el-image__inner) {
+    width: 100%;
+    height: auto;
+    max-height: 70vh;
+    object-fit: scale-down;
+  }
+}
+
+.result-image-slot,
+.result-image-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 160px;
+  color: #8a9a94;
+  font-size: 13px;
+  border: 1px dashed #dbe7e2;
+  border-radius: 8px;
+}
+
 .reset-result-btn {
   width: fit-content;
 }
@@ -1401,6 +1545,21 @@ onBeforeUnmount(() => {
 @media (max-width: 900px) {
   .topbar {
     flex-direction: column;
+  }
+
+  .result-split-layout {
+    flex-direction: column;
+  }
+
+  .result-image-column {
+    order: -1;
+    position: static;
+    flex: none;
+    width: 100%;
+  }
+
+  .result-reference-image :deep(.el-image__inner) {
+    max-height: 40vh;
   }
 
   .recognition-debug-grid {
