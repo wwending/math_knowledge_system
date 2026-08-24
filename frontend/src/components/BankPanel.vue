@@ -23,7 +23,7 @@
           :prefix-icon="Search"
           class="search-input"
         />
-        <el-button @click="fetchQuestions" :loading="loading" circle>
+        <el-button aria-label="刷新题库列表" @click="fetchQuestions" :loading="loading" circle>
           <el-icon><Refresh /></el-icon>
         </el-button>
       </div>
@@ -55,6 +55,7 @@
         <div class="list-item-content" @click="openDetail(item)">
           <div class="select-box" @click.stop>
             <el-checkbox
+              :aria-label="`选择题目 #${item.id}`"
               :model-value="isQuestionSelected(item.id)"
               @change="toggleQuestionSelection(item.id)"
             />

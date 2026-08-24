@@ -2,7 +2,7 @@
   <div class="paper-container">
     <div class="header-row">
       <div><h2>组卷中心</h2><p class="subtitle">查看和编辑当前登录用户创建的试卷草稿</p></div>
-      <el-button @click="fetchPapers" :loading="listLoading" circle><el-icon><Refresh /></el-icon></el-button>
+      <el-button aria-label="刷新试卷列表" @click="fetchPapers" :loading="listLoading" circle><el-icon><Refresh /></el-icon></el-button>
     </div>
     <el-alert v-if="errorMessage" :title="errorMessage" type="error" show-icon class="state-alert" />
     <el-skeleton v-if="listLoading" :rows="4" animated />
@@ -84,7 +84,7 @@
       <el-empty v-else-if="filteredQuestions.length === 0" description="暂无可用题目" />
       <div v-else class="question-picker-list">
         <label v-for="question in filteredQuestions" :key="question.id" class="question-picker-item">
-          <el-checkbox :model-value="questionSelection.includes(question.id)" :disabled="draftQuestionIds.has(question.id)" @change="toggleQuestionSelection(question.id)" />
+          <el-checkbox :aria-label="`选择题目 #${question.id}`" :model-value="questionSelection.includes(question.id)" :disabled="draftQuestionIds.has(question.id)" @change="toggleQuestionSelection(question.id)" />
           <div class="question-picker-content"><div class="markdown-body" v-html="renderSnapshot(question.content)"></div><el-tag v-if="draftQuestionIds.has(question.id)" size="small" type="info">已添加</el-tag></div>
         </label>
       </div>
