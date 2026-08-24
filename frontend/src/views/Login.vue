@@ -1,6 +1,6 @@
 <template>
-  <div class="login-container">
-    <section class="login-left">
+  <div class="auth-container">
+    <section class="auth-left">
       <div class="brand-content">
         <div class="logo-circle">
           <el-icon :size="40"><DataAnalysis /></el-icon>
@@ -15,7 +15,7 @@
       <div class="bg-circle circle-2"></div>
     </section>
 
-    <section class="login-right">
+    <section class="auth-right">
       <div class="form-wrapper">
         <h2>欢迎回来</h2>
         <p class="form-tip">请输入手机号和密码登录系统</p>
@@ -24,7 +24,7 @@
           type="info"
           :closable="false"
           show-icon
-          class="login-alert"
+          class="auth-alert"
           :title="capabilityMessage"
         />
 
@@ -66,7 +66,7 @@
           <p class="password-help">忘记密码暂不开放自助找回，请联系管理员。</p>
 
           <el-form-item>
-            <el-button type="primary" class="login-btn" :loading="loading" @click="handleLogin">
+            <el-button type="primary" class="auth-btn" :loading="loading" @click="handleLogin">
               登录
             </el-button>
           </el-form-item>
@@ -208,117 +208,7 @@ onMounted(() => {
 </script>
 
 <style scoped lang="scss">
-.login-container {
-  display: flex;
-  min-height: 100vh;
-  width: 100%;
-  overflow: hidden;
-  background: #f5f7fa;
-}
-
-.login-left {
-  flex: 1;
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  color: #fff;
-  background: linear-gradient(135deg, #1c2434 0%, #2c3e50 100%);
-
-  .brand-content {
-    z-index: 1;
-    max-width: 420px;
-    padding: 0 32px;
-    text-align: center;
-  }
-
-  .logo-circle {
-    display: flex;
-    width: 80px;
-    height: 80px;
-    margin: 0 auto 20px;
-    align-items: center;
-    justify-content: center;
-    border-radius: 50%;
-    background: rgba(255, 255, 255, 0.1);
-    backdrop-filter: blur(10px);
-  }
-
-  h1 {
-    margin: 0 0 10px;
-    font-size: 36px;
-    font-weight: 600;
-    letter-spacing: 2px;
-  }
-
-  .subtitle {
-    margin: 0 0 32px;
-    font-size: 18px;
-    opacity: 0.9;
-  }
-
-  .desc {
-    display: inline-block;
-    margin: 0;
-    padding-top: 20px;
-    border-top: 1px solid rgba(255, 255, 255, 0.2);
-    font-size: 14px;
-    line-height: 1.7;
-    opacity: 0.72;
-  }
-
-  .bg-circle {
-    position: absolute;
-    border-radius: 50%;
-    background: rgba(255, 255, 255, 0.03);
-  }
-
-  .circle-1 {
-    top: -100px;
-    left: -100px;
-    width: 400px;
-    height: 400px;
-  }
-
-  .circle-2 {
-    right: -200px;
-    bottom: -200px;
-    width: 600px;
-    height: 600px;
-  }
-}
-
-.login-right {
-  display: flex;
-  width: 500px;
-  padding: 40px;
-  align-items: center;
-  justify-content: center;
-  background: #fff;
-
-  .form-wrapper {
-    width: 100%;
-    max-width: 360px;
-  }
-
-  h2 {
-    margin: 0 0 10px;
-    font-size: 28px;
-    color: #333;
-  }
-
-  .form-tip {
-    margin: 0 0 24px;
-    /* #767676 起满足白底 WCAG AA 4.5:1；#999 系灰字一律不用（#76）。 */
-    color: #767676;
-    font-size: 14px;
-  }
-}
-
-.login-alert {
-  margin-bottom: 20px;
-}
+@use '../assets/auth-layout';
 
 .password-help {
   margin: 0 0 18px;
@@ -327,50 +217,7 @@ onMounted(() => {
   line-height: 1.6;
 }
 
-.login-btn {
-  width: 100%;
-  height: 44px;
-  border-radius: 8px;
-  border-color: #2c3e50;
-  background-color: #2c3e50;
-  font-size: 16px;
-
-  &:hover {
-    border-color: #34495e;
-    background-color: #34495e;
-  }
-}
-
-.form-footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-top: 10px;
-  font-size: 14px;
-}
-
-.footer-text,
 .footer-note {
   color: #767676;
-}
-
-.footer-link {
-  color: #2c3e50;
-  text-decoration: none;
-
-  &:hover {
-    color: #1f2d3d;
-  }
-}
-
-@media (max-width: 768px) {
-  .login-left {
-    display: none;
-  }
-
-  .login-right {
-    width: 100%;
-    padding: 24px;
-  }
 }
 </style>

@@ -96,7 +96,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import axios from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
@@ -117,6 +117,10 @@ const errorMessage = ref('')
 const previewErrorMessage = ref('')
 const paperRenderModel = ref(null)
 const answerAreaMode = ref('after_each_question')
+// #77: 答题区模式变更后旧预览仍基于旧设置，直接失效待重新生成。
+watch(answerAreaMode, () => {
+  if (paperRenderModel.value) paperRenderModel.value = null
+})
 const editMode = ref(false)
 const editDraft = ref(null)
 const editBaseline = ref('')
