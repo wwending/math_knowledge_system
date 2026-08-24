@@ -183,11 +183,13 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import axios from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useRoute, useRouter } from 'vue-router'
 
 import { API_V1_BASE_URL } from '../config/api'
+import { readStringQuery, replaceQueryValues } from '../utils/urlQueryState'
 
 const loading = ref(false)
 const users = ref([])
@@ -238,6 +240,30 @@ const statusOptions = [
   { label: '禁用', value: 'disabled' },
   { label: '待改密', value: 'pending_password_change' }
 ]
+
+// #75：筛选条件与 ?user_q= / ?user_role= / ?user_status= 同步，挂载时恢复。
+// 角色/状态只接受合法枚举值——URL 被手改成未知值时按未筛选处理，
+// 避免把脏值原样发给后端或显示成裸枚举。重置按钮清空 filters 即自动清参数。
+const route = useRoute()
+const router = useRouter()
+
+const applyFiltersFromRoute = () => {
+  filters.q = readStringQuery(route, 'user_q')
+  const queryRole = readStringQuery(route, 'user_role')
+  filters.role = roleOptions.some((item) => item.value === queryRole) ? queryRole : ''
+  const queryStatus = readStringQuery(route, 'user_status')
+  filters.status = statusOptions.some((item) => item.value === queryStatus) ? queryStatus : ''
+}
+
+applyFiltersFromRoute()
+
+watch(filters, () => {
+  replaceQueryValues(router, route, {
+    user_q: filters.q,
+    user_role: filters.role,
+    user_status: filters.status
+  })
+})
 
 const createRules = {
   phone: [{ required: true, message: '请输入手机号', trigger: 'blur' }],
