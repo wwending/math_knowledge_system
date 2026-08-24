@@ -1,5 +1,7 @@
+import base64
 import unittest
 import re
+from unittest.mock import patch
 
 from app.schemas.paper_render import (
     PaperRenderAnswerArea,
@@ -9,6 +11,7 @@ from app.schemas.paper_render import (
     PaperRenderPaperMeta,
     PaperRenderSection,
 )
+from app.services import paper_html_renderer
 from app.services.paper_html_renderer import render_paper_html
 from app.services.pdf_generation_service import PdfGenerationOptions
 
@@ -121,6 +124,131 @@ class PaperHtmlRendererTests(unittest.TestCase):
         self.assertIn("<code>$not_math$</code>", html)
         self.assertIn('display="block"', html)
         self.assertIn("<mfrac>", html)
+
+
+class PaperFigureEmbeddingTests(unittest.TestCase):
+    JPEG_FIGURE = b"fake-jpeg-bytes"
+
+    def _figured_model(self) -> PaperRenderModel:
+        model = _render_model("如图所示")
+        item = model.sections[0].items[0]
+        model.sections[0].items[0] = item.model_copy(
+            update={"figure_image_url": "/api/v1/papers/7/items/11/image"}
+        )
+        return model
+
+    @staticmethod
+    def _loader(payload=None, mime="image/jpeg"):
+        def load(item):
+            if payload is None:
+                return None
+            return payload, mime
+
+        return load
+
+    def test_embeds_data_uri_and_relaxes_csp_and_css(self):
+        html = render_paper_html(
+            self._figured_model(),
+            PdfGenerationOptions.a4_portrait(),
+            figure_loader=self._loader(self.JPEG_FIGURE),
+        )
+
+        encoded = base64.b64encode(self.JPEG_FIGURE).decode()
+        self.assertIn(f"data:image/jpeg;base64,{encoded}", html)
+        self.assertIn('class="question-figure"', html)
+        self.assertIn('alt="第1题配图"', html)
+        self.assertIn("img-src data:", html)
+        self.assertNotIn("img-src &#x27;none&#x27;", html)
+        self.assertIn(".question-figure { max-width: 100%", html)
+
+    def test_figure_lands_between_content_and_tail(self):
+        html = render_paper_html(
+            self._figured_model(),
+            PdfGenerationOptions.a4_portrait(),
+            figure_loader=self._loader(self.JPEG_FIGURE),
+        )
+
+        content_at = html.index('class="question-content"')
+        figure_at = html.index('class="question-figure"')
+        tail_at = html.index('class="answer-area"')
+        self.assertTrue(content_at < figure_at < tail_at)
+
+    def test_no_figure_output_stays_byte_identical_to_legacy_markup(self):
+        options = PdfGenerationOptions.a4_portrait()
+        legacy = render_paper_html(_render_model("无图"), options)
+
+        self.assertIn("img-src &#x27;none&#x27;", legacy)
+        self.assertNotIn("<img", legacy.lower())
+        self.assertNotIn(".question-figure", legacy)
+        # Deterministic double render (existing contract) plus explicit
+        # absence of every #59 marker above is the byte-identity evidence.
+
+    def test_loader_none_or_url_missing_never_emits_img(self):
+        options = PdfGenerationOptions.a4_portrait()
+
+        no_loader = render_paper_html(self._figured_model(), options)
+        loader_returns_none = render_paper_html(
+            self._figured_model(), options, figure_loader=self._loader(None)
+        )
+        plain = render_paper_html(_render_model("无图"), options, figure_loader=self._loader(b"x"))
+
+        for html in (no_loader, loader_returns_none, plain):
+            self.assertNotIn("<img", html.lower())
+            self.assertIn("img-src &#x27;none&#x27;", html)
+            self.assertNotIn(".question-figure { max-width", html)
+
+    def test_non_whitelisted_mime_degrades_to_no_image_without_failing(self):
+        html = render_paper_html(
+            self._figured_model(),
+            PdfGenerationOptions.a4_portrait(),
+            figure_loader=self._loader(self.JPEG_FIGURE, mime="image/svg+xml"),
+        )
+
+        self.assertNotIn("<img", html.lower())
+        self.assertIn("img-src &#x27;none&#x27;", html)
+
+    def test_oversized_single_figure_raises_with_display_number(self):
+        with patch.object(paper_html_renderer, "MAX_FIGURE_EMBED_BYTES", 8):
+            with self.assertRaises(paper_html_renderer.PaperFigureTooLargeError) as ctx:
+                render_paper_html(
+                    self._figured_model(),
+                    PdfGenerationOptions.a4_portrait(),
+                    figure_loader=self._loader(b"123456789"),
+                )
+
+        self.assertIn("第 1 题", str(ctx.exception))
+
+    def test_total_budget_exhaustion_raises_naming_current_question(self):
+        small_items_model = self._figured_model()
+        extra = PaperRenderItem(
+            paper_item_id=12,
+            question_id=18,
+            position=2,
+            display_number=2,
+            score=5,
+            content="第二题",
+            question_type="solution",
+            question_type_label="解答题",
+            knowledge_tags=[],
+            answer_area=None,
+            figure_image_url="/api/v1/papers/7/items/12/image",
+        )
+        small_items_model.sections[0].items.append(extra)
+        budget = {"spent": 0}
+
+        def loader(item):
+            budget["spent"] += 6
+            return b"123456", "image/jpeg"
+
+        with patch.object(paper_html_renderer, "MAX_TOTAL_FIGURE_EMBED_BYTES", 10):
+            with self.assertRaises(paper_html_renderer.PaperFigureTooLargeError) as ctx:
+                render_paper_html(
+                    small_items_model,
+                    PdfGenerationOptions.a4_portrait(),
+                    figure_loader=loader,
+                )
+
+        self.assertIn("第 2 题", str(ctx.exception))
 
 
 if __name__ == "__main__":

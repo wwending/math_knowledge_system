@@ -29,10 +29,12 @@ from app.core.constants import (
     DraftStatus,
 )
 from app.core.database import get_db
+from app.core.files import resolve_upload_file_path
 from app.models.draft import Draft
 from app.models.draft_event import DraftEvent
 from app.models.llm_run import LLMRun
 from app.models.ocr_run import OCRRun
+from app.models.paper import Paper
 from app.models.question import Question
 from app.models.question_revision import QuestionRevision
 from app.models.source_asset import SourceAsset
@@ -49,7 +51,7 @@ from app.schemas.draft import (
 )
 from app.schemas.ocr import OCRResponse
 from app.schemas.paper import PaperCreate, PaperListItem, PaperRead, PaperUpdate
-from app.schemas.paper_render import PaperRenderModel, PaperRenderRequest
+from app.schemas.paper_render import PaperRenderItem, PaperRenderModel, PaperRenderRequest
 from app.schemas.question import KnowledgeTag, QuestionDetail, QuestionListItem, QuestionUpdate
 from app.services.draft_state import transition_draft_status
 from app.services.llm import nlp_service
@@ -58,8 +60,12 @@ from app.services.ocr_engine import ocr_service
 from app.services.ocr_providers.base import OCRResult
 from app.services.ocr_service import ocr_service as draft_ocr_service
 from app.services.paper_service import create_paper, get_paper, list_papers, update_paper
-from app.services.paper_render_service import build_paper_render_model
-from app.services.paper_html_renderer import PaperHtmlRenderError, render_paper_html
+from app.services.paper_render_service import build_paper_render_model, resolve_paper_figure_files
+from app.services.paper_html_renderer import (
+    PaperFigureTooLargeError,
+    PaperHtmlRenderError,
+    render_paper_html,
+)
 from app.services.pdf_generation_service import GotenbergPdfGenerationService, PdfGenerationError, PdfGenerationOptions
 from app.services.question_metadata import evaluate_question_metadata_task
 from app.services.recognition_quality import detect_quality_warnings
@@ -125,46 +131,6 @@ def normalize_tags(raw_tags: Any) -> List[KnowledgeTag]:
 def build_question_image_url(question_id: int) -> str:
     # Authenticated image channel. Replaces the retired public /static/uploads URLs (#44).
     return f"{settings.API_V1_STR}/questions/{question_id}/image"
-
-
-def _resolve_upload_file_path(raw_path: Optional[str]) -> Optional[str]:
-    """Resolve a stored upload reference to a file inside UPLOAD_DIR_PATH.
-
-    Stored values are bare filenames written by the upload pipelines. Legacy rows may
-    still carry a "/static/uploads/..." URL or an "uploads/..." prefix, so both forms
-    are tolerated and resolved against the (now relocated) uploads directory. Absolute
-    paths are accepted for parity with _asset_file_path, but resolution is always
-    contained to UPLOAD_DIR_PATH so a tampered DB row cannot read arbitrary files.
-    """
-    normalized = str(raw_path or "").strip()
-    if not normalized or normalized.startswith(("http://", "https://")):
-        return None
-
-    static_prefix = f"{settings.STATIC_URL_PREFIX_NORMALIZED}/"
-    if normalized.startswith(static_prefix):
-        normalized = normalized[len(static_prefix):]
-    normalized = normalized.lstrip("/").replace("\\", "/")
-    if not normalized:
-        return None
-
-    candidates = [normalized]
-    uploads_segment = "uploads/"
-    if normalized.startswith(uploads_segment):
-        candidates.append(normalized[len(uploads_segment):])
-
-    upload_root = settings.UPLOAD_DIR_PATH.resolve()
-    for candidate_name in candidates:
-        candidate = (
-            Path(candidate_name)
-            if os.path.isabs(candidate_name)
-            else upload_root / candidate_name
-        )
-        resolved = candidate.resolve()
-        if resolved != upload_root and upload_root not in resolved.parents:
-            continue
-        if resolved.is_file():
-            return str(resolved)
-    return None
 
 
 def _safe_remove_file(path: str) -> None:
@@ -708,7 +674,7 @@ def get_draft_image(
     if not asset:
         raise HTTPException(status_code=404, detail=NOT_FOUND_MESSAGE)
 
-    file_path = _resolve_upload_file_path(asset.normalized_path or asset.original_path)
+    file_path = resolve_upload_file_path(asset.normalized_path or asset.original_path)
     if not file_path:
         raise HTTPException(status_code=404, detail=NOT_FOUND_MESSAGE)
 
@@ -1213,9 +1179,30 @@ def generate_paper_pdf_endpoint(
 ):
     render_model = build_paper_render_model(db, current_user, paper_id, payload)
     options = PdfGenerationOptions.a4_portrait()
+
+    figure_files = resolve_paper_figure_files(db, current_user, paper_id)
+
+    def figure_loader(item: PaperRenderItem) -> Optional[tuple[bytes, Optional[str]]]:
+        path = figure_files.get(item.paper_item_id)
+        if not path:
+            return None
+        try:
+            return Path(path).read_bytes(), mimetypes.guess_type(path)[0]
+        except OSError:
+            logger.warning(
+                "Paper figure unreadable paper_id={} paper_item_id={} path={}",
+                paper_id,
+                item.paper_item_id,
+                path,
+            )
+            return None
+
     try:
-        printable_html = render_paper_html(render_model, options)
+        printable_html = render_paper_html(render_model, options, figure_loader=figure_loader)
         pdf_bytes = pdf_generation_service.generate_pdf(printable_html, options)
+    except PaperFigureTooLargeError as exc:
+        # The renderer's message names the offending question; pass it through (#59).
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
     except PaperHtmlRenderError as exc:
         raise HTTPException(status_code=413, detail=PDF_PAPER_TOO_LARGE_MESSAGE) from exc
     except PdfGenerationError as exc:
@@ -1235,6 +1222,33 @@ def generate_paper_pdf_endpoint(
             "X-Content-Type-Options": "nosniff",
         },
     )
+
+
+@router.get("/papers/{paper_id}/items/{paper_item_id}/image")
+def get_paper_item_figure(
+    paper_id: int,
+    paper_item_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_active_user),
+):
+    # Papers-domain ownership convention (#59): a missing paper, a foreign
+    # paper, an item belonging to another paper, and a missing/unresolvable
+    # snapshot all answer 404 — deliberately unlike the questions-image 404/403
+    # split, mirroring the get/render/pdf paper routes.
+    paper = db.query(Paper).filter(Paper.id == paper_id, Paper.user_id == current_user.id).first()
+    if not paper:
+        raise HTTPException(status_code=404, detail=NOT_FOUND_MESSAGE)
+    paper_item = next((item for item in (paper.items or []) if item.id == paper_item_id), None)
+    if paper_item is None:
+        raise HTTPException(status_code=404, detail=NOT_FOUND_MESSAGE)
+
+    # Serve the filename frozen at creation time so later re-crops or edits of
+    # the source question never alter historical papers (snapshot semantics).
+    file_path = resolve_upload_file_path(paper_item.figure_image_snapshot)
+    if not file_path:
+        raise HTTPException(status_code=404, detail=NOT_FOUND_MESSAGE)
+
+    return FileResponse(file_path)
 
 
 # Legacy compatibility endpoint. Keep behavior unchanged while Dashboard uses the Draft flow.
@@ -1477,7 +1491,7 @@ def get_question_image(
     # Ownership is enforced above on the Question row on purpose: SourceAsset rows are
     # deduplicated by sha256 across users, so the asset itself carries no owner
     # semantics and only marks where the shared bytes live.
-    file_path = _resolve_upload_file_path(question.origin_image)
+    file_path = resolve_upload_file_path(question.origin_image)
     if not file_path:
         raise HTTPException(status_code=404, detail=NOT_FOUND_MESSAGE)
 
@@ -1498,7 +1512,7 @@ def get_question_figure(
 
     # Same ownership rationale as get_question_image (#58): the Question row
     # carries ownership; the referenced asset only marks where bytes live.
-    file_path = _resolve_upload_file_path(question.figure_image)
+    file_path = resolve_upload_file_path(question.figure_image)
     if not file_path:
         raise HTTPException(status_code=404, detail=NOT_FOUND_MESSAGE)
 
