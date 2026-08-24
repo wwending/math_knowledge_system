@@ -221,7 +221,9 @@ import { ElMessage } from 'element-plus'
 import { Refresh, Search, Picture as IconPicture } from '@element-plus/icons-vue'
 import { API_V1_BASE_URL } from '../config/api'
 import { createQuestionImageLoader } from '../utils/questionImageLoader'
+import { readStringQuery, replaceQueryValues } from '../utils/urlQueryState'
 import { renderMarkdown } from '@/utils/renderMarkdown'
+import { useRoute, useRouter } from 'vue-router'
 import { formatDateTime } from '../utils/formatDateTime'
 
 const API_BASE = API_V1_BASE_URL
@@ -233,7 +235,10 @@ const questionListLimit = 100
 const loading = ref(false)
 const detailLoading = ref(false)
 const list = ref([])
-const keyword = ref('')
+// #75：搜索词与 ?bank_q= 同步——初始值从 URL 恢复，输入变化时 replace 回写。
+const route = useRoute()
+const router = useRouter()
+const keyword = ref(readStringQuery(route, 'bank_q'))
 const dialogVisible = ref(false)
 const currentItem = ref(null)
 const selectedQuestionIds = ref([])
@@ -248,6 +253,9 @@ const paperForm = ref({
 const { hasImageField, syncItems, imageUrlFor, dispose: disposeImageLoader } = createQuestionImageLoader()
 
 watch(list, (items) => syncItems(items))
+watch(keyword, (value) => {
+  replaceQueryValues(router, route, { bank_q: value })
+})
 
 const getImageUrl = (item) => imageUrlFor(item)
 
