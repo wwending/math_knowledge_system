@@ -67,6 +67,17 @@ export WEB_IMAGE_DIGEST='sha256:<web-64-hex>'
 docker compose --env-file deploy/.env -f compose.prod.yml run --rm backend alembic upgrade head
 ```
 
+## 题图检测模型（#58）
+
+版面分析（题目图形区域自动检测）使用 rapid-layout + ONNXRuntime CPU。DocLayout-YOLO 模型（约 50MB `.onnx`）**不打包进镜像**：后端首次执行检测时从 ModelScope 下载到 `LAYOUT_MODEL_DIR` 并做 SHA256 校验，之后发版/换镜像都复用已下载文件，无需重新下载。
+
+部署要求：
+
+- 在 `deploy/.env` 中设置 `LAYOUT_MODEL_DIR=/data/models`（落在持久卷内；缺省值 `weights` 是容器内临时路径，重启即丢，会导致每次启动重新下载）。
+- 首次启用时服务器需能访问 ModelScope（`www.modelscope.cn`）；离线环境可手动把模型放到 `LAYOUT_MODEL_DIR/doclayout_docstructbench.onnx`。
+- 模型下载失败/缺失不会阻塞录入：系统降级为无图流程并记录 `[LayoutDetect]` warning 日志。
+- 备份提示：`/data/models` 建议纳入备份范围（可选，丢失仅触发一次重新下载）。
+
 ## 备份和恢复
 
 手工备份：

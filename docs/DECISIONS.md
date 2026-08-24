@@ -2,6 +2,30 @@
 
 说明：本文件按时间倒序记录决策。较早决策中的“当前主链路”等表述保留为当时历史事实；如与顶部较新决策冲突，以较新决策和 `docs/STATUS.md` 当前 checkpoint 为准。
 
+## 决策 41：题图检测采用外键方案存图，DocLayout-YOLO 模型运行时下载（#58）
+
+结论：
+
+- **数据模型（外键方案）**：`source_assets` 表不动；`drafts` 增加可空 JSON 列 `detected_figures`（版面分析输出 `[{bbox:[x,y,w,h] 归一化, label, score}]`）；`question_revisions` 增加可空外键 `figure_asset_id -> source_assets.id`（镜像既有 `source_asset_id` 模式）；`questions` 增加可空 `figure_image`（裸文件名，镜像 `origin_image` 模式）与可空 `figure_crop_bbox`。“这行资产是不是题图”由引用方向反查判断，不在 SourceAsset 上加 role 字段。
+- **模型分发（运行时下载）**：DocLayout-YOLO（rapid-layout 1.2.1 的 `doclayout_docstructbench`，imgsz1024，约 50MB .onnx）首次使用时从 ModelScope 下载到 `LAYOUT_MODEL_DIR`（dev 为 `backend/weights/`，prod 设 `/data/models` 落持久卷），SHA256 校验通过后长期复用，发版/换镜像不重下；支持 `LAYOUT_MODEL_PATH` 显式覆盖。下载失败/文件缺失不阻塞录入。
+- **降级策略**：版面分析关闭、模型缺失、推理超时（默认 15s）、引擎异常一律降级为 #58 之前的行为——`detected_figures=[]`、OCR 吃原图、warning 日志，绝不阻塞录入主流程。
+- **裁剪时机**：确认页用户修正后的 bbox 随 save-to-bank 提交，服务端从**原资产像素**按最终 bbox 现裁现存（SourceAsset `kind="figure"`），保证所见即所得且不回传图片字节。
+- **本期边界**：一题只存一张图（多框时由用户选“主图”）；标签白名单仅认 `figure`（`LAYOUT_FIGURE_LABELS` 可调）；legacy `/recognize` 端点不做遮蔽接入。
+
+原因：
+
+- issue #58 要求 PR 前在两个候选方案中定案。role 字段方案需多一处迁移与回填语义，而本期没有任何“脱离题目列出所有题图”的查询需求，反查即可；外键方案与 `origin_image`/`source_asset_id` 既有代码同构，改动面最小，且 #59 组卷带图可直接经 revision/question 引用。
+- 运行时下载使 CI 构建保持封闭、后端镜像体积不变；ModelScope 在国内服务器直连快，一次下载落 /data 卷即永久复用。烘进镜像则每次 pull 多 50MB 且构建依赖外部站点可达性。
+- 零新增 API 费用约束下，RapidLayout(ONNXRuntime CPU) 自托管是既定技术选型（见 #58）；docstructbench 训练域偏学术文档，试卷场景阈值可能需 smoke 后调整，故 conf 阈值与标签白名单均留配置旋钮。
+
+边界：
+
+- 不做整页自动切题、一题多图、图形语义理解（几何关系识别）；`detected_figures` 仅存几何信息。
+- OCR 遮蔽仅在 draft 流生效；遮蔽图临时文件写入私有 `uploads/` 并在 OCR 调用后立即删除，不经公开 `/static`。
+- 超时守卫以线程池 abandon 方式实现，无法强杀进行中的 ONNX 推理；workers=1 下极端情况占用 CPU 由日志观测，必要时后续改子进程隔离。
+
+日期：2026-08-25
+
 ## 决策 40：草稿原图走 Draft 行鉴权的专用图片端点
 
 结论：
