@@ -132,7 +132,10 @@
                   mode="cover"
                 />
                 <div class="cropper-toolbar">
-                  <span>拖动图片定位题目，可使用滚轮或 +/- 缩放。</span>
+                  <div class="cropper-hints">
+                    <span>拖动图片定位题目，可使用滚轮或 +/- 缩放。</span>
+                    <span class="cropper-hint-image">一页多题请逐题框选录入；题目含图可直接框入，确认环节会显示本次送识别的内容。</span>
+                  </div>
                   <el-button-group>
                     <el-button aria-label="缩小裁剪图片" @click="changeCropperScale(-10)">−</el-button>
                     <el-button aria-label="放大裁剪图片" @click="changeCropperScale(10)">+</el-button>
@@ -192,6 +195,26 @@
               :closable="false"
               class="result-alert"
             />
+            <el-card v-if="resultImageUrl" shadow="never" class="result-image-card">
+              <div class="result-image-head">
+                <h3>本次录入图</h3>
+                <span class="result-image-caption">{{ resultImageCaption }}</span>
+              </div>
+              <el-image
+                :src="resultImageUrl"
+                :preview-src-list="[resultImageUrl]"
+                :preview-teleported="true"
+                fit="scale-down"
+                class="result-image"
+              >
+                <template #error>
+                  <div class="result-image-slot">
+                    <el-icon><Picture /></el-icon>
+                    <span>预览加载失败，请重新上传。</span>
+                  </div>
+                </template>
+              </el-image>
+            </el-card>
             <el-card v-if="ocrResult" shadow="hover">
               <div v-if="editMode" class="draft-edit-panel">
                 <h3>编辑内容</h3>
@@ -295,7 +318,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import axios from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Clock, Collection, DataAnalysis, Document, UploadFilled, UserFilled } from '@element-plus/icons-vue'
+import { Clock, Collection, DataAnalysis, Document, Picture, UploadFilled, UserFilled } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import 'vue-cropper/dist/index.css'
 import { VueCropper } from 'vue-cropper'
@@ -333,6 +356,7 @@ const step = ref('select-file')
 const processMode = ref('full')
 
 const currentImageUrl = ref('')
+const cropPreviewUrl = ref('')
 const pdfPages = ref([])
 const pdfLoading = ref(false)
 const ocrLoading = ref(false)
@@ -655,6 +679,13 @@ const setCurrentImageSource = (source) => {
   currentImageUrl.value = source
 }
 
+const setCropPreviewSource = (source) => {
+  if (cropPreviewUrl.value !== source) {
+    revokeImageObjectUrl(cropPreviewUrl.value)
+  }
+  cropPreviewUrl.value = source
+}
+
 const renderPdfToImages = async (file) => {
   setCurrentImageSource('')
   step.value = 'preview-pdf'
@@ -712,6 +743,7 @@ const confirmCropAndUpload = () => {
       if (generation !== cropEncodingGeneration) {
         return
       }
+      setCropPreviewSource(URL.createObjectURL(blob))
       runRecognition(file)
     } catch (error) {
       if (generation !== cropEncodingGeneration) {
@@ -960,6 +992,7 @@ const resetUpload = () => {
   cropEncodingGeneration += 1
   step.value = 'select-file'
   setCurrentImageSource('')
+  setCropPreviewSource('')
   cropperMaxImgSize.value = CROPPER_MAX_EDGE
   cropEncoding.value = false
   pdfPages.value = []
@@ -970,6 +1003,13 @@ const resetUpload = () => {
 
 const renderedContent = computed(() => (ocrResult.value ? renderMarkdown(ocrResult.value) : ''))
 const renderedEditPreview = computed(() => (editContent.value ? renderMarkdown(editContent.value) : ''))
+
+const resultImageUrl = computed(() => (processMode.value === 'crop' ? cropPreviewUrl.value : currentImageUrl.value))
+const resultImageCaption = computed(() =>
+  processMode.value === 'crop'
+    ? '裁剪识别：显示本次框选并送识别的内容'
+    : '整页识别：显示本次上传的整页原图'
+)
 
 const handleLogout = async () => {
   await logout()
@@ -993,6 +1033,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   cropEncodingGeneration += 1
   revokeImageObjectUrl(currentImageUrl.value)
+  revokeImageObjectUrl(cropPreviewUrl.value)
 })
 </script>
 
@@ -1264,6 +1305,18 @@ onBeforeUnmount(() => {
   pointer-events: auto;
 }
 
+.cropper-hints {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cropper-hints .cropper-hint-image {
+  font-size: 12px;
+  opacity: 0.82;
+}
+
 .confirm-btn {
   position: absolute;
   right: 22px;
@@ -1310,6 +1363,45 @@ onBeforeUnmount(() => {
   padding-left: 18px;
   color: #7a4d00;
   line-height: 1.7;
+}
+
+.result-image-card :deep(.el-card__body) {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.result-image-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.result-image-head h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.result-image-caption {
+  color: #667a73;
+  font-size: 12px;
+}
+
+.result-image {
+  display: block;
+  width: 100%;
+  max-height: 420px;
+  border-radius: 10px;
+  background: #f5f7f6;
+}
+
+.result-image-slot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 32px 16px;
+  color: #8a9a93;
 }
 
 .draft-edit-panel {
