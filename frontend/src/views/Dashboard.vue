@@ -342,7 +342,7 @@
         </section>
 
         <section v-else-if="activeMenu === 'bank'" class="content-panel">
-          <bank-panel @paper-created="activeMenu = 'papers'" />
+          <bank-panel @paper-created="activeMenu = 'papers'" @go-upload="activeMenu = 'upload'" />
         </section>
 
         <section v-else-if="activeMenu === 'history'" class="content-panel">
