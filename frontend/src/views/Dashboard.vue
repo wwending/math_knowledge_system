@@ -177,7 +177,7 @@
             v-if="step === 'result' && (ocrResult || draftError || draftStatus === 'saved_to_bank')"
             class="result-section"
           >
-            <el-button class="reset-result-btn" @click="resetUpload">继续录入下一题</el-button>
+            <el-button class="reset-result-btn" @click="handleResetUpload">继续录入下一题</el-button>
             <el-alert
               v-if="draftStatusText"
               :title="draftStatusText"
@@ -335,14 +335,14 @@
               </el-button>
             </div>
             <div v-if="draftStatus === 'saved_to_bank'" class="result-actions">
-              <el-button type="primary" plain @click="resetUpload">继续录入</el-button>
+              <el-button type="primary" plain @click="handleResetUpload">继续录入</el-button>
               <el-button type="success" @click="activeMenu = 'bank'">切换到题库</el-button>
             </div>
           </div>
         </section>
 
         <section v-else-if="activeMenu === 'bank'" class="content-panel">
-          <bank-panel @paper-created="activeMenu = 'papers'" />
+          <bank-panel @paper-created="activeMenu = 'papers'" @go-upload="activeMenu = 'upload'" />
         </section>
 
         <section v-else-if="activeMenu === 'history'" class="content-panel">
@@ -690,10 +690,18 @@ const draftStatusAlertType = computed(() => {
   return 'info'
 })
 
-const handleMenuSelect = (index) => {
+const handleMenuSelect = async (index) => {
   if (index === 'users' && !adminMode.value) {
     return
   }
+  // #72：原地重复点击不打扰；切走前先确认，确认放弃则还原编辑态。
+  if (index === activeMenu.value) {
+    return
+  }
+  if (!(await confirmDiscard())) {
+    return
+  }
+  discardEdits()
   activeMenu.value = index
 }
 
@@ -989,9 +997,41 @@ const enterEditMode = () => {
   editMode.value = true
 }
 
-const cancelEdit = () => {
+// #72：编辑基线是进入编辑时的识别结果，与当前编辑内容不一致即视为有未保存修改。
+const hasUnsavedEdits = computed(() =>
+  editMode.value &&
+  !editSaving.value &&
+  editContent.value !== ocrResult.value
+)
+
+const discardEdits = () => {
   editContent.value = ocrResult.value
   editMode.value = false
+}
+
+// #72：复用 PaperPanel.confirmDiscard 范式——存在未保存修改时先弹确认，
+// 返回 false 表示用户选择继续编辑，调用方据此中止离开动作。
+const confirmDiscard = async () => {
+  if (!hasUnsavedEdits.value) {
+    return true
+  }
+  try {
+    await ElMessageBox.confirm('存在未保存修改，确认放弃吗？', '未保存的修改', {
+      confirmButtonText: '放弃修改',
+      cancelButtonText: '继续编辑',
+      type: 'warning'
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
+const cancelEdit = async () => {
+  if (!(await confirmDiscard())) {
+    return
+  }
+  discardEdits()
 }
 
 const saveDraftEdit = async () => {
@@ -1088,6 +1128,24 @@ const resetUpload = () => {
   resetDraftState()
 }
 
+// #72：结果区入口按钮（继续录入下一题/继续录入）先确认再重置；
+// 内部错误恢复等不可达编辑态的路径仍直接调 resetUpload，避免多余打扰。
+const handleResetUpload = async () => {
+  if (!(await confirmDiscard())) {
+    return
+  }
+  resetUpload()
+}
+
+// #72：有未保存编辑时拦截标签页关闭/刷新；离开编辑态后条件自然不成立。
+const handleBeforeUnload = (event) => {
+  if (!hasUnsavedEdits.value) {
+    return
+  }
+  event.preventDefault()
+  event.returnValue = ''
+}
+
 // #62：图片确认的取消若来自 PDF 选页，保留已解析页面并回到选页器，
 // 用户换页不再需要重新上传和重新解析；普通图片上传保持原全量重置。
 const cancelProcessStep = () => {
@@ -1168,6 +1226,8 @@ const handleChangePassword = () => {
 }
 
 onMounted(async () => {
+  window.addEventListener('beforeunload', handleBeforeUnload)
+
   if (!currentUser.value) {
     await fetchCurrentUser()
   }
@@ -1178,6 +1238,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener('beforeunload', handleBeforeUnload)
   cropEncodingGeneration += 1
   revokeImageObjectUrl(currentImageUrl.value)
   revokeImageObjectUrl(cropPreviewUrl.value)

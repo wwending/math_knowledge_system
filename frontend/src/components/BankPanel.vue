@@ -6,7 +6,7 @@
         <p class="subtitle">仅显示当前登录用户的题目</p>
       </div>
       <div class="header-actions">
-        <div class="selection-summary">
+        <div class="selection-summary" aria-live="polite">
           已选 {{ selectedQuestionIds.length }} 题
         </div>
         <el-button
@@ -37,11 +37,20 @@
       class="info-alert"
     />
 
+    <el-alert
+      v-if="!loading && list.length >= questionListLimit"
+      type="warning"
+      show-icon
+      :closable="false"
+      :title="`题目较多，仅显示前 ${questionListLimit} 条，可使用关键词搜索缩小范围`"
+      class="limit-alert"
+    />
+
     <el-skeleton v-if="loading" :rows="4" animated />
 
     <div v-else-if="filteredList.length === 0" class="empty-state">
       <el-empty description="暂无题目">
-        <el-button type="primary" @click="handleGoUpload">去题目采集上传</el-button>
+        <el-button type="primary" @click="handleGoUpload">去题目录入</el-button>
       </el-empty>
     </div>
 
@@ -215,7 +224,10 @@ import { createQuestionImageLoader } from '../utils/questionImageLoader'
 import { renderMarkdown } from '@/utils/renderMarkdown'
 
 const API_BASE = API_V1_BASE_URL
-const emit = defineEmits(['paper-created'])
+const emit = defineEmits(['paper-created', 'go-upload'])
+
+// 与后端约定的列表拉取上限；达到上限时提示“仅显示前 N 条”（真分页另开 issue）。
+const questionListLimit = 100
 
 const loading = ref(false)
 const detailLoading = ref(false)
@@ -251,7 +263,7 @@ const canSubmitPaper = computed(() => {
 const fetchQuestions = async () => {
   loading.value = true
   try {
-    const res = await axios.get(`${API_BASE}/questions?limit=100`)
+    const res = await axios.get(`${API_BASE}/questions?limit=${questionListLimit}`)
     list.value = res.data || []
   } catch (error) {
     console.error(error)
@@ -408,7 +420,7 @@ const getPreviewText = (text) => {
 const formatTime = (value) => value ? new Date(value).toLocaleString() : '-'
 
 const handleGoUpload = () => {
-  ElMessage.info('请切换到“题目采集”上传题目')
+  emit('go-upload')
 }
 
 onMounted(() => {
@@ -456,6 +468,10 @@ onMounted(() => {
   margin-bottom: 20px;
 }
 
+.limit-alert {
+  margin-bottom: 20px;
+}
+
 .question-list {
   display: flex;
   flex-direction: column;
@@ -496,6 +512,8 @@ onMounted(() => {
 
 .info-box {
   flex: 1;
+  /* 允许 flex 子项收缩到内容宽度以下，配合 ellipsis 防窄窗口横向溢出 */
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -632,5 +650,14 @@ onMounted(() => {
 
 .paper-form {
   margin-top: 8px;
+}
+
+/* 窄屏下详情弹窗改单列，对齐 PaperPanel 的 980px 断点 */
+@media (max-width: 980px) {
+  .detail-layout {
+    flex-direction: column;
+    height: auto;
+    gap: 20px;
+  }
 }
 </style>
