@@ -7,6 +7,15 @@
       </el-button>
     </div>
 
+    <el-alert
+      v-if="!loading && list.length >= historyListLimit"
+      type="warning"
+      show-icon
+      :closable="false"
+      :title="`记录较多，仅显示前 ${historyListLimit} 条`"
+      class="limit-alert"
+    />
+
     <el-skeleton v-if="loading" :rows="3" animated />
     
     <div v-else-if="list.length === 0" class="empty-state">
@@ -120,6 +129,9 @@ import { renderMarkdown } from '@/utils/renderMarkdown'
 
 const API_BASE = API_V1_BASE_URL
 
+// 与后端约定的列表拉取上限；达到上限时提示“仅显示前 N 条”（真分页另开 issue）。
+const historyListLimit = 50
+
 const loading = ref(false)
 const list = ref([])
 const dialogVisible = ref(false)
@@ -141,7 +153,7 @@ onBeforeUnmount(disposeImageLoader)
 const fetchHistory = async () => {
   loading.value = true
   try {
-    const res = await axios.get(`${API_BASE}/history?limit=50`)
+    const res = await axios.get(`${API_BASE}/history?limit=${historyListLimit}`)
     list.value = res.data
   } catch (e) {
     console.error(e)
@@ -182,7 +194,8 @@ onMounted(() => {
 .thumb-img { width: 100%; height: 100%; transition: transform 0.3s; }
 .thumb-box:hover .thumb-img { transform: scale(1.1); }
 
-.info-box { flex: 1; display: flex; flex-direction: column; gap: 8px; cursor: pointer; }
+/* min-width: 0 允许 flex 子项收缩到内容宽度以下，配合 ellipsis 防窄窗口横向溢出 */
+.info-box { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; cursor: pointer; }
 .meta-row { display: flex; gap: 10px; align-items: center; font-size: 12px; color: #999; }
 .preview-text { font-size: 14px; color: #333; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 500px;}
 
@@ -190,6 +203,17 @@ onMounted(() => {
 
 /* 弹窗布局 */
 .detail-layout { display: flex; height: 75vh; gap: 30px; }
+
+.limit-alert { margin-bottom: 20px; }
+
+/* 窄屏下详情弹窗改单列，对齐 PaperPanel 的 980px 断点 */
+@media (max-width: 980px) {
+  .detail-layout {
+    flex-direction: column;
+    height: auto;
+    gap: 20px;
+  }
+}
 /* 左侧容器：负责居中内容 */
 .detail-left {
   flex: 1;
