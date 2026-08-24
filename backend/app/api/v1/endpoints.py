@@ -684,6 +684,31 @@ def get_draft(
     return _build_draft_detail(draft)
 
 
+@router.get("/drafts/{draft_id}/image")
+def get_draft_image(
+    draft_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_active_user),
+):
+    # Issue #22: serve the SourceAsset image behind a Draft so the editor can
+    # reference the recognized region next to the recognition result.
+    # Ownership is enforced on the Draft row on purpose (same rationale as
+    # get_question_image): SourceAsset rows are deduplicated by sha256 across
+    # users, so the asset row itself carries no owner semantics.
+    draft = _ensure_owned_draft(db, draft_id, current_user.id)
+    asset = draft.source_asset or (
+        db.query(SourceAsset).filter(SourceAsset.id == draft.source_asset_id).first()
+    )
+    if not asset:
+        raise HTTPException(status_code=404, detail=NOT_FOUND_MESSAGE)
+
+    file_path = _resolve_upload_file_path(asset.normalized_path or asset.original_path)
+    if not file_path:
+        raise HTTPException(status_code=404, detail=NOT_FOUND_MESSAGE)
+
+    return FileResponse(file_path, media_type=asset.mime)
+
+
 @router.patch("/drafts/{draft_id}", response_model=DraftDetail)
 def update_draft(
     draft_id: int,
