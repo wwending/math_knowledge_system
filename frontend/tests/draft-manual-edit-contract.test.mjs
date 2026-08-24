@@ -36,6 +36,14 @@ requireMatch(/v-if="recognitionDebug\.llm_error"[\s\S]{0,120}type="warning"/, 'r
 requireMatch(/OCR 错误：\{\{ recognitionDebug\.ocr_error \}\}/, 'OCR error alert must render the ocr_error field')
 requireMatch(/LLM 错误：\{\{ recognitionDebug\.llm_error \}\}/, 'LLM error alert must render the llm_error field')
 requireMatch(/if \(status >= 500\) \{[\s\S]{0,300}请求编号/, '5xx error message must include the backend request id when present')
+requireMatch(/const hasUnsavedEdits = computed\(\(\) =>[\s\S]{0,200}editContent\.value !== ocrResult\.value/, '#72 must detect unsaved edits against the recognition baseline')
+requireMatch(/confirmButtonText: '放弃修改'[\s\S]{0,120}cancelButtonText: '继续编辑'/, '#72 unsaved-edit confirmation must offer 放弃/继续编辑 choices')
+requireMatch(/const handleMenuSelect = async \(index\) => \{[\s\S]{0,400}confirmDiscard\(\)/, '#72 menu switching must pass the unsaved-edit guard')
+requireMatch(/const handleResetUpload = async \(\) => \{[\s\S]{0,200}confirmDiscard\(\)/, '#72 result-section reset entry must pass the unsaved-edit guard')
+requireMatch(/@click="handleResetUpload">继续录入下一题/, '#72 继续录入下一题 must route through the discard guard')
+requireMatch(/window\.addEventListener\('beforeunload', handleBeforeUnload\)/, '#72 must install the beforeunload warning while editing')
+requireMatch(/const handleBeforeUnload = \(event\) => \{[\s\S]{0,200}event\.returnValue = ''/, '#72 beforeunload must trigger the browser leave dialog')
+requireMatch(/window\.removeEventListener\('beforeunload', handleBeforeUnload\)/, '#72 must remove the beforeunload listener on unmount')
 
 if (failures.length > 0) {
   console.error('Draft manual edit contract failed:')
