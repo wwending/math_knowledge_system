@@ -2,6 +2,29 @@
 
 说明：本文件按时间倒序记录决策。较早决策中的“当前主链路”等表述保留为当时历史事实；如与顶部较新决策冲突，以较新决策和 `docs/STATUS.md` 当前 checkpoint 为准。
 
+## 决策 42：组卷题图快照存冻结文件名，HTML/PDF 以 data URI 内嵌（#59）
+
+结论：
+
+- **快照列**：`paper_items` 增加可空 `figure_image_snapshot`（裸文件名，镜像文本快照族语义）。建卷/编辑加题时按「最新 revision 的 figure_asset 路径，回退 question.figure_image」取值固化；编辑试卷的保留项不触碰该列，移除后重新加入视为新增、按当下原图重取。不做历史数据回填——历史卷建卷时本就无图，保持现状输出即符合快照语义。
+- **卷内访问端点**：`GET /api/v1/papers/{paper_id}/items/{paper_item_id}/image` 服务快照冻结的文件字节（不是原题当前图形），保证历史卷不受原题后续改图影响。ownership 沿 papers 域惯例：缺失卷/跨用户卷/不属于该卷的条目/快照不可解析一律 404（与 questions 图片端点的 404+403 两段式是有意的资源族差异）。
+- **渲染通道**：Gotenberg multipart 只接收单个 index.html 且禁止外联下载，data URI 是 HTML/PDF 嵌图唯一可行通道。base64 与文件路径只存在于渲染管线的内存中：render model JSON 仅含鉴权 URL 标识（`figure_image_url`），绝不出现路径或 base64。
+- **CSP 放宽最小化**：`img-src` 仅当本卷实际嵌图时从 `'none'` 放宽为 `'data:'`，`.question-figure` CSS 同条件追加；无图试卷的 HTML 输出与 #59 之前逐字节一致。
+- **超限策略**：单图原始字节 >4MB 或整卷累计 >24MB 时整卷渲染失败并以 413 报出题号，宁可失败也不无声丢图；mime 白名单 image/jpeg|png，非白名单静默跳过（413 语义是「过大」，对未知类型报错反而误导）。
+
+原因：
+
+- 快照存冻结引用字符串而非 SourceAsset 外键：与 content_snapshot「建卷时冻结、历史不变」语义直接对齐，且避开 sha256 全局去重资产的所有权纠缠（同一物理文件可被多用户的题目引用）；上传文件由 uuid 命名且当前无删除/覆写流程，冻结引用的稳定性与文本快照同级。
+- 渲染器保持纯函数（schema 进、HTML 出、零磁盘依赖）：文件字节由 PDF 端点经 figure_loader 旁路传入，渲染器单测无需磁盘夹具，安全路径解析收敛在 `app/core/files.py` 一处。
+
+边界：
+
+- 图形编辑/替换交互不在本期；同卷同图不去重（逐题裁剪录入天然不重复）。
+- CSP 只放开 `data:`，script/connect 等仍全禁；markdown/latex 管道已保证用户内容产不出 `<img`，卷面 img 是唯一受控插入点。
+- 整卷接近累计上限时 Gotenberg 60s 读超时是观测项，必要时再调参数或分片。
+
+日期：2026-08-25
+
 ## 决策 41：题图检测采用外键方案存图，DocLayout-YOLO 模型运行时下载（#58）
 
 结论：

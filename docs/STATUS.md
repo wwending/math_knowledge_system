@@ -1,5 +1,13 @@
 # STATUS
 
+## 2026-08-25 组卷带图：PaperItem 题图快照与 HTML/PDF 输出(#59)
+
+- 后端 `paper_items` 新增 `figure_image_snapshot`(Alembic `20260825_0007`)：建卷/编辑加题时按「最新 revision figure_asset → question.figure_image 回退」固化文件名引用；编辑保留项不触碰该列，历史试卷不受原题后续改图影响（快照语义回归测试覆盖）。新增 `GET /api/v1/papers/{paper_id}/items/{paper_item_id}/image` 经鉴权服务冻结字节，papers 域惯例缺失/跨用户一律 404。安全路径解析 `_resolve_upload_file_path` 抽至 `app/core/files.py` 供 service 层复用。
+- render model item 增加 `figure_image_url`（仅鉴权 URL 标识，JSON 不含路径/base64）；HTML 渲染器经旁路 figure_loader 把快照字节转 data URI 内嵌于题干之后，CSP `img-src` 与 `.question-figure` CSS 仅在有图卷放宽/追加，无图卷输出逐字节不变；单图 >4MB 或整卷累计 >24MB 报 413 并指明题号。PDF 经同一份 HTML 由 Gotenberg 转换，自动带图。
+- 前端 PaperPreview 经新建 `paperFigureImageLoader`（全局 axios blob 鉴权预取、按 paper_item_id 对账回收、卸载释放）在 A4 预览渲染题图；URL 统一走 `buildPaperItemImageUrl`。打印样式限宽，禁 lazy 加载（Chromium 打印丢图风险）。
+- 部署：`uploads/` 目录是历史试卷出图的持久依赖，deploy/README 已补留存与备份提示；根 .gitignore 补 `backend/uploads/`。
+- 本地验证：compileall 通过；pytest 全量通过（基线 207 + 新增 17 用例）；alembic upgrade/downgrade 往返通过；test:stage3-contract 全链（含新 paper-figure-contract）通过；build 成功。Staging 迁移执行与真实 Gotenberg 出图 smoke 待部署阶段。
+
 ## 2026-08-24 识别结果编辑页常驻题目原图(#22)
 
 - 后端新增 `GET /api/v1/drafts/{draft_id}/image`：返回草稿引用 SourceAsset 的原图字节（即送识别的裁剪素材），所有权校验挂 Draft 行（未认证 401、非本人 403、文件缺失/路径不可解析 404、穿越拒绝），路径解析复用 `_resolve_upload_file_path`，`media_type` 取 asset.mime；不校验 draft.status，入题库后仍可回看。决策边界见决策 40，API 说明见 `docs/API.md`。
