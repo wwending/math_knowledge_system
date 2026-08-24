@@ -2,6 +2,18 @@
 
 说明：本文件按时间倒序记录每轮工作。较早轮次中的“当前主链路”等表述保留为当时历史事实；当前状态以 `docs/STATUS.md` 最新 checkpoint 和较新的 DECISIONS 为准。
 
+## 2026-08-25 Issue #59 组卷带图——PaperItem 题图快照与 HTML/PDF 输出
+
+目标：
+
+- 含图题目组卷后，A4 预览与导出 PDF 显示该题建卷时固化的图；历史试卷不受原题后续改图影响。
+
+结果：
+
+- `paper_items` 新增 `figure_image_snapshot`（Alembic `20260825_0007`），快照取值与写入端表达式对齐；新增卷内题图鉴权端点（papers 域 404 惯例）；HTML 渲染器以 data URI 内嵌题图（CSP/CSS 条件放宽，无图卷逐字节不变；4MB 单图/24MB 整卷上限超限报题号）；render model 仅暴露鉴权 URL 标识；前端 PaperPreview 经 paperFigureImageLoader blob 预取渲染题图。`_resolve_upload_file_path` 抽至 `app/core/files.py`。
+- 测试：新增 `test_paper_item_figure.py` 10 用例 + 渲染器 7 用例，全量 pytest 通过（224）；alembic 往返通过；新增 `paper-figure-contract.test.mjs` 挂入 stage3 链，build 通过。
+- 文档记账：决策 42、STATUS 顶部 checkpoint、deploy/README uploads 留存说明、根 .gitignore 补 `backend/uploads/`。
+
 ## 2026-08-24 Issue #22 识别结果编辑页常驻题目原图
 
 目标：

@@ -67,4 +67,10 @@ export const buildQuestionImageUrl = (questionId) => `${API_V1_BASE_URL}/questio
 // then rendered via an object URL.
 export const buildDraftImageUrl = (draftId) => `${API_V1_BASE_URL}/drafts/${draftId}/image`
 
+// Authenticated image channel (#59): the figure frozen in a paper item is
+// served by GET /api/v1/papers/{paperId}/items/{paperItemId}/image and must be
+// fetched as an authenticated blob, then rendered via an object URL.
+export const buildPaperItemImageUrl = (paperId, paperItemId) =>
+  `${API_V1_BASE_URL}/papers/${paperId}/items/${paperItemId}/image`
+
 export const buildUploadUrl = buildAssetUrl

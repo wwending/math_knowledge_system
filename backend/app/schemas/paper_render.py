@@ -33,6 +33,11 @@ class PaperRenderItem(BaseModel):
     question_type_label: str
     knowledge_tags: list[PaperRenderKnowledgeTag]
     answer_area: Optional[PaperRenderAnswerArea] = None
+    # Authenticated in-paper figure channel (#59). Clients must fetch this URL
+    # with credentials and render via blob object URLs; the HTML/PDF pipeline
+    # embeds the bytes as a data URI at render time only — figure file paths
+    # and base64 never appear in this JSON response.
+    figure_image_url: Optional[str] = None
 
 
 class PaperRenderSection(BaseModel):

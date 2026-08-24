@@ -59,7 +59,7 @@ docker compose --env-file deploy/.env -f compose.prod.yml run --rm \
 └── backups/
 ```
 
-容器内固定使用 `/data/math_knowledge.db`、`/data/static`、`/data/uploads` 和 `/data/pdf_temp`。题目图片自 #44 起存放在公开 `/static` 挂载之外的 `uploads/` 目录，只能通过带鉴权与所有权校验的 `GET /api/v1/questions/{id}/image` 读取;`deploy.sh` 在部署时会自动把旧的 `${DATA_ROOT}/static/uploads` 迁移到 `${DATA_ROOT}/uploads`(若两个目录同时存在则拒绝执行,需人工合并)。试卷导出 PDF 仅在请求期间存在于内存和 Gotenberg 临时工作区，不写入持久化目录；`pdf_temp` 仍供既有 PDF 上传解析流程使用。后端镜像不包含 `.env` 或真实密钥，构建阶段不会调用 OCR/LLM。运行时 schema 开关被 Compose 强制关闭，数据库只通过以下显式命令升级：
+容器内固定使用 `/data/math_knowledge.db`、`/data/static`、`/data/uploads` 和 `/data/pdf_temp`。题目图片自 #44 起存放在公开 `/static` 挂载之外的 `uploads/` 目录，只能通过带鉴权与所有权校验的 `GET /api/v1/questions/{id}/image` 读取;`deploy.sh` 在部署时会自动把旧的 `${DATA_ROOT}/static/uploads` 迁移到 `${DATA_ROOT}/uploads`(若两个目录同时存在则拒绝执行,需人工合并)。**自 #59 起试卷题图快照按文件名引用 `uploads/` 内的文件，历史试卷的预览与 PDF 出图依赖该目录持久留存**——请确认备份计划覆盖 `uploads.tar.gz`（见下文备份章节）且任何清理脚本不得触碰该目录。试卷导出 PDF 仅在请求期间存在于内存和 Gotenberg 临时工作区，不写入持久化目录；`pdf_temp` 仍供既有 PDF 上传解析流程使用。后端镜像不包含 `.env` 或真实密钥，构建阶段不会调用 OCR/LLM。运行时 schema 开关被 Compose 强制关闭，数据库只通过以下显式命令升级：
 
 ```bash
 export BACKEND_IMAGE_DIGEST='sha256:<backend-64-hex>'

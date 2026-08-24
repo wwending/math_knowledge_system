@@ -48,6 +48,12 @@
             <span v-if="item.score !== null && item.score !== undefined">（{{ item.score }} 分）</span>
           </div>
           <div class="markdown-body question-content" v-html="renderContent(item.content)"></div>
+          <img
+            v-if="figureUrlFor(item)"
+            class="question-figure"
+            :src="figureUrlFor(item)"
+            :alt="`第${item.display_number}题配图`"
+          >
 
           <div
             v-if="item.knowledge_tags.length > 0 || item.answer_area"
@@ -78,11 +84,12 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { onBeforeUnmount, ref, watch } from 'vue'
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 import { Printer } from '@element-plus/icons-vue'
 import { renderMarkdown } from '@/utils/renderMarkdown'
+import { createPaperFigureImageLoader } from '@/utils/paperFigureImageLoader'
 import { API_V1_BASE_URL } from '../config/api'
 
 const props = defineProps({
@@ -91,6 +98,19 @@ const props = defineProps({
     required: true
   }
 })
+
+// Figures frozen in the paper items arrive via authenticated blob prefetch (#59);
+// object URLs are released when the preview unmounts or items disappear.
+const figureLoader = createPaperFigureImageLoader()
+const { figureUrlFor } = figureLoader
+
+watch(
+  () => props.renderModel,
+  (model) => figureLoader.syncRenderModel(model),
+  { immediate: true }
+)
+
+onBeforeUnmount(() => figureLoader.dispose())
 
 const downloadLoading = ref(false)
 
@@ -250,6 +270,15 @@ const handleExportPdf = async () => {
 .question-content > :last-child {
   break-after: avoid;
   page-break-after: avoid;
+}
+
+.question-figure {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin-top: 8px;
+  break-inside: avoid;
+  page-break-inside: avoid;
 }
 
 .preview-tags {

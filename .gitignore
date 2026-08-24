@@ -95,6 +95,9 @@ backend/static/uploads/*
 !backend/static/uploads/.gitkeep
 backend/static/pdf_temp/*
 !backend/static/pdf_temp/.gitkeep
+# Private uploads root (#44): authenticated image bytes only. Paper figure
+# snapshots (#59) reference files here — never commit, never clean.
+backend/uploads/*
 
 # --- Sensitive / Temp Scripts ---
 config_local.py

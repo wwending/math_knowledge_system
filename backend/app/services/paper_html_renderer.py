@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import base64
 import html
 import re
+from typing import Callable, Optional
 
 from latex2mathml.converter import convert as latex_to_mathml
 
-from app.schemas.paper_render import PaperRenderModel
+from app.schemas.paper_render import PaperRenderItem, PaperRenderModel
 from app.services.pdf_generation_service import PdfGenerationOptions
 
 
@@ -14,6 +16,14 @@ MAX_SOURCE_CHARACTERS = 1_000_000
 MAX_INLINE_MATH_CHARACTERS = 10_000
 MAX_BLOCK_MATH_CHARACTERS = 100_000
 MAX_BLOCK_MATH_LINES = 200
+# Figure embed limits (#59): an oversized figure fails the render loudly instead
+# of silently dropping it. Raw-byte caps keep the base64-inflated single-file
+# HTML comfortably inside what Gotenberg's Chromium converts within the read
+# timeout.
+MAX_FIGURE_EMBED_BYTES = 4 * 1024 * 1024
+MAX_TOTAL_FIGURE_EMBED_BYTES = 24 * 1024 * 1024
+ALLOWED_FIGURE_MIME_TYPES = {"image/jpeg", "image/png"}
+FigureLoader = Callable[[PaperRenderItem], Optional[tuple[bytes, Optional[str]]]]
 DANGEROUS_LATEX_COMMAND = re.compile(
     r"\\(?:href|url|includegraphics|htmlClass|htmlId|htmlStyle|htmlData|require|def|newcommand|input|include)\b",
     re.IGNORECASE,
@@ -22,6 +32,11 @@ DANGEROUS_LATEX_COMMAND = re.compile(
 
 class PaperHtmlRenderError(ValueError):
     pass
+
+
+class PaperFigureTooLargeError(PaperHtmlRenderError):
+    """A question figure exceeds the embed limits; its message names the question."""
+
 
 
 def _is_escaped(source: str, position: int) -> bool:
@@ -186,7 +201,12 @@ def _format_number(value: float) -> str:
     return str(int(value)) if float(value).is_integer() else f"{value:g}"
 
 
-def render_paper_html(model: PaperRenderModel, options: PdfGenerationOptions) -> str:
+def render_paper_html(
+    model: PaperRenderModel,
+    options: PdfGenerationOptions,
+    *,
+    figure_loader: Optional[FigureLoader] = None,
+) -> str:
     items = [item for section in model.sections for item in section.items]
     source_characters = len(model.paper.title) + len(model.paper.description or "") + sum(
         len(item.content) for item in items
@@ -195,6 +215,8 @@ def render_paper_html(model: PaperRenderModel, options: PdfGenerationOptions) ->
         raise PaperHtmlRenderError("Paper is too large to render")
 
     sections_html: list[str] = []
+    embedded_any_figure = False
+    embedded_figure_bytes = 0
     for section in model.sections:
         item_html: list[str] = []
         for item in section.items:
@@ -209,10 +231,36 @@ def render_paper_html(model: PaperRenderModel, options: PdfGenerationOptions) ->
                     f'<div class="answer-area" style="height: {item.answer_area.height_mm:g}mm"></div>'
                 )
                 question_tail = f'<div class="question-tail">{tags}{answer_area}</div>'
+            figure_html = ""
+            if figure_loader is not None and item.figure_image_url:
+                source = figure_loader(item)
+                # Unreadable files and mime types outside the whitelist degrade to
+                # "no image" (the loader side logs them); oversized figures fail
+                # the whole render loudly so no image is ever silently lost (#59).
+                if source is not None:
+                    figure_bytes, figure_mime = source
+                    if figure_mime in ALLOWED_FIGURE_MIME_TYPES:
+                        if len(figure_bytes) > MAX_FIGURE_EMBED_BYTES:
+                            raise PaperFigureTooLargeError(
+                                f"第 {item.display_number} 题配图过大，无法嵌入试卷"
+                            )
+                        embedded_figure_bytes += len(figure_bytes)
+                        if embedded_figure_bytes > MAX_TOTAL_FIGURE_EMBED_BYTES:
+                            raise PaperFigureTooLargeError(
+                                f"试卷配图总体积超出嵌入上限（累计到第 {item.display_number} 题时超限）"
+                            )
+                        encoded = base64.b64encode(figure_bytes).decode("ascii")
+                        alt_text = f"第{item.display_number}题配图"
+                        figure_html = (
+                            f'<img class="question-figure" '
+                            f'src="data:{figure_mime};base64,{encoded}" alt="{alt_text}">'
+                        )
+                        embedded_any_figure = True
             item_html.append(
                 '<article class="question">'
                 f'<div class="question-heading"><span>{item.display_number}.</span>{score}</div>'
                 f'<div class="question-content">{_render_markdown(item.content)}</div>'
+                f"{figure_html}"
                 f"{question_tail or tags}</article>"
             )
         sections_html.append(
@@ -229,11 +277,19 @@ def render_paper_html(model: PaperRenderModel, options: PdfGenerationOptions) ->
         f"{options.margin_top_mm:g}mm {options.margin_right_mm:g}mm "
         f"{options.margin_bottom_mm:g}mm {options.margin_left_mm:g}mm"
     )
+    # Papers without figures keep the exact pre-#59 markup byte for byte: the
+    # data: relaxation and the figure CSS only appear when a figure was embedded.
+    img_src_directive = "data:" if embedded_any_figure else "&#x27;none&#x27;"
+    figure_css = (
+        "\n.question-figure { max-width: 100%; height: auto; margin-top: 2mm; break-inside: avoid; page-break-inside: avoid; }"
+        if embedded_any_figure
+        else ""
+    )
     return f'''<!doctype html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src &#x27;none&#x27;; style-src &#x27;unsafe-inline&#x27;; img-src &#x27;none&#x27;; font-src &#x27;none&#x27;; script-src &#x27;none&#x27;; connect-src &#x27;none&#x27;; object-src &#x27;none&#x27;; base-uri &#x27;none&#x27;; form-action &#x27;none&#x27;">
+<meta http-equiv="Content-Security-Policy" content="default-src &#x27;none&#x27;; style-src &#x27;unsafe-inline&#x27;; img-src {img_src_directive}; font-src &#x27;none&#x27;; script-src &#x27;none&#x27;; connect-src &#x27;none&#x27;; object-src &#x27;none&#x27;; base-uri &#x27;none&#x27;; form-action &#x27;none&#x27;">
 <title>{html.escape(model.paper.title)}</title>
 <style>
 @page {{ size: {page_size}; margin: {margins}; }}
@@ -259,7 +315,7 @@ h1 {{ margin: 0 0 2.5mm; font-size: 20pt; line-height: 1.3; }}
 .knowledge-tags {{ display: flex; flex-wrap: wrap; gap: 1.5mm; margin-top: 2mm; font-size: 9pt; color: #52616b; }}
 .knowledge-tags span {{ border: 0.2mm solid #cbd5df; border-radius: 1mm; padding: 0.5mm 1.5mm; }}
 .question-tail {{ break-before: avoid; page-break-before: avoid; break-inside: avoid; page-break-inside: avoid; }}
-.answer-area {{ margin-top: 4mm; break-inside: avoid; page-break-inside: avoid; background: #fff; }}
+.answer-area {{ margin-top: 4mm; break-inside: avoid; page-break-inside: avoid; background: #fff; }}{figure_css}
 </style>
 </head>
 <body>
