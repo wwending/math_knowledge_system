@@ -2,7 +2,7 @@
   <div class="history-container">
     <div class="header">
       <h2>👮‍♂️ 全局题目监控 (管理员)</h2>
-      <el-button @click="fetchHistory" :loading="loading" circle>
+      <el-button aria-label="刷新题目监控" @click="fetchHistory" :loading="loading" circle>
         <el-icon><Refresh /></el-icon>
       </el-button>
     </div>
