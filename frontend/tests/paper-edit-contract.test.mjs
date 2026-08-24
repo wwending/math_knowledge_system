@@ -48,6 +48,18 @@ if (source.includes('markdown-it') || source.includes('MarkdownIt')) {
   failures.push('PaperPanel initializes a Markdown renderer directly')
 }
 
+// Question picker rows must not wrap el-checkbox (which renders its own
+// <label class="el-checkbox">) in a native label — nested labels are invalid HTML.
+if (!/<div[^>]*class="question-picker-item"[^>]*@click=/.test(source)) {
+  failures.push('PaperPanel question-picker row must be a clickable div wrapper')
+}
+if (/<label[^>]*class="question-picker-item"/.test(source)) {
+  failures.push('PaperPanel question-picker row must not use a native <label> around el-checkbox')
+}
+if (!source.includes("closest('.el-checkbox')")) {
+  failures.push('PaperPanel question-picker row click must ignore clicks inside the checkbox to avoid double toggle')
+}
+
 if (failures.length > 0) {
   console.error('Paper editing frontend contract failed:')
   for (const failure of failures) console.error(`- ${failure}`)
