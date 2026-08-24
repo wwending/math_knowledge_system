@@ -10,10 +10,12 @@
 
     <div v-else class="paper-layout">
       <div class="paper-list">
-        <el-card v-for="paper in papers" :key="paper.id" class="paper-card" :class="{ active: selectedPaperId === paper.id }" shadow="hover" @click="openPaperDetail(paper.id)">
-          <div class="paper-title-row"><strong>{{ paper.title }}</strong><el-tag size="small" type="info">{{ paper.status }}</el-tag></div>
-          <div class="paper-meta-grid"><span>题数：{{ paper.item_count }}</span><span>总分：{{ paper.total_score }}</span><span>创建：{{ formatTime(paper.created_at) }}</span></div>
-        </el-card>
+        <!-- #69: native buttons so keyboard users can open any paper detail
+             (Enter/Space for free); name comes from the visible paper title. -->
+        <button v-for="paper in papers" :key="paper.id" type="button" class="paper-card" :class="{ active: selectedPaperId === paper.id }" @click="openPaperDetail(paper.id)">
+          <span class="paper-title-row"><strong>{{ paper.title }}</strong><el-tag size="small" type="info">{{ paper.status }}</el-tag></span>
+          <span class="paper-meta-grid"><span>题数：{{ paper.item_count }}</span><span>总分：{{ paper.total_score }}</span><span>创建：{{ formatTime(paper.created_at) }}</span></span>
+        </button>
       </div>
 
       <div class="paper-detail">
@@ -308,7 +310,11 @@ onBeforeUnmount(() => window.removeEventListener('paper-created', handlePaperCre
 .empty-state { margin-top: 30px; text-align: center; }
 .paper-layout { display: grid; grid-template-columns: minmax(260px, 360px) minmax(0, 1fr); gap: 18px; align-items: start; }
 .paper-list, .paper-items { display: flex; flex-direction: column; gap: 12px; }
-.paper-card { cursor: pointer; border: 1px solid transparent; }
+/* #69: replaces the old clickable el-card; resets the button UA defaults so
+   the card looks unchanged, and keeps the focus outline for keyboard users. */
+.paper-card { display: block; width: 100%; cursor: pointer; font: inherit; color: inherit; text-align: left; padding: 20px; background: #fff; border: 1px solid transparent; border-radius: 4px; }
+.paper-card:hover { box-shadow: var(--el-box-shadow-light); }
+.paper-card:focus-visible { outline: 2px solid #409eff; outline-offset: 2px; }
 .paper-card.active { border-color: #409eff; }
 .paper-title-row { display: flex; justify-content: space-between; gap: 10px; align-items: center; }
 .paper-title-row strong { color: #1f3442; word-break: break-word; }
