@@ -1,7 +1,7 @@
 <template>
   <div class="history-container">
     <div class="header">
-      <h2>👮‍♂️ 全局题目监控 (管理员)</h2>
+      <h2>识别历史</h2>
       <el-button @click="fetchHistory" :loading="loading" circle>
         <el-icon><Refresh /></el-icon>
       </el-button>

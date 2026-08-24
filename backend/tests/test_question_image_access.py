@@ -239,6 +239,22 @@ class QuestionImageAccessTests(unittest.TestCase):
             f"{self.IMAGE_URL_PREFIX}/{self.owner_question_id}/image",
         )
 
+    def test_history_is_isolated_per_user(self):
+        """GET /history must only return the calling user's questions (#67)."""
+        owner_history = self.client.get("/api/v1/history?limit=50", headers=self.owner_headers)
+        self.assertEqual(owner_history.status_code, 200)
+        owner_ids = {item["id"] for item in owner_history.json()}
+        self.assertIn(self.owner_question_id, owner_ids)
+        self.assertIn(self.imageless_question_id, owner_ids)
+        self.assertNotIn(self.shared_question_id, owner_ids)
+
+        other_history = self.client.get("/api/v1/history?limit=50", headers=self.other_headers)
+        self.assertEqual(other_history.status_code, 200)
+        other_ids = {item["id"] for item in other_history.json()}
+        self.assertIn(self.shared_question_id, other_ids)
+        self.assertNotIn(self.owner_question_id, other_ids)
+        self.assertNotIn(self.imageless_question_id, other_ids)
+
     def test_public_static_mount_no_longer_serves_uploads(self):
         response = self.client.get(f"/static/uploads/{IMAGE_FILENAME}")
         self.assertEqual(response.status_code, 404)
