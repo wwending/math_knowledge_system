@@ -97,7 +97,8 @@ install -d -m 0775 -o 10001 -g 10001 \
     "${DATA_ROOT}" \
     "${DATA_ROOT}/static" \
     "${DATA_ROOT}/uploads" \
-    "${DATA_ROOT}/pdf_temp"
+    "${DATA_ROOT}/pdf_temp" \
+    "${DATA_ROOT}/models"
 install -d -m 0775 "${BACKUP_ROOT}"
 
 if ! docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" pull backend web; then
