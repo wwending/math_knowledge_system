@@ -38,6 +38,11 @@
           <el-form-item prop="phone">
             <el-input
               v-model="loginForm.phone"
+              name="phone"
+              autocomplete="tel"
+              inputmode="numeric"
+              :spellcheck="false"
+              aria-label="手机号"
               placeholder="手机号"
               :prefix-icon="Iphone"
               @keyup.enter="handleLogin"
@@ -48,6 +53,9 @@
             <el-input
               v-model="loginForm.password"
               type="password"
+              name="password"
+              autocomplete="current-password"
+              aria-label="密码"
               placeholder="密码"
               show-password
               :prefix-icon="Lock"

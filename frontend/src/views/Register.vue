@@ -56,6 +56,11 @@
             <el-form-item prop="phone">
               <el-input
                 v-model="registerForm.phone"
+                name="phone"
+                autocomplete="username"
+                inputmode="numeric"
+                :spellcheck="false"
+                aria-label="手机号"
                 placeholder="手机号"
                 :prefix-icon="Iphone"
               />
@@ -64,6 +69,9 @@
             <el-form-item prop="displayName">
               <el-input
                 v-model="registerForm.displayName"
+                name="displayName"
+                autocomplete="name"
+                aria-label="显示名称"
                 placeholder="显示名称"
                 :prefix-icon="User"
               />
@@ -73,6 +81,9 @@
               <el-input
                 v-model="registerForm.password"
                 type="password"
+                name="password"
+                autocomplete="new-password"
+                aria-label="密码"
                 placeholder="密码"
                 show-password
                 :prefix-icon="Lock"
