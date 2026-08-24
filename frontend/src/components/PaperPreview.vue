@@ -94,7 +94,7 @@ const props = defineProps({
 
 const downloadLoading = ref(false)
 
-const renderContent = (content) => content ? renderMarkdown(content) : '<span style="color:#999">暂无内容</span>'
+const renderContent = (content) => content ? renderMarkdown(content) : '<span style="color:#767676">暂无内容</span>'
 
 const downloadFilename = (contentDisposition) => {
   const encoded = contentDisposition?.match(/filename\*=UTF-8''([^;]+)/i)?.[1]

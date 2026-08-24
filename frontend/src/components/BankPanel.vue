@@ -2,7 +2,7 @@
   <div class="bank-container">
     <div class="header-row">
       <div>
-        <h2>📚 智能题库</h2>
+        <h2>智能题库</h2>
         <p class="subtitle">仅显示当前登录用户的题目</p>
       </div>
       <div class="header-actions">
@@ -222,6 +222,7 @@ import { Refresh, Search, Picture as IconPicture } from '@element-plus/icons-vue
 import { API_V1_BASE_URL } from '../config/api'
 import { createQuestionImageLoader } from '../utils/questionImageLoader'
 import { renderMarkdown } from '@/utils/renderMarkdown'
+import { formatDateTime } from '../utils/formatDateTime'
 
 const API_BASE = API_V1_BASE_URL
 const emit = defineEmits(['paper-created', 'go-upload'])
@@ -409,15 +410,15 @@ const formatDifficultyStatus = (item) => {
   return formatDifficultyStars(item?.difficulty_level)
 }
 
-const renderTex = (text) => text ? renderMarkdown(text) : '<span style="color:#999">暂无内容</span>'
+const renderTex = (text) => text ? renderMarkdown(text) : '<span style="color:#767676">暂无内容</span>'
 
 const getPreviewText = (text) => {
   if (!text) return '暂无识别内容'
   const clean = text.replace(/[#*`$]/g, '')
-  return clean.length > 60 ? `${clean.slice(0, 60)}...` : clean
+  return clean.length > 60 ? `${clean.slice(0, 60)}…` : clean
 }
 
-const formatTime = (value) => value ? new Date(value).toLocaleString() : '-'
+const formatTime = (value) => formatDateTime(value)
 
 const handleGoUpload = () => {
   emit('go-upload')
@@ -525,7 +526,9 @@ onMounted(() => {
   gap: 10px;
   align-items: center;
   font-size: 12px;
-  color: #999;
+  color: #767676;
+  /* ID/时间等数字列用等宽数字（#76） */
+  font-variant-numeric: tabular-nums;
 }
 
 .difficulty-text {
@@ -599,7 +602,7 @@ onMounted(() => {
 }
 
 .image-placeholder {
-  color: #999;
+  color: #767676;
 }
 
 .detail-right {
@@ -612,8 +615,9 @@ onMounted(() => {
   display: flex;
   gap: 10px;
   align-items: center;
-  color: #999;
+  color: #767676;
   font-size: 12px;
+  font-variant-numeric: tabular-nums; /* ID/时间等数字列（#76） */
   margin-bottom: 8px;
 }
 
@@ -630,7 +634,7 @@ onMounted(() => {
 }
 
 .empty-text {
-  color: #999;
+  color: #767676;
 }
 
 .image-slot {
@@ -640,7 +644,7 @@ onMounted(() => {
   width: 100%;
   height: 100%;
   background: #f5f7fa;
-  color: #909399;
+  color: #767676;
   font-size: 14px;
 }
 

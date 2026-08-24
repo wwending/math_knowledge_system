@@ -88,7 +88,10 @@
 
             <div v-loading="pdfLoading" class="pdf-grid">
               <!-- #68: native buttons so keyboard users can pick a page
-                   (Enter/Space for free); name comes from the visible 第 N 页 text. -->
+                   (Enter/Space for free); name comes from the visible 第 N 页 text,
+                   so the thumbnail stays decorative (alt=""). -->
+              <!-- #76: intrinsic width/height reserve layout space before the
+                   data URL decodes, preventing CLS in the page grid. -->
               <button
                 v-for="(pageData, index) in pdfPages"
                 :key="index"
@@ -96,7 +99,7 @@
                 class="pdf-page-card"
                 @click="selectPdfPage(pageData)"
               >
-                <img :src="pageData.src" class="pdf-thumb" alt="" />
+                <img :src="pageData.src" :width="pageData.width" :height="pageData.height" class="pdf-thumb" alt="" />
                 <span class="page-number">第 {{ index + 1 }} 页</span>
               </button>
             </div>
@@ -160,7 +163,7 @@
               </div>
 
               <div v-else class="full-preview">
-                <img :src="currentImageUrl" />
+                <img :src="currentImageUrl" alt="待识别的整页题目图片预览" />
                 <el-button type="primary" :loading="ocrLoading" :disabled="isDraftBusy" @click="uploadFullImage">
                   确认整页上传
                 </el-button>
@@ -276,7 +279,7 @@
                     <div class="result-actions">
                       <el-button :disabled="editSaving" @click="cancelEdit">取消修改</el-button>
                       <el-button type="primary" :loading="editSaving" @click="saveDraftEdit">
-                        {{ editSaving ? '正在保存...' : '保存修改' }}
+                        {{ editSaving ? '正在保存…' : '保存修改' }}
                       </el-button>
                     </div>
                   </div>
@@ -331,7 +334,7 @@
             <div v-if="draftStatus === 'draft_ready' && !editMode" class="result-actions">
               <el-button :disabled="saveLoading" @click="enterEditMode">编辑识别结果</el-button>
               <el-button type="primary" :loading="saveLoading" :disabled="!canSaveDraft" @click="saveDraftToBank">
-                {{ saveLoading ? '正在保存...' : '保存入题库' }}
+                {{ saveLoading ? '正在保存…' : '保存入题库' }}
               </el-button>
             </div>
             <div v-if="draftStatus === 'saved_to_bank'" class="result-actions">
@@ -645,18 +648,18 @@ const canSaveDraft = computed(
 
 const draftOperationText = computed(() => {
   if (draftStage.value === 'uploading_asset') {
-    return '正在上传素材...'
+    return '正在上传素材…'
   }
   if (draftStage.value === 'creating_draft') {
-    return '正在创建草稿...'
+    return '正在创建草稿…'
   }
   if (draftStage.value === 'recognizing') {
-    return '正在识别题目，请稍候...'
+    return '正在识别题目，请稍候…'
   }
   if (draftStage.value === 'saving_to_bank') {
-    return '正在保存入题库...'
+    return '正在保存入题库…'
   }
-  return '正在处理，请稍候...'
+  return '正在处理，请稍候…'
 })
 
 const draftStatusText = computed(() => {
@@ -1422,7 +1425,8 @@ onBeforeUnmount(() => {
   text-align: center;
   border-radius: 18px;
   cursor: pointer;
-  transition: 0.2s ease;
+  /* hover 只变这两项，显式列出避免隐式 all 过渡（#76） */
+  transition: border-color 0.2s ease, background-color 0.2s ease;
 }
 
 .upload-box:hover {
@@ -1465,6 +1469,8 @@ onBeforeUnmount(() => {
 
 .pdf-thumb {
   width: 100%;
+  /* 宽高属性只作加载前占位；CSS 接管后按固有比例铺满卡片宽度。 */
+  height: auto;
   border-radius: 10px;
   border: 1px solid #edf1f0;
 }
@@ -1836,6 +1842,21 @@ onBeforeUnmount(() => {
   .identity-card {
     flex-direction: column;
     align-items: flex-start;
+  }
+}
+
+/* prefers-reduced-motion（#76）：减弱动效用户不接收位移/过渡；
+   hover 提示仍由边框色和阴影承担，信息不丢。 */
+@media (prefers-reduced-motion: reduce) {
+  .upload-box {
+    transition: none;
+  }
+
+  .pdf-page-card,
+  .pdf-page-card:hover,
+  .pdf-page-card:focus-visible {
+    transform: none;
+    transition: none;
   }
 }
 </style>

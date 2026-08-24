@@ -343,7 +343,7 @@ onMounted(() => {
 
   .form-tip {
     margin: 0 0 24px;
-    color: #999;
+    color: #767676;
     font-size: 14px;
   }
 }
@@ -379,7 +379,7 @@ onMounted(() => {
 }
 
 .footer-text {
-  color: #7b8794;
+  color: #767676;
 }
 
 .footer-link {

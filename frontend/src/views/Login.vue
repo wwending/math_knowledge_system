@@ -124,7 +124,7 @@ const capabilityMessage = computed(() => {
 
 const registerFooterText = computed(() => {
   if (publicSignupCapability.value.loading) {
-    return '正在确认注册状态...'
+    return '正在确认注册状态…'
   }
 
   return publicSignupCapability.value.enabled ? '还没有账号？' : '需要新账号？'
@@ -310,7 +310,8 @@ onMounted(() => {
 
   .form-tip {
     margin: 0 0 24px;
-    color: #999;
+    /* #767676 起满足白底 WCAG AA 4.5:1；#999 系灰字一律不用（#76）。 */
+    color: #767676;
     font-size: 14px;
   }
 }
@@ -321,7 +322,7 @@ onMounted(() => {
 
 .password-help {
   margin: 0 0 18px;
-  color: #8d96a0;
+  color: #767676;
   font-size: 13px;
   line-height: 1.6;
 }
@@ -350,7 +351,7 @@ onMounted(() => {
 
 .footer-text,
 .footer-note {
-  color: #7b8794;
+  color: #767676;
 }
 
 .footer-link {
