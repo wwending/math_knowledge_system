@@ -96,15 +96,20 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import axios from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
+import { useRoute, useRouter } from 'vue-router'
 import { API_V1_BASE_URL } from '../config/api'
+import { readStringQuery, replaceQueryValues } from '../utils/urlQueryState'
 import { renderMarkdown } from '@/utils/renderMarkdown'
+import { formatDateTime } from '../utils/formatDateTime'
 import PaperPreview from './PaperPreview.vue'
 
 const API_BASE = API_V1_BASE_URL
+const route = useRoute()
+const router = useRouter()
 const papers = ref([])
 const currentPaper = ref(null)
 const selectedPaperId = ref(null)
@@ -116,6 +121,10 @@ const errorMessage = ref('')
 const previewErrorMessage = ref('')
 const paperRenderModel = ref(null)
 const answerAreaMode = ref('after_each_question')
+// #77: 答题区模式变更后旧预览仍基于旧设置，直接失效待重新生成。
+watch(answerAreaMode, () => {
+  if (paperRenderModel.value) paperRenderModel.value = null
+})
 const editMode = ref(false)
 const editDraft = ref(null)
 const editBaseline = ref('')
@@ -156,6 +165,11 @@ const fetchPapers = async () => {
   } finally { listLoading.value = false }
 }
 
+// #75：选中试卷同步到 ?paper_id=。深链指向不存在/无权试卷时，fetchPapers 的
+// 陈旧校验会把选中清空，本 watcher 随之把该参数从 URL 移除，链接自动自愈。
+watch(selectedPaperId, (paperId) => {
+  replaceQueryValues(router, route, { paper_id: paperId ?? '' })
+})
 const confirmDiscard = async () => {
   if (!editMode.value || JSON.stringify(editDraft.value) === editBaseline.value) return true
   try {
@@ -288,7 +302,7 @@ const savePaper = async () => {
 }
 
 const handlePaperCreated = async () => fetchPapers()
-const renderSnapshot = (content) => content ? renderMarkdown(content) : '<span style="color:#999">暂无内容</span>'
+const renderSnapshot = (content) => content ? renderMarkdown(content) : '<span style="color:#767676">暂无内容</span>'
 const getTags = (item) => (item?.knowledge_tags_snapshot || []).map((tag) => typeof tag === 'string' ? { label: tag } : tag && typeof tag === 'object' ? { label: tag.label || tag.name || String(tag) } : { label: String(tag) })
 const questionTypeLabels = { single_choice: '单选题', multiple_choice: '多选题', fill_blank: '填空题', solution: '解答题', judge: '判断题', unknown: '未知' }
 const formatQuestionType = (questionType) => questionTypeLabels[questionType] || '未知'
@@ -296,8 +310,16 @@ const formatDifficultyStars = (difficultyLevel) => {
   const level = Number(difficultyLevel)
   return Number.isInteger(level) && level >= 1 && level <= 5 ? `${'★'.repeat(level)}${'☆'.repeat(5 - level)}` : '未评估'
 }
-const formatTime = (value) => value ? new Date(value).toLocaleString() : '-'
-onMounted(() => { fetchPapers(); window.addEventListener('paper-created', handlePaperCreated) })
+const formatTime = (value) => formatDateTime(value)
+onMounted(() => {
+  fetchPapers()
+  window.addEventListener('paper-created', handlePaperCreated)
+  // #75：从 ?paper_id= 恢复选中的试卷；非法值直接忽略。
+  const requestedPaperId = Number.parseInt(readStringQuery(route, 'paper_id'), 10)
+  if (Number.isInteger(requestedPaperId) && requestedPaperId > 0) {
+    openPaperDetail(requestedPaperId)
+  }
+})
 onBeforeUnmount(() => window.removeEventListener('paper-created', handlePaperCreated))
 </script>
 
@@ -318,12 +340,12 @@ onBeforeUnmount(() => window.removeEventListener('paper-created', handlePaperCre
 .paper-card.active { border-color: #409eff; }
 .paper-title-row { display: flex; justify-content: space-between; gap: 10px; align-items: center; }
 .paper-title-row strong { color: #1f3442; word-break: break-word; }
-.paper-meta-grid { display: grid; gap: 6px; margin-top: 12px; color: #667780; font-size: 13px; }
+.paper-meta-grid { display: grid; gap: 6px; margin-top: 12px; color: #667780; font-size: 13px; font-variant-numeric: tabular-nums; /* 题数/总分/时间列（#76） */ }
 .paper-detail { min-height: 360px; padding: 18px; border: 1px solid #e5ece9; border-radius: 8px; background: #fff; }
 .detail-header { margin-bottom: 18px; align-items: flex-start; }
 .detail-header h3 { margin: 0 0 8px; color: #1f3442; }
 .detail-header p { margin: 0; color: #667780; line-height: 1.7; }
-.detail-stats { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: flex-end; color: #667780; font-size: 13px; }
+.detail-stats { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: flex-end; color: #667780; font-size: 13px; font-variant-numeric: tabular-nums; }
 .preview-controls { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px; margin-bottom: 16px; border: 1px solid #e5ece9; border-radius: 8px; background: #f8fbfa; }
 .preview-config, .item-heading, .knowledge-tags, .reorder-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .preview-config { color: #536471; font-size: 13px; }

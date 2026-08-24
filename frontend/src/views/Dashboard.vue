@@ -1,6 +1,12 @@
 <template>
   <div class="dashboard-layout">
-    <aside class="sidebar">
+    <aside
+      id="dashboard-sidebar"
+      ref="sidebarRef"
+      class="sidebar"
+      :class="{ 'is-open': mobileNavOpen }"
+      tabindex="-1"
+    >
       <div class="sidebar-brand">
         <div class="brand-icon">
           <el-icon :size="24"><DataAnalysis /></el-icon>
@@ -35,11 +41,33 @@
       </el-menu>
     </aside>
 
+    <!-- #73: 窄屏抽屉遮罩；桌面断点下整体隐藏，不影响布局。 -->
+    <div
+      class="sidebar-backdrop"
+      :class="{ 'is-visible': mobileNavOpen }"
+      aria-hidden="true"
+      @click="closeMobileNav()"
+    ></div>
+
     <div class="main-shell">
       <header class="topbar">
-        <div>
-          <h1>{{ pageTitle }}</h1>
-          <p>{{ pageDescription }}</p>
+        <div class="topbar-heading">
+          <!-- #73: 窄屏折叠导航入口；宽屏由 CSS 隐藏。 -->
+          <el-button
+            ref="navToggleRef"
+            class="nav-toggle"
+            :aria-expanded="mobileNavOpen"
+            aria-controls="dashboard-sidebar"
+            :aria-label="mobileNavOpen ? '关闭导航菜单' : '打开导航菜单'"
+            @click="toggleMobileNav"
+          >
+            <el-icon><Menu /></el-icon>
+            <span>菜单</span>
+          </el-button>
+          <div>
+            <h1>{{ pageTitle }}</h1>
+            <p>{{ pageDescription }}</p>
+          </div>
         </div>
         <div class="topbar-actions">
           <div class="identity-card">
@@ -88,7 +116,10 @@
 
             <div v-loading="pdfLoading" class="pdf-grid">
               <!-- #68: native buttons so keyboard users can pick a page
-                   (Enter/Space for free); name comes from the visible 第 N 页 text. -->
+                   (Enter/Space for free); name comes from the visible 第 N 页 text,
+                   so the thumbnail stays decorative (alt=""). -->
+              <!-- #76: intrinsic width/height reserve layout space before the
+                   data URL decodes, preventing CLS in the page grid. -->
               <button
                 v-for="(pageData, index) in pdfPages"
                 :key="index"
@@ -96,7 +127,7 @@
                 class="pdf-page-card"
                 @click="selectPdfPage(pageData)"
               >
-                <img :src="pageData.src" class="pdf-thumb" alt="" />
+                <img :src="pageData.src" :width="pageData.width" :height="pageData.height" class="pdf-thumb" alt="" />
                 <span class="page-number">第 {{ index + 1 }} 页</span>
               </button>
             </div>
@@ -160,7 +191,7 @@
               </div>
 
               <div v-else class="full-preview">
-                <img :src="currentImageUrl" />
+                <img :src="currentImageUrl" alt="待识别的整页题目图片预览" />
                 <el-button type="primary" :loading="ocrLoading" :disabled="isDraftBusy" @click="uploadFullImage">
                   确认整页上传
                 </el-button>
@@ -168,7 +199,8 @@
             </div>
           </div>
 
-          <div v-if="ocrLoading && step === 'uploading'" class="loading-state">
+          <!-- #73: 识别进度文案对读屏器可感知。 -->
+          <div v-if="ocrLoading && step === 'uploading'" class="loading-state" aria-live="polite">
             <el-skeleton :rows="5" animated />
             <p>{{ draftOperationText }}</p>
           </div>
@@ -178,30 +210,38 @@
             class="result-section"
           >
             <el-button class="reset-result-btn" @click="handleResetUpload">继续录入下一题</el-button>
-            <el-alert
-              v-if="draftStatusText"
-              :title="draftStatusText"
-              :type="draftStatusAlertType"
-              show-icon
-              :closable="false"
-              class="result-alert"
-            />
-            <el-alert
-              v-if="recognizeWarning"
-              :title="recognizeWarning"
-              type="warning"
-              show-icon
-              :closable="false"
-              class="result-alert"
-            />
-            <el-alert
-              v-if="draftError && draftStatus !== 'failed'"
-              :title="draftError"
-              type="error"
-              show-icon
-              :closable="false"
-              class="result-alert"
-            />
+            <!-- #73: 状态 alert 集中在一个 aria-live 容器里，进度/结果变化对读屏器可感知。 -->
+            <div class="result-status-region" aria-live="polite">
+              <el-alert
+                v-if="draftStatusText"
+                :title="draftStatusText"
+                :type="draftStatusAlertType"
+                show-icon
+                :closable="false"
+                class="result-alert"
+              />
+              <el-alert
+                v-if="recognizeWarning"
+                :title="recognizeWarning"
+                type="warning"
+                show-icon
+                :closable="false"
+                class="result-alert"
+              />
+              <el-alert
+                v-if="draftError && draftStatus !== 'failed'"
+                :title="draftError"
+                type="error"
+                show-icon
+                :closable="false"
+                class="result-alert"
+              />
+            </div>
+            <!-- #73: 保存成功后技术编号只作次要信息，需要时可一键复制。 -->
+            <div v-if="draftStatus === 'saved_to_bank' && saveResult?.question_id" class="save-result-meta">
+              <span>题目编号：{{ saveResult.question_id }}</span>
+              <el-button link size="small" @click="copyQuestionId">复制编号</el-button>
+            </div>
             <!-- #61 confirmation preview: shown while recognition runs; once the
                  result arrives the split layout below takes over and the same
                  pixels stay visible in the persistent reference panel. -->
@@ -276,7 +316,7 @@
                     <div class="result-actions">
                       <el-button :disabled="editSaving" @click="cancelEdit">取消修改</el-button>
                       <el-button type="primary" :loading="editSaving" @click="saveDraftEdit">
-                        {{ editSaving ? '正在保存...' : '保存修改' }}
+                        {{ editSaving ? '正在保存…' : '保存修改' }}
                       </el-button>
                     </div>
                   </div>
@@ -331,7 +371,7 @@
             <div v-if="draftStatus === 'draft_ready' && !editMode" class="result-actions">
               <el-button :disabled="saveLoading" @click="enterEditMode">编辑识别结果</el-button>
               <el-button type="primary" :loading="saveLoading" :disabled="!canSaveDraft" @click="saveDraftToBank">
-                {{ saveLoading ? '正在保存...' : '保存入题库' }}
+                {{ saveLoading ? '正在保存…' : '保存入题库' }}
               </el-button>
             </div>
             <div v-if="draftStatus === 'saved_to_bank'" class="result-actions">
@@ -362,11 +402,11 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import axios from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Clock, Collection, DataAnalysis, Document, Picture, UploadFilled, UserFilled } from '@element-plus/icons-vue'
-import { useRouter } from 'vue-router'
+import { Clock, Collection, DataAnalysis, Document, Menu, Picture, UploadFilled, UserFilled } from '@element-plus/icons-vue'
+import { useRoute, useRouter } from 'vue-router'
 import 'vue-cropper/dist/index.css'
 import { VueCropper } from 'vue-cropper'
 
@@ -398,8 +438,13 @@ import pdfWorker from 'pdfjs-dist/build/pdf.worker.mjs?url'
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker
 
 const router = useRouter()
+const route = useRoute()
 
 const activeMenu = ref('upload')
+// #73: 窄屏抽屉导航的开关与焦点锚点。
+const mobileNavOpen = ref(false)
+const sidebarRef = ref(null)
+const navToggleRef = ref(null)
 const step = ref('select-file')
 const processMode = ref('full')
 
@@ -477,6 +522,81 @@ const pageDescription = computed(() => {
   }
   return '上传题目素材并进入识别工作流。'
 })
+
+// #73：页签同步到 ?tab= 查询参数，支持直链与刷新后停留原页签；
+// 非 admin 请求 users 页签时维持回落「题目录入」（路由守卫已保证
+// 进入 Dashboard 前 currentUser 就绪，这里可同步校验角色）。
+const DASHBOARD_TABS = ['upload', 'bank', 'history', 'papers', 'users']
+
+const resolveRequestedTab = (rawValue) => {
+  const tab = Array.isArray(rawValue) ? rawValue[0] : rawValue
+  if (typeof tab !== 'string' || !DASHBOARD_TABS.includes(tab)) {
+    return ''
+  }
+  if (tab === 'users' && !adminMode.value) {
+    return ''
+  }
+  return tab
+}
+
+const syncTabQuery = () => {
+  if (String(route.query.tab || '') !== activeMenu.value) {
+    router.replace({ query: { ...route.query, tab: activeMenu.value } })
+  }
+}
+
+const requestedTab = resolveRequestedTab(route.query.tab)
+if (requestedTab && requestedTab !== activeMenu.value) {
+  activeMenu.value = requestedTab
+}
+
+watch(activeMenu, () => {
+  syncTabQuery()
+})
+
+watch(
+  () => route.query.tab,
+  (value) => {
+    // 外部导航改写 ?tab= 时跟随；无效/越权取值忽略，等待挂载后的归一化。
+    const tab = resolveRequestedTab(value)
+    if (tab && tab !== activeMenu.value) {
+      activeMenu.value = tab
+    }
+  }
+)
+
+// #73：窄屏抽屉导航开关；打开时移入焦点、锁定背景滚动，关闭时焦点还原。
+const toggleMobileNav = () => {
+  if (mobileNavOpen.value) {
+    closeMobileNav()
+    return
+  }
+  mobileNavOpen.value = true
+  nextTick(() => {
+    sidebarRef.value?.focus({ preventScroll: true })
+  })
+}
+
+const closeMobileNav = (options = {}) => {
+  const { restoreFocus = true } = options
+  if (!mobileNavOpen.value) {
+    return
+  }
+  mobileNavOpen.value = false
+  if (restoreFocus) {
+    navToggleRef.value?.$el?.focus?.()
+  }
+}
+
+watch(mobileNavOpen, (open) => {
+  document.body.style.overflow = open ? 'hidden' : ''
+})
+
+const handleGlobalKeydown = (event) => {
+  if (event.key === 'Escape' && mobileNavOpen.value) {
+    closeMobileNav()
+  }
+}
 
 const roleLabel = (role) => {
   if (role === 'super_admin') {
@@ -645,18 +765,18 @@ const canSaveDraft = computed(
 
 const draftOperationText = computed(() => {
   if (draftStage.value === 'uploading_asset') {
-    return '正在上传素材...'
+    return '正在上传素材…'
   }
   if (draftStage.value === 'creating_draft') {
-    return '正在创建草稿...'
+    return '正在创建草稿…'
   }
   if (draftStage.value === 'recognizing') {
-    return '正在识别题目，请稍候...'
+    return '正在识别题目，请稍候…'
   }
   if (draftStage.value === 'saving_to_bank') {
-    return '正在保存入题库...'
+    return '正在保存入题库…'
   }
-  return '正在处理，请稍候...'
+  return '正在处理，请稍候…'
 })
 
 const draftStatusText = computed(() => {
@@ -673,12 +793,38 @@ const draftStatusText = computed(() => {
     return draftError.value || '识别失败，请重新上传。'
   }
   if (draftStatus.value === 'saved_to_bank') {
-    const questionId = saveResult.value?.question_id || '-'
-    const revisionId = saveResult.value?.question_revision_id || '-'
-    return `保存成功，question_id: ${questionId}，question_revision_id: ${revisionId}`
+    // #73：对教师用户讲人话；技术编号折叠为下方可复制的次要信息。
+    return '保存成功，题目已存入题库'
   }
   return ''
 })
+
+// #73：题目编号复制。非 https 部署下 clipboard API 不可用，回退临时 textarea。
+const copyQuestionId = async () => {
+  const questionId = String(saveResult.value?.question_id || '')
+  if (!questionId) {
+    return
+  }
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(questionId)
+    } else {
+      const helper = document.createElement('textarea')
+      helper.value = questionId
+      helper.setAttribute('readonly', '')
+      helper.style.position = 'fixed'
+      helper.style.opacity = '0'
+      document.body.appendChild(helper)
+      helper.select()
+      document.execCommand('copy')
+      document.body.removeChild(helper)
+    }
+    ElMessage.success('已复制题目编号')
+  } catch (error) {
+    console.warn('Failed to copy question id.', error)
+    ElMessage.error('复制失败，请手动记录题目编号。')
+  }
+}
 
 const draftStatusAlertType = computed(() => {
   if (draftStatus.value === 'failed') {
@@ -691,6 +837,8 @@ const draftStatusAlertType = computed(() => {
 })
 
 const handleMenuSelect = async (index) => {
+  // #73：窄屏下选中菜单即收起抽屉（含重复点击同页签的场景）。
+  closeMobileNav({ restoreFocus: false })
   if (index === 'users' && !adminMode.value) {
     return
   }
@@ -1227,18 +1375,23 @@ const handleChangePassword = () => {
 
 onMounted(async () => {
   window.addEventListener('beforeunload', handleBeforeUnload)
+  window.addEventListener('keydown', handleGlobalKeydown)
 
   if (!currentUser.value) {
     await fetchCurrentUser()
   }
 
+  // #73：非 admin 落在 users 页签时回落「题目录入」，并把 ?tab= 归一化。
   if (!adminMode.value && activeMenu.value === 'users') {
     activeMenu.value = 'upload'
   }
+  syncTabQuery()
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('beforeunload', handleBeforeUnload)
+  window.removeEventListener('keydown', handleGlobalKeydown)
+  document.body.style.overflow = ''
   cropEncodingGeneration += 1
   revokeImageObjectUrl(currentImageUrl.value)
   revokeImageObjectUrl(cropPreviewUrl.value)
@@ -1346,6 +1499,22 @@ onBeforeUnmount(() => {
   }
 }
 
+/* #73: 窄屏折叠导航的入口按钮与标题同排；宽屏不渲染。 */
+.topbar-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+}
+
+.nav-toggle {
+  display: none;
+}
+
+.sidebar-backdrop {
+  display: none;
+}
+
 .topbar-actions {
   display: flex;
   align-items: center;
@@ -1422,7 +1591,8 @@ onBeforeUnmount(() => {
   text-align: center;
   border-radius: 18px;
   cursor: pointer;
-  transition: 0.2s ease;
+  /* hover 只变这两项，显式列出避免隐式 all 过渡（#76） */
+  transition: border-color 0.2s ease, background-color 0.2s ease;
 }
 
 .upload-box:hover {
@@ -1465,6 +1635,8 @@ onBeforeUnmount(() => {
 
 .pdf-thumb {
   width: 100%;
+  /* 宽高属性只作加载前占位；CSS 接管后按固有比例铺满卡片宽度。 */
+  height: auto;
   border-radius: 10px;
   border: 1px solid #edf1f0;
 }
@@ -1664,6 +1836,21 @@ onBeforeUnmount(() => {
   margin-bottom: 4px;
 }
 
+/* #73: 状态 alert 的 live 容器沿用外层 14px 间距，视觉与拆分前一致。 */
+.result-status-region {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.save-result-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #667a73;
+}
+
 .quality-warning-list {
   margin: 8px 0 0;
   padding-left: 18px;
@@ -1773,17 +1960,50 @@ onBeforeUnmount(() => {
   line-height: 1.6;
 }
 
+/* #73: 窄屏下侧栏改为抽屉：默认移出视口，汉堡按钮 + 遮罩控制显隐，
+   导航不再堆在内容上方占据首屏。 */
 @media (max-width: 1180px) {
   .dashboard-layout {
     grid-template-columns: 1fr;
   }
 
-  .sidebar {
-    padding-bottom: 8px;
+  .nav-toggle {
+    display: inline-flex;
+    flex: none;
   }
 
-  .main-shell {
-    padding-top: 0;
+  .sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 60;
+    width: min(300px, 86vw);
+    padding-bottom: 24px;
+    overflow-y: auto;
+    transform: translateX(-105%);
+    transition: transform 0.25s ease;
+
+    &.is-open {
+      transform: none;
+      box-shadow: 24px 0 48px rgba(16, 38, 48, 0.28);
+    }
+  }
+
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    background: rgba(15, 36, 46, 0.45);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s ease, visibility 0.2s ease;
+
+    &.is-visible {
+      opacity: 1;
+      visibility: visible;
+    }
   }
 }
 
@@ -1836,6 +2056,21 @@ onBeforeUnmount(() => {
   .identity-card {
     flex-direction: column;
     align-items: flex-start;
+  }
+}
+
+/* prefers-reduced-motion（#76）：减弱动效用户不接收位移/过渡；
+   hover 提示仍由边框色和阴影承担，信息不丢。 */
+@media (prefers-reduced-motion: reduce) {
+  .upload-box {
+    transition: none;
+  }
+
+  .pdf-page-card,
+  .pdf-page-card:hover,
+  .pdf-page-card:focus-visible {
+    transform: none;
+    transition: none;
   }
 }
 </style>

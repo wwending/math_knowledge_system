@@ -88,7 +88,8 @@
 
             >
                <template #error>
-                 <div class="image-slot" style="display: flex; justify-content: center; align-items: center; height: 100%; background: #f5f7fa; color: #909399;">
+                 <!-- 样式全部由 .image-slot 提供；此前的内联样式是其子集，属冗余 -->
+                 <div class="image-slot">
                    <span>加载失败</span>
                  </div>
                </template>
@@ -126,6 +127,7 @@ import { Refresh, Picture as IconPicture } from '@element-plus/icons-vue'
 import { API_V1_BASE_URL } from '../config/api'
 import { createQuestionImageLoader } from '../utils/questionImageLoader'
 import { renderMarkdown } from '@/utils/renderMarkdown'
+import { formatDateTime } from '../utils/formatDateTime'
 
 const API_BASE = API_V1_BASE_URL
 
@@ -169,16 +171,16 @@ const openDetail = (item) => {
 }
 
 // 工具函数
-const renderTex = (text) => text ? renderMarkdown(text) : '<span style="color:#999">暂无内容</span>'
+const renderTex = (text) => text ? renderMarkdown(text) : '<span style="color:#767676">暂无内容</span>'
 
 const getPreviewText = (text) => {
   if (!text) return '暂无识别内容'
   // 移除 markdown 符号，只取纯文本做预览
   const clean = text.replace(/[#*`$]/g, '')
-  return clean.length > 50 ? clean.slice(0, 50) + '...' : clean
+  return clean.length > 50 ? clean.slice(0, 50) + '…' : clean
 }
 
-const formatTime = (str) => new Date(str).toLocaleString()
+const formatTime = (str) => formatDateTime(str)
 
 onMounted(() => {
   fetchHistory()
@@ -196,7 +198,8 @@ onMounted(() => {
 
 /* min-width: 0 允许 flex 子项收缩到内容宽度以下，配合 ellipsis 防窄窗口横向溢出 */
 .info-box { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; cursor: pointer; }
-.meta-row { display: flex; gap: 10px; align-items: center; font-size: 12px; color: #999; }
+/* ID/时间列用等宽数字，多行排列时纵向对齐（#76） */
+.meta-row { display: flex; gap: 10px; align-items: center; font-size: 12px; color: #767676; font-variant-numeric: tabular-nums; }
 .preview-text { font-size: 14px; color: #333; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 500px;}
 
 .action-box { min-width: 100px; text-align: right; }
@@ -254,6 +257,15 @@ onMounted(() => {
   background: white; /* 图片背景设为白，防止透明图很难看 */
 }
 
+/* prefers-reduced-motion（#76）：减弱动效用户不接收缩放动画。 */
+@media (prefers-reduced-motion: reduce) {
+  .thumb-img,
+  .thumb-box:hover .thumb-img {
+    transform: none;
+    transition: none;
+  }
+}
+
 /* 滚动条美化 */
 .detail-right::-webkit-scrollbar { width: 6px; }
 .detail-right::-webkit-scrollbar-thumb { background: #dcdfe6; border-radius: 3px; }
@@ -272,7 +284,7 @@ onMounted(() => {
   width: 100%;
   height: 100%;
   background: #f5f7fa;
-  color: #909399;
+  color: #767676;
   font-size: 14px;
 }
 </style>

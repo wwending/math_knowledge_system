@@ -50,7 +50,7 @@
       <template #header>
         <div class="table-header">
           <span>用户列表</span>
-          <span>共 {{ total }} 条</span>
+          <span class="count-text">共 {{ total }} 条</span>
         </div>
       </template>
 
@@ -73,7 +73,7 @@
         </el-table-column>
         <el-table-column label="最近登录" min-width="170">
           <template #default="{ row }">
-            <span>{{ formatDateTime(row.last_login_at) }}</span>
+            <span class="datetime-cell">{{ formatLastLogin(row.last_login_at) }}</span>
           </template>
         </el-table-column>
         <el-table-column label="操作" min-width="260" fixed="right">
@@ -183,11 +183,14 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import axios from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useRoute, useRouter } from 'vue-router'
 
 import { API_V1_BASE_URL } from '../config/api'
+import { readStringQuery, replaceQueryValues } from '../utils/urlQueryState'
+import { formatDateTime } from '../utils/formatDateTime'
 
 const loading = ref(false)
 const users = ref([])
@@ -238,6 +241,30 @@ const statusOptions = [
   { label: '禁用', value: 'disabled' },
   { label: '待改密', value: 'pending_password_change' }
 ]
+
+// #75：筛选条件与 ?user_q= / ?user_role= / ?user_status= 同步，挂载时恢复。
+// 角色/状态只接受合法枚举值——URL 被手改成未知值时按未筛选处理，
+// 避免把脏值原样发给后端或显示成裸枚举。重置按钮清空 filters 即自动清参数。
+const route = useRoute()
+const router = useRouter()
+
+const applyFiltersFromRoute = () => {
+  filters.q = readStringQuery(route, 'user_q')
+  const queryRole = readStringQuery(route, 'user_role')
+  filters.role = roleOptions.some((item) => item.value === queryRole) ? queryRole : ''
+  const queryStatus = readStringQuery(route, 'user_status')
+  filters.status = statusOptions.some((item) => item.value === queryStatus) ? queryStatus : ''
+}
+
+applyFiltersFromRoute()
+
+watch(filters, () => {
+  replaceQueryValues(router, route, {
+    user_q: filters.q,
+    user_role: filters.role,
+    user_status: filters.status
+  })
+})
 
 const createRules = {
   phone: [{ required: true, message: '请输入手机号', trigger: 'blur' }],
@@ -299,16 +326,8 @@ const statusTagType = (status) => {
   return 'warning'
 }
 
-const formatDateTime = (value) => {
-  if (!value) {
-    return '从未登录'
-  }
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) {
-    return value
-  }
-  return date.toLocaleString('zh-CN', { hour12: false })
-}
+// 时间格式统一走共享工具（#76）；「从未登录」作为空值占位文案保留。
+const formatLastLogin = (value) => formatDateTime(value, '从未登录')
 
 const buildQueryParams = () => {
   const params = { skip: 0, limit: 100 }
@@ -522,6 +541,12 @@ onMounted(() => {
   color: #60727a;
   font-size: 12px;
   line-height: 1.5;
+}
+
+/* 时间/计数列用等宽数字，行间纵向对齐（#76） */
+.datetime-cell,
+.count-text {
+  font-variant-numeric: tabular-nums;
 }
 
 .row-actions {

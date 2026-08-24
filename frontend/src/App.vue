@@ -11,4 +11,23 @@ html, body, #app {
   width: 100%;
   font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', '微软雅黑', Arial, sans-serif;
 }
+
+/* #77: 触屏统一禁用双击缩放，保留滚动与捏合缩放。touch-action 不继承，需全量覆盖。 */
+* {
+  touch-action: manipulation;
+}
+
+/* #77: 弹层滚动到边界时不带动底层页面一起滚动。 */
+.el-overlay-dialog,
+.el-dialog__body {
+  overscroll-behavior: contain;
+}
+
+/* prefers-reduced-motion（#76）：关闭 Element Plus 骨架屏闪烁动画，
+   占位块保持静态展示；各组件自身的 hover 位移在各自样式内处理。 */
+@media (prefers-reduced-motion: reduce) {
+  .el-skeleton.is-animated .el-skeleton__item {
+    animation: none;
+  }
+}
 </style>
