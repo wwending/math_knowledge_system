@@ -299,8 +299,15 @@ class Settings(BaseSettings):
             )
 
     def ensure_runtime_dirs(self) -> None:
-        for path in (self.STATIC_DIR_PATH, self.UPLOAD_DIR_PATH, self.PDF_TEMP_DIR_PATH, self.LAYOUT_MODEL_DIR_PATH):
+        for path in (self.STATIC_DIR_PATH, self.UPLOAD_DIR_PATH, self.PDF_TEMP_DIR_PATH):
             path.mkdir(parents=True, exist_ok=True)
+        try:
+            self.LAYOUT_MODEL_DIR_PATH.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            # #58: an unwritable model dir (e.g. default weights/ inside the
+            # read-only container image) must not take the whole backend down;
+            # layout detection degrades to the no-figure flow instead.
+            pass
 
 
 settings = Settings()
