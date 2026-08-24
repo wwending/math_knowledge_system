@@ -44,6 +44,12 @@ class PaperItem(Base):
     question_type_snapshot = Column(String, nullable=True)
     difficulty_level_snapshot = Column(Integer, nullable=True)
     difficulty_label_snapshot = Column(String, nullable=True)
+    # The question's figure reference frozen at paper creation (#59); mirrors the
+    # text snapshot semantics: later changes to the source question never alter
+    # historical papers. Value follows the origin_image/figure_image pattern: a
+    # bare filename inside UPLOAD_DIR, resolved only through
+    # app.core.files.resolve_upload_file_path.
+    figure_image_snapshot = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     paper = relationship("Paper", back_populates="items")

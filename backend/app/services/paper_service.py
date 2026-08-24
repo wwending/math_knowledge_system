@@ -42,6 +42,20 @@ def _text_value(value: Any) -> Optional[str]:
     return str(value)
 
 
+def _figure_snapshot(question: Question, revision: Optional[QuestionRevision]) -> Optional[str]:
+    """Freeze the question's figure reference at snapshot time (#59).
+
+    Mirrors the expression used when #58 writes the figure onto the
+    question/revision pair, so the frozen value stays byte-identical to the
+    source. The revision's asset wins (same precedence as text snapshots read
+    from the latest revision); questions without a revision figure fall back to
+    the question-level reference.
+    """
+    if revision is not None and revision.figure_asset is not None:
+        return revision.figure_asset.normalized_path or revision.figure_asset.original_path
+    return question.figure_image or None
+
+
 def _snapshot_from_question(db: Session, question: Question) -> dict[str, Any]:
     revision = _latest_revision(db, question.id)
     revision_content = revision.content if revision and isinstance(revision.content, dict) else None
@@ -74,6 +88,7 @@ def _snapshot_from_question(db: Session, question: Question) -> dict[str, Any]:
         "question_type_snapshot": question.question_type if metadata_ready else None,
         "difficulty_level_snapshot": question.difficulty_level if metadata_ready else None,
         "difficulty_label_snapshot": question.difficulty_label if metadata_ready else None,
+        "figure_image_snapshot": _figure_snapshot(question, revision),
     }
 
 
@@ -103,6 +118,7 @@ def _build_paper_read(paper: Paper) -> PaperRead:
                 question_type_snapshot=item.question_type_snapshot,
                 difficulty_level_snapshot=item.difficulty_level_snapshot,
                 difficulty_label_snapshot=item.difficulty_label_snapshot,
+                figure_image_snapshot=item.figure_image_snapshot,
             )
             for item in items
         ],

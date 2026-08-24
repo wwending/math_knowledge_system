@@ -94,6 +94,7 @@ class PaperItemRead(BaseModel):
     question_type_snapshot: Optional[str] = None
     difficulty_level_snapshot: Optional[int] = None
     difficulty_label_snapshot: Optional[str] = None
+    figure_image_snapshot: Optional[str] = None
 
 
 class PaperRead(BaseModel):
