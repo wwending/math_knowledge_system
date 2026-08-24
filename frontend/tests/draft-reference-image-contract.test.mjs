@@ -17,12 +17,25 @@ const requireAbsent = (pattern, message) => {
   }
 }
 
-// Split layout: recognition content stays left, reference image stays right (#22).
+// Split layout: reference image leads on the LEFT at readable size, recognition
+// content follows on the right (#22 split introduced it, #31 fixed size/side).
+requireMatch(
+  /class="result-image-column"[\s\S]*?class="result-main-column"/,
+  'reference image column must lead (sit left of) the content column'
+)
 requireMatch(/class="result-split-layout"/, 'recognition result must use the split layout container')
 requireMatch(/class="result-main-column"/, 'split layout must keep the main content column')
 requireMatch(/class="result-image-column"/, 'split layout must provide the reference image column')
 requireMatch(/题目原图/, 'reference image panel must be labelled 题目原图')
 requireMatch(/v-loading="draftImageLoading"/, 'reference image must expose its loading state')
+
+// #31: the panel scrolls internally at ~40% width — no more 300px rail that
+// forces click-to-zoom round trips to read a full-page capture.
+requireMatch(/class="result-image-scroll"/, 'reference image must scroll inside its own panel')
+requireAbsent(
+  /flex:\s*0\s*0\s*300px/,
+  'reference column must not regress to the fixed 300px rail'
+)
 
 // Click-to-zoom uses the Element Plus preview overlay instead of custom viewers.
 requireMatch(
