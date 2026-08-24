@@ -12,6 +12,9 @@ class Draft(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     source_asset_id = Column(Integer, ForeignKey("source_assets.id"), nullable=False)
     crop_bbox = Column(JSON, nullable=False)
+    # Figure-region detection output from the recognize pipeline (#58):
+    # [{"bbox": [x, y, w, h] normalized, "label": str, "score": float}].
+    detected_figures = Column(JSON, nullable=True)
     status = Column(String, nullable=False)
     current_content = Column(JSON, nullable=True)
     question_type = Column(String, nullable=True)

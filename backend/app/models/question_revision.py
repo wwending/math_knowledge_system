@@ -17,12 +17,19 @@ class QuestionRevision(Base):
     content = Column(JSON, nullable=False)
     crop_bbox = Column(JSON, nullable=True)
     source_asset_id = Column(Integer, ForeignKey("source_assets.id"), nullable=True)
+    # Figure crop carried by this revision (#58); mirrors source_asset_id.
+    figure_asset_id = Column(Integer, ForeignKey("source_assets.id"), nullable=True)
     ocr_run_id = Column(Integer, ForeignKey("ocr_runs.id"), nullable=True)
     llm_run_id = Column(Integer, ForeignKey("llm_runs.id"), nullable=True)
     change_reason = Column(String, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     question = relationship("Question", back_populates="revisions")
-    source_asset = relationship("SourceAsset", back_populates="question_revisions")
+    source_asset = relationship(
+        "SourceAsset",
+        back_populates="question_revisions",
+        foreign_keys=[source_asset_id],
+    )
+    figure_asset = relationship("SourceAsset", foreign_keys=[figure_asset_id])
     ocr_run = relationship("OCRRun", back_populates="question_revisions")
     llm_run = relationship("LLMRun", back_populates="question_revisions")

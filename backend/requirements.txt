@@ -15,6 +15,12 @@ bcrypt>=3.2.0,<4
 Pillow>=10.0.0
 PyMuPDF>=1.26.7
 latex2mathml==3.81.0
+# Layout analysis (#58): DocLayout-YOLO via ONNXRuntime CPU inference.
+# rapid-layout pulls in opencv-python (full) transitively; the Dockerfile
+# therefore installs libgl1/libglib2.0-0 system libraries.
+rapid-layout==1.2.1
+onnxruntime>=1.19
+numpy>=2.0
 
 # Historical experiment only; excluded from the v0.1 production delivery:
 # rapidocr==3.8.4
