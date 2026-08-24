@@ -8,6 +8,7 @@
 - `POST /api/v1/drafts`
 - `POST /api/v1/drafts/{draft_id}/recognize`
 - `POST /api/v1/drafts/{draft_id}/save-to-bank`
+- `GET /api/v1/drafts/{draft_id}/image`（识别结果页旁路展示原图，#22）
 
 `POST /api/v1/recognize` 未删除、未重构，保留为 legacy / 兼容入口。
 
@@ -193,6 +194,9 @@ Draft 当前作为 Dashboard 上传主路径的开发基线，相关接口为：
 - `GET /api/v1/drafts/{draft_id}`
 - `POST /api/v1/drafts/{draft_id}/recognize`
 - `POST /api/v1/drafts/{draft_id}/save-to-bank`
+- `GET /api/v1/drafts/{draft_id}/image`
+
+`GET /api/v1/drafts/{draft_id}/image` 返回该草稿引用的 SourceAsset 原图(即送识别的裁剪素材)，供识别结果编辑页旁路对照展示(#22)。所有权校验挂在 Draft 行：未认证 401、非本人草稿 403、文件缺失 404；与 `GET /api/v1/questions/{id}/image` 同属鉴权图片通道，SourceAsset 按 sha256 全局去重仅作共享字节仓库，不承载归属语义。
 
 这些接口已接入当前 Dashboard 主上传流程，但当前项目仍不表示生产可用。
 

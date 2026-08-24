@@ -1,5 +1,12 @@
 # STATUS
 
+## 2026-08-24 识别结果编辑页常驻题目原图(#22)
+
+- 后端新增 `GET /api/v1/drafts/{draft_id}/image`：返回草稿引用 SourceAsset 的原图字节（即送识别的裁剪素材），所有权校验挂 Draft 行（未认证 401、非本人 403、文件缺失/路径不可解析 404、穿越拒绝），路径解析复用 `_resolve_upload_file_path`，`media_type` 取 asset.mime；不校验 draft.status，入题库后仍可回看。决策边界见决策 40，API 说明见 `docs/API.md`。
+- Dashboard 识别结果区改为左右分栏：左栏为既有编辑/只读卡片与识别调试信息，右栏常驻「题目原图」面板（`el-image` + `preview-src-list` 点击弹层放大，<900px 断点上下堆叠、图片置顶限高 40vh）。图片来源优先经鉴权端点拉 blob（draftId 变化即预取，代际号防慢响应回写），失败或 legacy 路径回退本地整页预览；object URL 在草稿重置、draftId 变化、组件卸载三处释放。
+- 新增 `backend/tests/test_draft_image_access.py`（8 用例，含 sha256 去重共享字节经自有草稿可读的核心回归）与 `frontend/tests/draft-reference-image-contract.test.mjs`（分栏、鉴权 blob 通道、回退链、释放时机、窄屏堆叠断言），后者挂入 `test:stage3-contract` 链；`draft-manual-edit-contract` 等既有契约全部保持通过。
+- 本地验证：`python -m compileall app` 通过；`python -m pytest -q` 186 passed（基线 178 + 新增 8）；`npm run test:stage3-contract` 全链通过；`npm run build` 成功。真实浏览器的人工验收（裁剪/整页/PDF 三路径、点击放大、blob 释放、跨用户 403）待 Draft PR 阶段执行。
+
 ## 2026-08-23 后端可观测性与测试证据闭环(#45/#46/#47/#48)
 
 - 后端新增统一日志（loguru stderr + 滚动文件 sink，接管 stdlib/uvicorn 输出）、每请求 `X-Request-ID`（响应头回传、所有日志行自动携带、`[Access]` 访问行）、全局异常处理器（未捕获异常返回 500 中文提示 + `request_id`，完整堆栈带编号落日志）；`/healthz` 增强 SQLite 连通检查、`app_env`、`git_sha` 字段，数据库故障返回 503。配置项 `LOG_LEVEL` / `LOG_DIR` / `GIT_SHA`，生产日志写入 `/data/logs` 复用现有挂载。
