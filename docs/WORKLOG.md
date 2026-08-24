@@ -2,6 +2,23 @@
 
 说明：本文件按时间倒序记录每轮工作。较早轮次中的“当前主链路”等表述保留为当时历史事实；当前状态以 `docs/STATUS.md` 最新 checkpoint 和较新的 DECISIONS 为准。
 
+## 2026-08-24 Issue #22 识别结果编辑页常驻题目原图
+
+目标：
+
+- 修复「题目录入 → 识别修正」编辑态看不到送识别原图的问题：修正 OCR 题干/选项时需要与原始裁剪素材并排对照。
+
+结果：
+
+- 后端新增 `GET /api/v1/drafts/{draft_id}/image`（所有权挂 Draft 行，路径解析复用 `_resolve_upload_file_path`）；Dashboard 识别结果区改左右分栏，右栏常驻「题目原图」（el-image 点击放大），鉴权 blob 优先、本地整页预览回退，object URL 三处释放；新增后端 8 用例回归与前端契约测试并挂入 stage3 链。
+- 文档记账：`docs/API.md` 两处 drafts 接口列表、`docs/STATUS.md` 顶部 checkpoint、`docs/DECISIONS.md` 决策 40。
+
+验证结果：
+
+- `python -m compileall app` 通过；`python -m pytest -q` 186 passed（基线 178 + 新增 8）。
+- `npm run test:stage3-contract` 全链通过（含新增 `draft-reference-image-contract`）；`npm run build` 成功。
+- 待办：真实浏览器人工验收（裁剪/整页/PDF 路径、点击放大、blob 释放、跨用户 403）在 Draft PR 阶段执行。
+
 ## 2026-08-23 Issue #55 Issue 闭环契约：验收后手动关闭 + 存量审计与工作区清理
 
 目标：

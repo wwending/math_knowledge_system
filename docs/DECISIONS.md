@@ -2,6 +2,24 @@
 
 说明：本文件按时间倒序记录决策。较早决策中的“当前主链路”等表述保留为当时历史事实；如与顶部较新决策冲突，以较新决策和 `docs/STATUS.md` 当前 checkpoint 为准。
 
+## 决策 40：草稿原图走 Draft 行鉴权的专用图片端点
+
+结论：
+
+- 新增 `GET /api/v1/drafts/{draft_id}/image`（#22）：返回草稿引用 SourceAsset 的存储字节（`normalized_path or original_path`，经 `_resolve_upload_file_path` 防穿越解析），供识别结果编辑页在旁路常驻展示“题目原图”。
+- 所有权校验挂在 **Draft 行**（`_ensure_owned_draft`），不挂 SourceAsset 行：SourceAsset 按 sha256 全局去重、仅作共享字节仓库，行内 `user_id` 不承载归属语义（与决策 37/#44 的 Question 行校验同理）。
+- 前端以鉴权 blob → object URL 渲染（复用 #44 通道约定），并以本地整页预览图作为加载失败/legacy 路径的回退；不做缓存头与 ETag（沿用 #44 遗留后续项）。
+
+原因：
+
+- 识别修正时用户需要对照“真正送 OCR 的裁剪素材”，而非本地整页图；草稿接口与既有端点均不含图片通道，公开 `/static` 已在 #44 移除 uploads 挂载，新增通道必须继承鉴权语义。
+
+边界：
+
+- 不改变 Question/SourceAsset 数据模型，不新增迁移；不覆盖组卷编辑、题库详情等其他展示位（后续按需复用同一模式）。
+
+日期：2026-08-23
+
 ## 决策 39：Issue 采用验收后手动关闭，禁止 PR 自动关闭关键词
 
 结论：

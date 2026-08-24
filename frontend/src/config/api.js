@@ -62,4 +62,9 @@ export const buildAssetUrl = (path) => {
 // header, then rendered via blob URLs.
 export const buildQuestionImageUrl = (questionId) => `${API_V1_BASE_URL}/questions/${questionId}/image`
 
+// Authenticated image channel (#22): the draft reference image is served by
+// GET /api/v1/drafts/{id}/image and must be fetched as an authenticated blob,
+// then rendered via an object URL.
+export const buildDraftImageUrl = (draftId) => `${API_V1_BASE_URL}/drafts/${draftId}/image`
+
 export const buildUploadUrl = buildAssetUrl

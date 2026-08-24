@@ -161,6 +161,12 @@ assert.match(
   /processMode\.value === 'crop' \? cropPreviewUrl\.value : currentImageUrl\.value/,
   'confirmation preview must show the framed selection in crop mode and the full page otherwise'
 )
-assert.match(dashboardSource, /v-if="resultImageUrl"/, 'draft confirmation must render the captured image preview')
+// #22 integration: the confirmation preview owns the pre-result phase; once
+// the recognition result renders, the split-layout reference panel takes over.
+assert.match(
+  dashboardSource,
+  /v-if="resultImageUrl && !ocrResult"/,
+  'confirmation preview must render before the result arrives and yield to the reference panel after'
+)
 
 console.log('Crop image quality tests passed.')
