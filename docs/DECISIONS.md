@@ -2,6 +2,29 @@
 
 说明：本文件按时间倒序记录决策。较早决策中的“当前主链路”等表述保留为当时历史事实；如与顶部较新决策冲突，以较新决策和 `docs/STATUS.md` 当前 checkpoint 为准。
 
+## 决策 43：恢复走单一脚本 + 隔离式清库，digest 显式门禁（#101）
+
+结论：
+
+- **单一入口**：备份恢复收敛到 `deploy/scripts/restore.sh`，生命周期固定为 checksum 校验 → 停栈 → 隔离 → 恢复 → 属主修复(10001) → SQLite quick_check → `alembic upgrade head` → 起栈 → healthz。runbook（`deploy/RESTORE_RUNBOOK.md`）只描述该脚本的输入、预期输出与回退点，不另设手工恢复路径。
+- **隔离代替删除**：恢复前把现有 `math_knowledge.db`（含 `-wal`/`-shm`）与整个 `uploads/` 移动到 `<BACKUP_ROOT>/pre-restore-<UTC>` 隔离目录，活跃路径从零重建。「清库」语义由移出实现，脚本全篇无删除操作；唯一删除点是验收通过后由人执行的隔离区清理。
+- **digest 显式门禁**：restore 必须显式提供两个 trusted digest，不复用 backup 的运行容器解析路径——事故时栈可能已停，且恢复是最高风险操作，artifact identity 不允许隐式来源。
+- **schema 单向**：旧数据恢复后立即迁移到当前镜像 head；「migration 成功之后」的失败不支持手工移回旧 DB（schema 落后于镜像），回退方式是重跑完整 restore。
+
+原因：
+
+- 审计 #97 A1：全仓无 restore 路径、无演练记录，首次真实恢复可能发生在事故压力下。把正确顺序固化进脚本并让 runbook 只围绕它展开，比文字流程更能防事故时的操作变形。
+- 移动而非删除同时满足「从零恢复的证明力」与「每一步可逆」，避免为演练单独设计一条带破坏性的清库分支。
+- 恢复与部署共享同一 digest 合同（`image-digests.sh` 校验器复用），CI 契约测试锁定顺序与不变量。
+
+边界：
+
+- 覆盖 DB 与 uploads；`static/`、`models/`、`pdf_temp/`、`.env` 明确不在恢复范围（见 runbook）。
+- 脚本管理停栈/起栈但不 pull 镜像；目标 release 镜像必须已在主机本地。
+- 演练本身（Staging 实跑与证据留存）不在脚本 PR 内完成，按 runbook 在 #100 同窗口执行后回评本 issue。
+
+日期：2026-08-25
+
 ## 决策 42：组卷题图快照存冻结文件名，HTML/PDF 以 data URI 内嵌（#59）
 
 结论：
