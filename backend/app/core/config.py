@@ -77,7 +77,10 @@ class Settings(BaseSettings):
     # Uploads must live outside the publicly mounted static dir (#44): question images
     # are served only through the authenticated /questions/{id}/image endpoint.
     UPLOAD_DIR: str = "uploads"
-    PDF_TEMP_DIR: str = "static/pdf_temp"
+    # Legacy upload_pdf page renders also stay off the public /static mount (#103):
+    # production already points PDF_TEMP_DIR at /data/pdf_temp; nothing serves these
+    # files publicly anymore.
+    PDF_TEMP_DIR: str = "pdf_temp"
 
     DATABASE_URL: str = "sqlite:///./math_knowledge.db"
     CORS_ALLOW_ORIGINS: str = DEFAULT_DEV_CORS_ALLOW_ORIGINS
@@ -296,6 +299,19 @@ class Settings(BaseSettings):
                 "UPLOAD_DIR must live outside STATIC_DIR so uploads stay off the public "
                 f"/static mount (got UPLOAD_DIR={self.UPLOAD_DIR!r}, STATIC_DIR={self.STATIC_DIR!r}). "
                 "Move existing upload files out of the static dir once and update UPLOAD_DIR."
+            )
+
+    def validate_pdf_temp_dir_isolation(self) -> None:
+        # Fail closed like uploads (#44): a pdf_temp inside the mounted static tree
+        # would re-expose legacy PDF page renders without authentication (#103).
+        pdf_temp_dir = self.PDF_TEMP_DIR_PATH
+        static_dir = self.STATIC_DIR_PATH
+        if pdf_temp_dir == static_dir or static_dir in pdf_temp_dir.parents:
+            raise RuntimeError(
+                "PDF_TEMP_DIR must live outside STATIC_DIR so legacy PDF renders stay off "
+                f"the public /static mount (got PDF_TEMP_DIR={self.PDF_TEMP_DIR!r}, "
+                f"STATIC_DIR={self.STATIC_DIR!r}). Move existing pdf_temp files out of the "
+                "static dir once and update PDF_TEMP_DIR."
             )
 
     def ensure_runtime_dirs(self) -> None:

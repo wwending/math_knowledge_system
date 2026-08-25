@@ -15,7 +15,6 @@
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.2",
     "axios": "^1.19.0",
-    "cropperjs": "^1.6.2",
     "element-plus": "^2.13.0",
     "katex": "^0.16.27",
     "markdown-it": "^14.1.0",
