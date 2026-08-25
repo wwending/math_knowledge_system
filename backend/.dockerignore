@@ -10,6 +10,7 @@ venv/
 *.sqlite3
 static/uploads/
 static/pdf_temp/
+pdf_temp/
 reports/
 tests/
 test/

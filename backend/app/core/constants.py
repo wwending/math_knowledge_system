@@ -85,3 +85,10 @@ ALLOWED_ASSET_MIME_TYPES = {
     "image/jpeg",
     "application/pdf",
 }
+
+# Legacy upload_pdf limits (#103): each page is rendered to a JPG at 2x matrix,
+# so both the file size and the page count must stay bounded per request.
+MAX_PDF_PAGES = 50
+# pdf_temp TTL (#103): legacy upload_pdf leaves the PDF and its page renders in
+# pdf_temp with no other lifecycle; stale files are swept best-effort.
+PDF_TEMP_TTL_SECONDS = 24 * 60 * 60

@@ -21,6 +21,7 @@ def create_app() -> FastAPI:
     settings.validate_security_settings()
     settings.validate_runtime_schema_settings()
     settings.validate_upload_dir_isolation()
+    settings.validate_pdf_temp_dir_isolation()
     app = FastAPI(title=settings.PROJECT_NAME)
     settings.ensure_runtime_dirs()
 

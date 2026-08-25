@@ -32,14 +32,6 @@ export const STATIC_URL_PREFIX = normalizePrefix(
 
 export const API_V1_BASE_URL = `${API_BASE_URL}${API_V1_PREFIX}`
 
-export const buildStaticUrl = (path) => {
-  if (!path) {
-    return ''
-  }
-  const normalizedPath = String(path).replace(/^\/+/, '')
-  return `${API_BASE_URL}${STATIC_URL_PREFIX}/${normalizedPath}`
-}
-
 export const buildAssetUrl = (path) => {
   if (!path) {
     return ''
@@ -72,5 +64,3 @@ export const buildDraftImageUrl = (draftId) => `${API_V1_BASE_URL}/drafts/${draf
 // fetched as an authenticated blob, then rendered via an object URL.
 export const buildPaperItemImageUrl = (paperId, paperItemId) =>
   `${API_V1_BASE_URL}/papers/${paperId}/items/${paperItemId}/image`
-
-export const buildUploadUrl = buildAssetUrl

@@ -93,11 +93,12 @@ pip-delete-this-directory.txt
 static/
 backend/static/uploads/*
 !backend/static/uploads/.gitkeep
-backend/static/pdf_temp/*
-!backend/static/pdf_temp/.gitkeep
 # Private uploads root (#44): authenticated image bytes only. Paper figure
 # snapshots (#59) reference files here — never commit, never clean.
 backend/uploads/*
+# Legacy PDF page renders (#103): request-scoped temp files outside the public
+# /static mount, swept by TTL — never commit.
+backend/pdf_temp/*
 
 # --- Sensitive / Temp Scripts ---
 config_local.py
