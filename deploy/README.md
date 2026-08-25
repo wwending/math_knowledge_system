@@ -102,7 +102,7 @@ sudo ./deploy/scripts/backup.sh
 rsync -a --checksum /srv/math-knowledge/backups/ backup-user@SECOND_SERVER:/srv/backups/math-knowledge/
 ```
 
-恢复前先停止写入并再次备份当前数据；校验 `SHA256SUMS` 后，将数据库快照和解压后的 uploads 放回持久化目录，再执行 Alembic migration。恢复属于有覆盖风险的运维操作，本脚本不会自动执行。
+恢复使用 `deploy/scripts/restore.sh`：显式提供两个 trusted digest 与备份目录后，它依次完成 SHA256SUMS 校验 → 停栈 → 把现有 DB/uploads 隔离（移动而非删除，作为回退点）→ 恢复 DB 与 uploads → 修复属主(10001) → SQLite quick_check → `alembic upgrade head` → 起栈 → healthz 检查。完整的前置条件、每步预期输出、失败回退点与演练流程见 [`deploy/RESTORE_RUNBOOK.md`](./RESTORE_RUNBOOK.md)。
 
 ## 正式 HTTPS
 

@@ -107,7 +107,7 @@ jobs:
         run: cp deploy/.env.production.example deploy/.env
 
       - name: Check deployment script syntax
-        run: bash -n deploy/scripts/deploy.sh deploy/scripts/backup.sh deploy/scripts/image-digests.sh
+        run: bash -n deploy/scripts/deploy.sh deploy/scripts/backup.sh deploy/scripts/image-digests.sh deploy/scripts/restore.sh
 
       - name: Run Nginx static proxy contract test
         run: bash deploy/tests/test_nginx_static_proxy.sh
@@ -117,6 +117,9 @@ jobs:
 
       - name: Run GHCR pull deployment contract test
         run: bash deploy/tests/test_ghcr_pull_deployment.sh
+
+      - name: Run restore script contract test
+        run: bash deploy/tests/test_restore_script.sh
 
       - name: Build backend Dockerfile validation image
         run: |
