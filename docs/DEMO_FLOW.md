@@ -10,7 +10,7 @@
 - 本地 smoke 图片放在 `data/manual_smoke/ocr_images/`。
 - 当前 OCR 默认仍是 `baidu`，本地 OCR 尚未接入。
 - 当前 smoke 图片来自本地 PDF 截图，真实样本集尚未建立。
-- 服务端 PDF/DOCX 导出尚未实现，当前导出方案优先使用浏览器打印或另存为 PDF。
+- 服务端 PDF 导出已在 Docker 部署栈内支持（内部 Gotenberg）；本地裸跑 uvicorn 时 Gotenberg 不可用，导出使用浏览器打印或另存为 PDF。DOCX 导出尚未实现。
 
 ## 本地 Smoke 图片
 
@@ -87,4 +87,4 @@ http://127.0.0.1:5173
 - 不调用真实 OCR API 做自动化测试。
 - 不修改 Draft recognize 主流程。
 - 不修改 legacy `/api/v1/recognize`。
-- 不实现服务端 PDF/DOCX 导出。
+- 不演示服务端 PDF 导出（属 Docker 部署栈能力）。
