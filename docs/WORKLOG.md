@@ -2,7 +2,19 @@
 
 说明：本文件按时间倒序记录每轮工作。较早轮次中的“当前主链路”等表述保留为当时历史事实；当前状态以 `docs/STATUS.md` 最新 checkpoint 和较新的 DECISIONS 为准。
 
-## 2026-08-25 Issue #59 组卷带图——PaperItem 题图快照与 HTML/PDF 输出
+## 2026-08-25 Issue #102 publish-images CI 门禁 + Python 依赖锁版本
+
+目标：
+
+- 消除审计 #97 F1/F4：CI 失败的 push 不再产出 trusted publisher 镜像；同一 SHA 的镜像重建依赖树可复现、可审计。
+
+结果：
+
+- `publish-images.yml` 改为 `workflow_run`（CI 完成、conclusion=success、event=push、head_branch=main）触发；所有 SHA 引用改用 `github.event.workflow_run.head_sha`（workflow_run 语境下 `github.sha` 可能已是默认分支新 tip），checkout 也显式取该 SHA；step summary 记录门禁 CI run 链接。
+- 新增 `backend/requirements.lock`：uv `pip compile --universal --python-version 3.11` 生成的全量 pinned 解析（63 pin，含传递依赖与环境 marker）；`requirements.txt` 保持直接依赖声明不变。Dockerfile 与 CI backend job 安装统一走 lock。
+- 新增 `backend/dev_scripts/check_requirements_lock.py` 离线同步校验（直接依赖全覆盖、pin 满足 specifier、无重复 pin），挂入 CI；不做 fresh-resolve diff，上游发新版不会误伤 CI。
+- `SECURITY.md` 增补 Python 锁定策略与再生成命令；deploy/README 注明发布记录隐含 CI 已通过。
+- 本地验证：compileall、pytest 全量、锁文件干净 venv 安装 + 全量模块 import smoke 通过；校验脚本正/负自测通过。Docker 构建与真实 red-push 门禁验证待 CI/Staging。
 
 目标：
 

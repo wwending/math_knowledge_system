@@ -1,7 +1,18 @@
 name: Publish release images
 
+# Gate (#102): images are published only after the CI workflow has completed
+# successfully for a push to main. A push whose CI run fails can no longer
+# produce trusted-publisher digests for that SHA.
+#
+# In workflow_run context github.sha is the default-branch tip at event time,
+# NOT necessarily the commit CI validated, so every SHA below must use
+# github.event.workflow_run.head_sha (the triggering run's exact commit).
 on:
-  push:
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
     branches:
       - main
 
@@ -11,14 +22,20 @@ permissions:
 jobs:
   publish:
     name: Publish GHCR release images
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+    env:
+      GIT_SHA: ${{ github.event.workflow_run.head_sha }}
     steps:
-      - name: Check out repository
+      - name: Check out validated commit
         uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         with:
+          ref: ${{ github.event.workflow_run.head_sha }}
           persist-credentials: false
 
       - name: Log in to GitHub Container Registry
@@ -38,12 +55,12 @@ jobs:
           context: ./backend
           file: ./backend/Dockerfile
           push: true
-          tags: ghcr.io/wwending/math-knowledge-backend:${{ github.sha }}
+          tags: ghcr.io/wwending/math-knowledge-backend:${{ env.GIT_SHA }}
           build-args: |
-            GIT_SHA=${{ github.sha }}
+            GIT_SHA=${{ env.GIT_SHA }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.revision=${{ env.GIT_SHA }}
 
       - name: Build and push web release image
         id: web
@@ -52,20 +69,20 @@ jobs:
           context: .
           file: ./frontend/Dockerfile
           push: true
-          tags: ghcr.io/wwending/math-knowledge-web:${{ github.sha }}
+          tags: ghcr.io/wwending/math-knowledge-web:${{ env.GIT_SHA }}
           build-args: |
-            GIT_SHA=${{ github.sha }}
+            GIT_SHA=${{ env.GIT_SHA }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.revision=${{ env.GIT_SHA }}
 
       - name: Record published images
         env:
-          GIT_SHA: ${{ github.sha }}
-          BACKEND_IMAGE: ghcr.io/wwending/math-knowledge-backend:${{ github.sha }}
+          BACKEND_IMAGE: ghcr.io/wwending/math-knowledge-backend:${{ env.GIT_SHA }}
           BACKEND_DIGEST: ${{ steps.backend.outputs.digest }}
-          WEB_IMAGE: ghcr.io/wwending/math-knowledge-web:${{ github.sha }}
+          WEB_IMAGE: ghcr.io/wwending/math-knowledge-web:${{ env.GIT_SHA }}
           WEB_DIGEST: ${{ steps.web.outputs.digest }}
+          TRIGGERING_CI_RUN_URL: ${{ github.event.workflow_run.html_url }}
         run: |
           {
             echo "## GHCR release images"
@@ -82,4 +99,7 @@ jobs:
             echo "${WEB_IMAGE}"
             echo "Digest:"
             echo "${WEB_DIGEST}"
+            echo
+            echo "Gating CI run (must be green):"
+            echo "${TRIGGERING_CI_RUN_URL}"
           } | tee -a "${GITHUB_STEP_SUMMARY}"

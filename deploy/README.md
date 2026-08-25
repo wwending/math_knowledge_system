@@ -7,7 +7,7 @@
 - 一台安装了 Docker Engine、Docker Compose v2、Git、curl、tar 和 sha256sum 的 Linux 服务器。
 - 仓库建议检出到固定目录，例如 `/opt/math-knowledge-system`。
 - 部署脚本需要能够创建并调整 `/srv/math-knowledge` 下目录的属主；首次执行通常使用 `sudo`。
-- 当前 checkout 的完整 Git SHA 必须已有成功的 `main` `Publish release images` workflow；部署调用方须从该次成功 workflow 取得 backend/web digest，并显式传给部署脚本。如 GHCR package 需要认证，管理员须在部署前完成 `docker login ghcr.io`，部署脚本不读取或管理凭据。
+- 当前 checkout 的完整 Git SHA 必须已有成功的 `main` `Publish release images` workflow；该 workflow 仅在对应 push 的 CI 全部通过后才运行，因此存在发布记录即隐含该 SHA 已通过测试门禁。部署调用方须从该次成功 workflow 取得 backend/web digest，并显式传给部署脚本。如 GHCR package 需要认证，管理员须在部署前完成 `docker login ghcr.io`，部署脚本不读取或管理凭据。
 - 防火墙只开放当前访问模式所需端口。不要把应用 Web 的宿主机端口或 backend/Gotenberg 容器端口直接暴露到公网。
 
 ## RC HTTP 部署

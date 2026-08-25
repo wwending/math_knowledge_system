@@ -19,6 +19,20 @@ npm run security:list-install-scripts
 
 Any dependency that genuinely requires `preinstall`, `install`, or `postinstall` must be handled as a narrowly scoped exception. Before allowing a package's script, review the locked package version and script contents, document why it is needed, approve the exact package, and rerun the frontend contract tests and production build. Never use a blanket exception for all dependencies.
 
+## Python dependency locking
+
+- `backend/requirements.txt` declares direct dependencies with minimum specifiers only; it is not an install source for production.
+- `backend/requirements.lock` is the fully pinned universal resolution (every direct and transitive dependency, environment markers included, Python 3.11 floor). Docker image builds and CI backend jobs install from the lock so rebuilds of the same Git SHA produce one auditable dependency tree.
+- Regenerate the lock after changing `requirements.txt`:
+
+  ```bash
+  cd backend
+  uv pip compile --universal --python-version 3.11 requirements.txt -o requirements.lock
+  ```
+
+- Commit `requirements.txt` and `requirements.lock` changes together. CI runs `backend/dev_scripts/check_requirements_lock.py` as an offline drift gate: every direct dependency must have a satisfying exact pin in the lock.
+- Refreshing the lock (new upstream versions) is a deliberate, separately reviewed change — never a side effect of an unrelated PR.
+
 ## Dependency and workflow review
 
 - Commit `package-lock.json` changes together with the corresponding `package.json` change.
