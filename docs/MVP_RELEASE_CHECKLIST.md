@@ -27,10 +27,9 @@ python -c "import sys; print(sys.executable); print(sys.prefix)"
 python -m pip -V
 python -m compileall app
 python -m pytest
-python -m unittest discover tests
 ```
 
-期望 Python 路径为 `backend\venv\Scripts\python.exe`。
+自动化测试口径与 `run_local_checks.ps1` 和 CI 一致，只跑 pytest（#103：移除已不再使用的 unittest discover 入口）。期望 Python 路径为 `backend\venv\Scripts\python.exe`。
 
 前端：
 

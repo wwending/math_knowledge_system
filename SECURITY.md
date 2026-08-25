@@ -44,4 +44,20 @@ Any dependency that genuinely requires `preinstall`, `install`, or `postinstall`
 
 ## Reporting a vulnerability
 
-Report suspected vulnerabilities privately to the repository owner. Do not include credentials, production data, or complete third-party responses in an issue or log.
+Report suspected vulnerabilities through GitHub's private vulnerability reporting on this repository: open the repository's **Security** tab and use **Report a vulnerability**. This is the only accepted reporting channel — do not describe vulnerabilities in public issues, discussions, or pull requests.
+
+Include in the report:
+
+- The affected Git SHA (and image digest, if the finding is deployment-related).
+- The affected environment and the steps to reproduce.
+- Your assessment of the impact, and any mitigation you have already applied.
+
+Do not include credentials, production data, or complete third-party responses in an issue or log.
+
+## Credential rotation baseline
+
+- GHCR publish tokens are scoped to `write:packages` only and used solely by the image publishing workflow; Staging/demo hosts pull with `read:packages` tokens or unauthenticated public pulls where possible.
+- Rotate GHCR tokens at least every 90 days, and immediately after any suspected exposure, publisher-machine change, or CI secret list change.
+- SSH keys for server access are dedicated per operator and per machine, protected by passphrases; rotate them at least every 90 days, and immediately after any suspected exposure or operator departure.
+- Remove stale entries from the server's `authorized_keys` and revoke revoked-operator tokens as part of each rotation pass.
+- Any credential that may have appeared in logs, issues, screenshots, or backups is treated as exposed and rotated out of band — rotation is not deferred to the next cycle.

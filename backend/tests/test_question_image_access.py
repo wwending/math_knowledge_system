@@ -267,6 +267,14 @@ class QuestionImageAccessTests(unittest.TestCase):
         finally:
             settings.UPLOAD_DIR = str(self.upload_dir)
 
+    def test_pdf_temp_dir_inside_static_dir_is_rejected(self):
+        settings.PDF_TEMP_DIR = str(self.static_dir / "pdf_temp")
+        try:
+            with self.assertRaises(RuntimeError):
+                settings.validate_pdf_temp_dir_isolation()
+        finally:
+            settings.PDF_TEMP_DIR = str(self.pdf_temp_dir)
+
 
 if __name__ == "__main__":
     unittest.main()

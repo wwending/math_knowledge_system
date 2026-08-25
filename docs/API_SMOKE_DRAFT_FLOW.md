@@ -58,7 +58,7 @@ python -m compileall app
 
 ```powershell
 cd backend
-python -m unittest discover tests
+python -m pytest -q
 ```
 
 前端 contract 测试：

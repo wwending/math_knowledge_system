@@ -3,7 +3,6 @@ import json
 import mimetypes
 import os
 import re
-import shutil
 import time
 import uuid
 from datetime import datetime, timezone
@@ -25,6 +24,8 @@ from app.core.config import settings
 from app.core.constants import (
     ALLOWED_ASSET_MIME_TYPES,
     MAX_ASSET_SIZE_BYTES,
+    MAX_PDF_PAGES,
+    PDF_TEMP_TTL_SECONDS,
     DraftEventType,
     DraftStatus,
 )
@@ -84,6 +85,7 @@ FORBIDDEN_MESSAGE = "\u65e0\u6743\u8bbf\u95ee\u8be5\u8d44\u6e90"
 QUESTION_UPDATED_MESSAGE = "\u9898\u76ee\u5185\u5bb9\u5df2\u66f4\u65b0"
 PDF_ONLY_MESSAGE = "\u8bf7\u4e0a\u4f20 PDF \u6587\u4ef6"
 PDF_PARSE_FAILED_MESSAGE = "\u672a\u80fd\u89e3\u6790 PDF \u6587\u4ef6"
+PDF_TOO_MANY_PAGES_MESSAGE = "PDF \u9875\u6570\u8d85\u8fc7\u4e0a\u9650"
 PDF_GENERATION_UNAVAILABLE_MESSAGE = "PDF \u751f\u6210\u670d\u52a1\u6682\u65f6\u4e0d\u53ef\u7528\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5"
 PDF_PAPER_TOO_LARGE_MESSAGE = "\u8bd5\u5377\u5185\u5bb9\u8fc7\u5927\uff0c\u65e0\u6cd5\u751f\u6210 PDF"
 UPLOAD_SAVE_FAILED_MESSAGE = "\u4e0a\u4f20\u6587\u4ef6\u4fdd\u5b58\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5"
@@ -157,6 +159,35 @@ def _save_upload_file(file: UploadFile, file_path: str) -> tuple[int, str]:
             sha256.update(chunk)
             buffer.write(chunk)
     return size_bytes, sha256.hexdigest()
+
+
+def _cleanup_stale_pdf_temp(pdf_temp_dir: str) -> None:
+    # #103: legacy upload_pdf leaves the PDF and its page renders behind with no
+    # other lifecycle; sweep files past TTL best-effort so disk usage stays bounded.
+    try:
+        entries = os.listdir(pdf_temp_dir)
+    except OSError:
+        return
+    now = time.time()
+    removed = 0
+    for name in entries:
+        path = os.path.join(pdf_temp_dir, name)
+        try:
+            if not os.path.isfile(path):
+                continue
+            if now - os.path.getmtime(path) <= PDF_TEMP_TTL_SECONDS:
+                continue
+            os.remove(path)
+            removed += 1
+        except OSError:
+            continue
+    if removed:
+        logger.info(
+            "Cleaned stale pdf_temp files dir={} count={} ttl_seconds={}",
+            pdf_temp_dir,
+            removed,
+            PDF_TEMP_TTL_SECONDS,
+        )
 
 
 def _build_recognize_response(
@@ -495,12 +526,36 @@ def upload_pdf(
     pdf_filename = f"{task_id}.{file_ext}"
     pdf_path = os.path.join(pdf_temp_dir, pdf_filename)
 
-    with open(pdf_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+    _cleanup_stale_pdf_temp(pdf_temp_dir)
+
+    # #103: bounded copy aligned with /assets — no unbounded disk writes.
+    try:
+        _save_upload_file(file, pdf_path)
+    except HTTPException:
+        _safe_remove_file(pdf_path)
+        raise
+    except Exception:
+        logger.exception("Failed to save pdf upload user_id={} path={}", current_user.id, pdf_path)
+        _safe_remove_file(pdf_path)
+        raise HTTPException(status_code=500, detail=UPLOAD_SAVE_FAILED_MESSAGE)
+    finally:
+        try:
+            file.file.close()
+        except Exception:
+            pass
 
     image_list = []
     try:
         document = fitz.open(pdf_path)
+        if len(document) > MAX_PDF_PAGES:
+            document.close()
+            _safe_remove_file(pdf_path)
+            logger.warning(
+                "PDF page limit exceeded user_id={} limit={}",
+                current_user.id,
+                MAX_PDF_PAGES,
+            )
+            raise HTTPException(status_code=413, detail=PDF_TOO_MANY_PAGES_MESSAGE)
         for page_index in range(len(document)):
             page = document.load_page(page_index)
             pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
@@ -510,8 +565,12 @@ def upload_pdf(
             image_list.append(f"pdf_temp/{img_name}")
         document.close()
         return {"success": True, "total_pages": len(image_list), "images": image_list}
+    except HTTPException:
+        _safe_remove_file(pdf_path)
+        raise
     except Exception:
         logger.exception("PDF parse failed user_id={} path={}", current_user.id, pdf_path)
+        _safe_remove_file(pdf_path)
         raise HTTPException(status_code=500, detail=PDF_PARSE_FAILED_MESSAGE)
     finally:
         try:
@@ -1265,9 +1324,12 @@ def recognize_image(
     file_path = str(settings.UPLOAD_DIR_PATH / unique_filename)
 
     logger.info("Saving recognize upload user_id={} path={}", current_user.id, file_path)
+    # #103: bounded copy aligned with /assets — no unbounded disk writes.
     try:
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        _save_upload_file(file, file_path)
+    except HTTPException:
+        _safe_remove_file(file_path)
+        raise
     except Exception:
         logger.exception("Failed to save recognize upload path={}", file_path)
         _safe_remove_file(file_path)
