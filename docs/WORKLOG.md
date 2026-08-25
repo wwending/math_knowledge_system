@@ -16,6 +16,20 @@
 - `SECURITY.md` 增补 Python 锁定策略与再生成命令；deploy/README 注明发布记录隐含 CI 已通过。
 - 本地验证：compileall、pytest 全量、锁文件干净 venv 安装 + 全量模块 import smoke 通过；校验脚本正/负自测通过。Docker 构建与真实 red-push 门禁验证待 CI/Staging。
 
+## 2026-08-25 Issue #100 当前 SHA 完整 Staging rollout 验收
+
+目标：
+
+- 对审计 #97 交付阻塞项 4 闭环：让迁移 `20260825_0006/0007`、图片鉴权通道、`LAYOUT_MODEL_DIR` 生产值、Gotenberg 出图与组卷带图在真实 Staging 环境完成一轮验证并留证。
+
+结果：
+
+- digest-pinned rollout 完成（Git SHA `4805a294…ba015`，backend/web digest 见 STATUS checkpoint），部署自动备份 `20260825T140239Z` 留痕；Alembic 推进至 `20260825_0007 (head)`，SQLite `quick_check=ok`。
+- 功能面全部验证通过：uploads 布局迁移完成且公开路径 404；未登录 401 / owner 200；模型持久化复用无重下且有真实 `[LayoutDetect] ok` 日志；卷内题图 200 与 `POST /papers/{id}/pdf 200` 真实流量在案；三容器 RestartCount=0，镜像身份三方精确一致。
+- 服务器侧只读采集证据留档 issue #100 评论区，结论 `ISSUE-100 EVIDENCE PASS`。本轮仅文档记账，无代码/配置改动；#101 备份恢复演练另行安排。
+
+## 2026-08-25 Issue #59 组卷带图——PaperItem 题图快照与 HTML/PDF 输出
+
 目标：
 
 - 含图题目组卷后，A4 预览与导出 PDF 显示该题建卷时固化的图；历史试卷不受原题后续改图影响。

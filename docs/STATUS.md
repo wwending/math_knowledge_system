@@ -1,5 +1,15 @@
 # STATUS
 
+## 2026-08-25 当前 SHA 完整 Staging rollout 验收(审计 #97 阻塞项4/#100)
+
+- digest-pinned rollout 完成：部署 Git SHA `4805a2947b5f15623c68f071e514f0a76a7ba015`（当时 main HEAD，功能面含迁移 0006/0007、图片鉴权通道、版面检测、组卷带图），backend/web trusted digest 分别为 `sha256:22c8df1b8652a64a2b29a9107fdc8d6e1c07a0157735e91ecddad68659dd1217` 与 `sha256:67e5cf470cc9a8716948a2015ca1e66a04b91a59fd262bd1b763410b4052d492`；部署自动备份 `20260825T140239Z` 的 `deploy_commit.txt` 与该 SHA 一致。
+- 迁移链：Alembic current == head == `20260825_0007`（自基线 `20260604_0005` 推进）；SQLite 只读 `quick_check=ok`；`paper_items.figure_image_snapshot` 列存在且有真实快照行，figure 资产（`source_assets.kind='figure'`）3 行。
+- 图片鉴权通道：`${DATA_ROOT}/static/uploads` → `${DATA_ROOT}/uploads` 一次性迁移完成（旧路径已不存在，公开 `/static/uploads/` 返回 404）；未登录访问题目图返回 401，owner 带鉴权访问返回 200。
+- 版面检测模型：`LAYOUT_MODEL_DIR=/data/models` 生产值生效；模型文件持久化在持久卷内，本次启动直接复用（日志无 ModelScope/下载痕迹），并有 `[LayoutDetect] ok boxes=2` 真实检测成功记录。
+- Gotenberg 与组卷带图端到端：gotenberg 容器 healthy；真实流量日志含卷内题图读取 `GET /api/v1/papers/{id}/items/{id}/image 200` 与服务端 PDF 产出 `POST /api/v1/papers/{id}/pdf 200`（约 1.7s），配合快照列非空数据证明组卷 → 鉴权取图 → HTML/PDF 带图全链路在真实环境跑通。
+- 三容器 running/healthy 且 RestartCount 均为 0；运行镜像的 `.Config.Image`、RepoDigests 与 OCI revision 标签三方精确一致（digest-pinned 合同成立）。
+- 以上证据由服务器侧只读采集（2026-08-25T15:36Z），完整留档于 issue #100 评论区，结论 `ISSUE-100 EVIDENCE PASS`。备份恢复演练按计划另行安排（#101），不在本次窗口。
+
 ## 2026-08-25 组卷带图：PaperItem 题图快照与 HTML/PDF 输出(#59)
 
 - 后端 `paper_items` 新增 `figure_image_snapshot`(Alembic `20260825_0007`)：建卷/编辑加题时按「最新 revision figure_asset → question.figure_image 回退」固化文件名引用；编辑保留项不触碰该列，历史试卷不受原题后续改图影响（快照语义回归测试覆盖）。新增 `GET /api/v1/papers/{paper_id}/items/{paper_item_id}/image` 经鉴权服务冻结字节，papers 域惯例缺失/跨用户一律 404。安全路径解析 `_resolve_upload_file_path` 抽至 `app/core/files.py` 供 service 层复用。
