@@ -17,9 +17,13 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends libgl1 libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt ./requirements.txt
+# Installs go through the fully pinned universal lock (#102), so rebuilds of
+# the same SHA get an auditable, reproducible dependency tree.
+# requirements.txt declares direct dependencies only; regenerate the lock with:
+#   uv pip compile --universal --python-version 3.11 requirements.txt -o requirements.lock
+COPY requirements.lock ./requirements.lock
 RUN python -m pip install --upgrade pip \
-    && python -m pip install -r requirements.txt
+    && python -m pip install -r requirements.lock
 
 COPY alembic.ini ./alembic.ini
 COPY alembic ./alembic
