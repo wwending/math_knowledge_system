@@ -27,7 +27,7 @@ const requireAbsent = (pattern, message) => {
 
 // 1. 页签 ↔ ?tab= 双向同步。
 requireMatch(
-  /const DASHBOARD_TABS = \['upload', 'bank', 'history', 'papers', 'users'\]/,
+  /const DASHBOARD_TABS = \['upload', 'bank', 'history', 'papers', 'users', 'feedback'\]/,
   'Dashboard must declare the full valid tab list for ?tab= resolution'
 )
 requireMatch(
