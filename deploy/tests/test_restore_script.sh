@@ -12,6 +12,12 @@ fail() {
     exit 1
 }
 
+# The runbook entry point is "./deploy/scripts/restore.sh"; pin the committed
+# Git mode so a fresh clone can execute it directly. Real drill failure: a
+# 100644 blob stopped the restore with Permission denied before it started.
+script_mode="$(git -C "${repo_root}" ls-tree HEAD -- deploy/scripts/restore.sh | awk '{print $1}')"
+[[ "${script_mode}" == "100755" ]] || fail "restore.sh must be committed as 100755, got: ${script_mode}"
+
 # ---------------------------------------------------------------------------
 # Static contract: lifecycle ordering and safety invariants.
 # ---------------------------------------------------------------------------
