@@ -92,3 +92,11 @@ MAX_PDF_PAGES = 50
 # pdf_temp TTL (#103): legacy upload_pdf leaves the PDF and its page renders in
 # pdf_temp with no other lifecycle; stale files are swept best-effort.
 PDF_TEMP_TTL_SECONDS = 24 * 60 * 60
+
+# Feedback inbox (#98): screenshots are evidence images only — the shared asset
+# whitelist above also allows PDFs, which must not leak into feedback uploads.
+ALLOWED_FEEDBACK_IMAGE_MIME_TYPES = {
+    "image/png",
+    "image/jpeg",
+}
+MAX_FEEDBACK_SCREENSHOTS = 5

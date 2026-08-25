@@ -13,7 +13,7 @@ from app.core.logging import setup_logging
 from app.core.request_context import RequestContextMiddleware
 from app.db.base import Base
 from app.db.question_contract import ensure_legacy_question_columns
-from app.models import auth_audit_log, auth_session, login_rate_limit, question, user  # noqa: F401
+from app.models import auth_audit_log, auth_session, feedback, login_rate_limit, question, user  # noqa: F401
 
 
 def create_app() -> FastAPI:
