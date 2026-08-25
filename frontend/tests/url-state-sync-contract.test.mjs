@@ -14,6 +14,7 @@ const utilSource = readFileSync(resolve(process.cwd(), 'src/utils/urlQueryState.
 const bankSource = readFileSync(resolve(process.cwd(), 'src/components/BankPanel.vue'), 'utf8')
 const usersSource = readFileSync(resolve(process.cwd(), 'src/components/UserManagementPanel.vue'), 'utf8')
 const paperSource = readFileSync(resolve(process.cwd(), 'src/components/PaperPanel.vue'), 'utf8')
+const feedbackSource = readFileSync(resolve(process.cwd(), 'src/components/FeedbackInboxPanel.vue'), 'utf8')
 
 const failures = []
 
@@ -48,7 +49,8 @@ requireMatch(
 for (const [name, source] of [
   ['BankPanel', bankSource],
   ['UserManagementPanel', usersSource],
-  ['PaperPanel', paperSource]
+  ['PaperPanel', paperSource],
+  ['FeedbackInboxPanel', feedbackSource]
 ]) {
   requireMatch(
     source,
@@ -133,6 +135,38 @@ requireMatch(
   paperSource,
   /watch\(selectedPaperId, \(paperId\) => \{\s*replaceQueryValues\(router, route, \{ paper_id: paperId \?\? '' \}\)/,
   'PaperPanel must write the selected paper back to ?paper_id= and clear it when deselected'
+)
+
+// 2d. FeedbackInboxPanel：三个 feedback_ 前缀键恢复 + 回写 + 枚举校验。
+requireMatch(
+  feedbackSource,
+  /readStringQuery\(route, 'feedback_q'\)/,
+  'FeedbackInboxPanel must restore the keyword filter from ?feedback_q='
+)
+requireMatch(
+  feedbackSource,
+  /readStringQuery\(route, 'feedback_category'\)/,
+  'FeedbackInboxPanel must restore the category filter from ?feedback_category='
+)
+requireMatch(
+  feedbackSource,
+  /readStringQuery\(route, 'feedback_status'\)/,
+  'FeedbackInboxPanel must restore the status filter from ?feedback_status='
+)
+requireMatch(
+  feedbackSource,
+  /categoryOptions\.some\(\(item\) => item\.value === queryCategory\) \? queryCategory : ''/,
+  'FeedbackInboxPanel must reject unknown category values from the URL'
+)
+requireMatch(
+  feedbackSource,
+  /statusOptions\.some\(\(item\) => item\.value === queryStatus\) \? queryStatus : ''/,
+  'FeedbackInboxPanel must reject unknown status values from the URL'
+)
+requireMatch(
+  feedbackSource,
+  /watch\(filters, \(\) => \{\s*replaceQueryValues\(router, route, \{\s*feedback_category: filters\.category,\s*feedback_status: filters\.status,\s*feedback_q: filters\.q\s*\}\)/,
+  'FeedbackInboxPanel must write all three filters back to the URL on change'
 )
 
 if (failures.length > 0) {
