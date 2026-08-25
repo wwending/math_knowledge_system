@@ -1,5 +1,13 @@
 # STATUS
 
+## 2026-08-26 用户反馈收件箱(#98)
+
+- 后端新增 `feedbacks` / `feedback_screenshots` 两表（Alembic `20260825_0008`，纯增量）与 8 个端点：提交（multipart，正文 ≤500 字 + 类型枚举 + 最多 5 张 png/jpeg 截图，PIL 完整性校验、超限/损坏文件零残留）、我的列表（仅本人 + 类型/状态筛选）、编辑（仅 pending 且仅提交者；`remove_screenshot_ids` 删图语义，缺省字段不动图）、撤回（级联删图行并清理磁盘文件）、认证截图通道（owner 或 admin 可读，其余一律 404 防存在性探测）、管理员列表（全量 + 提交者归属 + q 搜索）、状态流转（三态自由切换便于纠错 + 处理说明）、导出接口（markdown/json，默认导出 pending，含截图绝对路径供部署端消费）。文件时序统一「先写盘→再提交→后删旧」，失败路径逐级回滚。
+- AI 整理归纳不在应用内：管理员在部署机用 codex 手动触发（需求对齐留痕见 issue #98 评论）；应用侧只提供导出接口，候选清单以 GitHub issue 承载。操作手册见 `docs/FEEDBACK_INBOX_RUNBOOK.md`。
+- 前端新增 `FeedbackInboxPanel`（仿用户管理面板）：提交/编辑弹窗（类型 radio、限长文本域、el-upload 非 auto-upload 多图）、管理员处理弹窗、截图 blob 认证预览（关闭即 revoke objectURL）、待处理行编辑/撤回（ElMessageBox 确认）、空态 CTA；Dashboard 接线六处（菜单项全员可见无 v-if、DASHBOARD_TABS 加 `feedback`、标题/描述分支），深链键 `feedback_category/feedback_status/feedback_q` 走 urlQueryState 并入 url-state-sync 契约循环。
+- 新增 `backend/tests/test_feedback_inbox.py`（41 用例：创建边界/可见性隔离/编辑删图磁盘断言/撤回锁定/截图越权/管理面校验/导出双格式）与 `frontend/tests/feedback-panel-contract.test.mjs`（挂入 `test:stage3-contract` 链）；`dashboard-workflow-ux-contract` 的页签白名单同步加入 `feedback`。
+- 本地验证：compileall 通过；pytest 全量通过；alembic upgrade/downgrade/upgrade 往返通过且单头 `20260825_0008`；`test:stage3-contract` 全链 23 项通过；`npm run build` 成功。真实浏览器人工验收（提反馈/多图增删/深链恢复/管理员流转）待 Draft PR 阶段执行。
+
 ## 2026-08-26 备份→恢复全流程演练通过，#97 A1 解除(审计 #97·A1/#101)
 
 - 首次尝试在入口处按红线安全中止：restore.sh 曾以 Git 模式 100644 入库导致 `./deploy/scripts/restore.sh` Permission denied，脚本未启动、现网未受影响；补 100755 并新增 CI 模式断言后重跑成功。

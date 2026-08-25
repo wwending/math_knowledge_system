@@ -11,3 +11,4 @@ from app.models import ocr_run  # noqa: F401
 from app.models import llm_run  # noqa: F401
 from app.models import question_revision  # noqa: F401
 from app.models import paper  # noqa: F401
+from app.models import feedback  # noqa: F401

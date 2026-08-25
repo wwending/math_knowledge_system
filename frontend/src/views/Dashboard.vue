@@ -38,6 +38,11 @@
           <el-icon><UserFilled /></el-icon>
           <span>用户管理</span>
         </el-menu-item>
+        <!-- #98: 反馈中心对所有登录用户开放，不做角色门禁。 -->
+        <el-menu-item index="feedback">
+          <el-icon><ChatDotRound /></el-icon>
+          <span>反馈中心</span>
+        </el-menu-item>
       </el-menu>
     </aside>
 
@@ -396,6 +401,11 @@
         <section v-else-if="activeMenu === 'users'" class="content-panel">
           <user-management-panel />
         </section>
+
+        <!-- #98: 反馈收件箱——提交、状态跟踪与处理。 -->
+        <section v-else-if="activeMenu === 'feedback'" class="content-panel">
+          <feedback-inbox-panel />
+        </section>
       </main>
     </div>
   </div>
@@ -405,7 +415,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import axios from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Clock, Collection, DataAnalysis, Document, Menu, Picture, UploadFilled, UserFilled } from '@element-plus/icons-vue'
+import { ChatDotRound, Clock, Collection, DataAnalysis, Document, Menu, Picture, UploadFilled, UserFilled } from '@element-plus/icons-vue'
 import { useRoute, useRouter } from 'vue-router'
 import 'vue-cropper/dist/index.css'
 import { VueCropper } from 'vue-cropper'
@@ -431,6 +441,7 @@ import BankPanel from '../components/BankPanel.vue'
 import FigureOverlayEditor from '../components/FigureOverlayEditor.vue'
 import PaperPanel from '../components/PaperPanel.vue'
 import UserManagementPanel from '../components/UserManagementPanel.vue'
+import FeedbackInboxPanel from '../components/FeedbackInboxPanel.vue'
 
 import * as pdfjsLib from 'pdfjs-dist'
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.mjs?url'
@@ -504,12 +515,18 @@ const pageTitle = computed(() => {
   if (activeMenu.value === 'users') {
     return '用户管理'
   }
+  if (activeMenu.value === 'feedback') {
+    return '反馈中心'
+  }
   return '题目录入'
 })
 
 const pageDescription = computed(() => {
   if (activeMenu.value === 'users') {
     return '管理员可以创建账号、调整角色、启停用和重置密码。'
+  }
+  if (activeMenu.value === 'feedback') {
+    return '提交使用反馈与建议，跟踪处理进度。'
   }
   if (activeMenu.value === 'bank') {
     return '查看已沉淀的题库内容。'
@@ -526,7 +543,7 @@ const pageDescription = computed(() => {
 // #73：页签同步到 ?tab= 查询参数，支持直链与刷新后停留原页签；
 // 非 admin 请求 users 页签时维持回落「题目录入」（路由守卫已保证
 // 进入 Dashboard 前 currentUser 就绪，这里可同步校验角色）。
-const DASHBOARD_TABS = ['upload', 'bank', 'history', 'papers', 'users']
+const DASHBOARD_TABS = ['upload', 'bank', 'history', 'papers', 'users', 'feedback']
 
 const resolveRequestedTab = (rawValue) => {
   const tab = Array.isArray(rawValue) ? rawValue[0] : rawValue
