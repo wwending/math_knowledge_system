@@ -138,4 +138,4 @@ data/manual_smoke/predictions/
 - 当前样例来自 PDF 截图，不覆盖真实拍照噪声、倾斜、阴影、手写批注或低清晰度场景。
 - 自动化测试不读取这些真实图片。
 - 识别风险提示只是保存前校验，不代表 OCR 已修复双栏选项漏识别。
-- 当前导出方案是浏览器打印或另存为 PDF，不是服务端 PDF/DOCX 导出。
+- 本地 smoke 的导出验证用浏览器打印或另存为 PDF；服务端 PDF 导出属 Docker 部署栈能力，验收见 `MVP_RELEASE_CHECKLIST`；DOCX 尚未实现。

@@ -40,7 +40,7 @@
 
   - 支持从题库中选择题目生成试卷；
   - 保存试卷题目快照，避免后续题库题目修改影响历史试卷；
-  - 为后续 Paper Preview / 试卷导出功能预留结构。
+  - 支持学生版 A4 作业预览与服务端 PDF 导出（浏览器打印保留为替代方案）。
 
   ### 数学公式渲染
 
@@ -63,7 +63,7 @@
   - Element Plus
   - Axios
   - markdown-it
-  - markdown-it-mathjax3
+  - KaTeX
   - PDF.js / Cropper 相关组件
 
   ### 后端
@@ -77,6 +77,7 @@
   - PyMuPDF
   - OCR 服务
   - OpenAI Compatible API / DeepSeek API
+  - Gotenberg（Chromium，HTML→PDF 服务）
 
   ### 工程与测试
 
@@ -120,7 +121,7 @@
   - 本地手动 smoke checklist 见：`docs/MVP_SMOKE_CHECKLIST.md`
   - v0.1 发布验收与签字清单见：`docs/MVP_RELEASE_CHECKLIST.md`
   - 本地 smoke 图片约定放在：`data/manual_smoke/ocr_images/`
-  - 当前导出方案优先使用 PaperPreview 的浏览器打印或另存为 PDF；服务端 PDF/DOCX 导出尚未实现。
+  - 服务端 PDF 导出已由内部 Gotenberg 支持：authenticated `POST /api/v1/papers/{paper_id}/pdf`；DOCX 导出尚未实现。Docker 部署栈之外（如本地裸跑 uvicorn）Gotenberg 不可用时，仍可使用 PaperPreview 的浏览器打印或另存为 PDF。
 
   生产路线固定使用“百度 OCR + DeepSeek/兼容 LLM + Draft 人工确认”。`OCR_PROVIDER=baidu` 是生产默认值。RapidOCR 代码只作为历史实验能力保留，不属于 v0.1 交付范围；除非真实客户需求或成本数据要求重新评估，否则不再继续迁移或比较本地 OCR。
 
@@ -245,7 +246,7 @@
 
   | 功能         | 方法 | 路径                                     |
   | ------------ | ---- | ---------------------------------------- |
-  | 健康检查     | GET  | `/api/v1/healthz`                        |
+  | 健康检查     | GET  | `/healthz`                               |
   | 用户登录     | POST | `/api/v1/auth/token`                     |
   | 获取当前用户 | GET  | `/api/v1/auth/me`                        |
   | 上传资源     | POST | `/api/v1/assets`                         |
@@ -324,14 +325,14 @@
   - 题目历史记录展示；
   - Markdown / LaTeX 公式渲染；
   - 用户鉴权与数据隔离；
-  - 组卷 MVP 后端能力；
+  - 组卷、学生版 A4 作业预览与服务端 PDF 导出；
   - 基础测试、前端契约验证与 GitHub Actions CI。
 
   发布前仍需人工完成：
 
   - 至少 5 张真实数学题图片的百度 OCR + LLM 全流程 smoke；
   - OCR/LLM 失败、风险二次确认、重复保存保护、用户数据隔离与组卷快照核对；
-  - Paper Preview 浏览器打印或另存 PDF 验收；
+  - Paper Preview 与服务端 PDF 导出验收（文件可打开且关键题目内容不缺失）；
   - 发布负责人在 `docs/MVP_RELEASE_CHECKLIST.md` 中签字确认。
 
   ## 客户反馈后评估
@@ -340,7 +341,7 @@
 
   - 按知识点筛选、错题复习计划和更精细的题目结构化字段；
   - 题库删除/回收站、Draft 历史恢复以及私有/共享/群组题库；
-  - 服务端 PDF/DOCX 导出、复杂排版和移动端体验优化；
+  - DOCX 导出与排版引擎级自动分页、复杂排版和移动端体验优化；
   - RapidOCR、PaddleOCR、Pix2Text 或其他 OCR 方案重新评估。
 
   ## 项目亮点
