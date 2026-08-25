@@ -2,6 +2,18 @@
 
 说明：本文件按时间倒序记录每轮工作。较早轮次中的“当前主链路”等表述保留为当时历史事实；当前状态以 `docs/STATUS.md` 最新 checkpoint 和较新的 DECISIONS 为准。
 
+## 2026-08-26 Issue #101 备份→恢复全流程演练（#97 A1 解除）
+
+目标：
+
+- 对审计 #97 唯一高危发现 A1 闭环：证明既有备份可真实恢复到可用状态并通过业务 smoke，首次真实恢复不发生在事故压力下。
+
+结果：
+
+- restore 脚本与 RESTORE_RUNBOOK 及其可执行位修复合入 main 后，服务器侧完成全流程演练：备份 SHA256 校验、「清库」由隔离实现（DB+uploads 移入 pre-restore-* 目录，全程零删除）、quick_check/foreign_key_check 通过、Alembic 确认 `20260825_0007 (head)`、数据行数抽样与恢复前一致、真实账号 smoke 含带题图试卷 Preview/PDF 全部 200。
+- 首次尝试因脚本缺执行位在入口即安全中止（现网未受影响），暴露出「bash 显式调用的测试测不到执行位」的 CI 盲区，已以 git ls-tree 模式断言封住。
+- 证据留档 issue #101 评论区，结论 `ISSUE-101 RESTORE DRILL PASS`；#97 A1 标记解除，待用户验收关闭。本轮仅文档记账，无代码/配置改动。
+
 ## 2026-08-25 Issue #102 publish-images CI 门禁 + Python 依赖锁版本
 
 目标：

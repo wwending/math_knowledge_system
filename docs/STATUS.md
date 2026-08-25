@@ -1,5 +1,14 @@
 # STATUS
 
+## 2026-08-26 备份→恢复全流程演练通过，#97 A1 解除(审计 #97·A1/#101)
+
+- 首次尝试在入口处按红线安全中止：restore.sh 曾以 Git 模式 100644 入库导致 `./deploy/scripts/restore.sh` Permission denied，脚本未启动、现网未受影响；补 100755 并新增 CI 模式断言后重跑成功。
+- 全流程（备份→清库→恢复→migration→smoke）：新备份 `20260825T164932Z` 的 SHA256 四文件全 OK → 现有 DB/uploads 移入隔离目录 `pre-restore-20260825T164953Z`（移动而非删除，「清库」语义由此实现） → 恢复并修复属主(10001) → SQLite `quick_check=[('ok',)]` 且 foreign_key_check 无违例 → Alembic current == head == `20260825_0007` → 三容器 healthy、RestartCount 均为 0。
+- 数据完整性抽样：users/questions/papers 恢复前后均为 2/17/5；paper_items 题图快照行与 uploads 内对应文件一一在盘。
+- 真实账号业务 smoke 全部 200：refresh 登录链路、题库列表、题目详情、新建带图试卷（paper 6）、render model、两张卷内题图鉴权读取、PDF 导出经内部 Gotenberg（输出 211702 bytes）。
+- 运行版本未因演练改变：仍为 digest-pinned `4805a294…ba015`，backend/web OCI revision 核对一致；演练不构成 release 变更。
+- 结论 `ISSUE-101 RESTORE DRILL PASS`，证据留档 issue #101/#97 评论区。隔离回退点与三份备份按 runbook 保留至验收后人工清理；#101 待用户验收关闭，#97 A1 标记解除。
+
 ## 2026-08-25 当前 SHA 完整 Staging rollout 验收(审计 #97 阻塞项4/#100)
 
 - digest-pinned rollout 完成：部署 Git SHA `4805a2947b5f15623c68f071e514f0a76a7ba015`（当时 main HEAD，功能面含迁移 0006/0007、图片鉴权通道、版面检测、组卷带图），backend/web trusted digest 分别为 `sha256:22c8df1b8652a64a2b29a9107fdc8d6e1c07a0157735e91ecddad68659dd1217` 与 `sha256:67e5cf470cc9a8716948a2015ca1e66a04b91a59fd262bd1b763410b4052d492`；部署自动备份 `20260825T140239Z` 的 `deploy_commit.txt` 与该 SHA 一致。
