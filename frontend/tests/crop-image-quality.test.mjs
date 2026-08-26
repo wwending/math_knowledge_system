@@ -148,7 +148,8 @@ assert.match(dashboardSource, /onBeforeUnmount\(\(\) => \{[\s\S]*revokeImageObje
 assert.doesNotMatch(dashboardSource, /crop_question\.jpg/)
 assert.doesNotMatch(dashboardSource, /new File\(\[blob\], 'crop_question[^']*', \{ type: 'image\/jpeg' \}\)/)
 
-assert.match(dashboardSource, /一页多题请逐题框选录入/, 'cropper toolbar must guide per-question framing')
+assert.match(dashboardSource, /一页仅一道题时使用/, 'cropper toolbar must clarify it is for a single-question page')
+assert.match(dashboardSource, /一页多题请改用「批量分题」逐题框选/, 'cropper toolbar must point multi-question pages to batch segmentation')
 // #31: the toolbar sits above the viewport in normal flow — an absolutely
 // positioned bar used to cover questions near the top of the page.
 assert.match(

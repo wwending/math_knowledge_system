@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 from loguru import logger
+from PIL import Image
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -105,7 +106,10 @@ class DraftPipelineTests(unittest.TestCase):
         width: int | None = 100,
         height: int | None = 80,
     ) -> int:
-        (self.upload_dir / stored_name).write_bytes(b"fake-image-bytes")
+        if mime.startswith("image/"):
+            Image.new("RGB", (width or 100, height or 80), color="white").save(self.upload_dir / stored_name)
+        else:
+            (self.upload_dir / stored_name).write_bytes(b"fake-image-bytes")
         with self.SessionLocal() as db:
             asset = SourceAsset(
                 user_id=self.user_id,
@@ -377,7 +381,7 @@ class DraftPipelineTests(unittest.TestCase):
         create_response = self.client.post(
             "/api/v1/drafts",
             headers=self.auth_headers,
-            json={"source_asset_id": asset_id, "crop_bbox": {"x": 1, "y": 2, "w": 30, "h": 40}},
+            json={"source_asset_id": asset_id, "crop_bbox": [0.1, 0.2, 0.6, 0.5]},
         )
         self.assertEqual(create_response.status_code, 200)
         draft_payload = create_response.json()
@@ -746,6 +750,125 @@ class DraftPipelineTests(unittest.TestCase):
         self.assertIn("llm_fallback=True", perf_log)
         self.assertIn("fallback_reason=timeout", perf_log)
         self.assertIn("failure_stage=ocr", perf_log)
+
+    def test_create_draft_validates_normalized_bbox_and_preserves_full_image_compatibility(self):
+        asset_id = self._create_source_asset()
+        for body in (
+            {"source_asset_id": asset_id},
+            {"source_asset_id": asset_id, "crop_bbox": None},
+            {"source_asset_id": asset_id, "crop_bbox": {}},
+        ):
+            with self.subTest(body=body):
+                response = self.client.post("/api/v1/drafts", headers=self.auth_headers, json=body)
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.json()["crop_bbox"], {})
+
+        valid = self.client.post(
+            "/api/v1/drafts",
+            headers=self.auth_headers,
+            json={"source_asset_id": asset_id, "crop_bbox": [0.1, 0.2, 0.6, 0.5]},
+        )
+        self.assertEqual(valid.status_code, 200)
+        self.assertEqual(valid.json()["crop_bbox"], [0.1, 0.2, 0.6, 0.5])
+
+        invalid_values = (
+            [0, 0, 0, 1],
+            [0, 0, 0.01, 0.01],
+            [0.8, 0, 0.3, 1],
+            [-0.1, 0, 0.5, 0.5],
+            [0, 0, 1],
+            {"x": 0, "y": 0, "w": 1, "h": 1},
+            [True, 0, 0.5, 0.5],
+            ["0", 0, 0.5, 0.5],
+        )
+        for bbox in invalid_values:
+            with self.subTest(bbox=bbox):
+                response = self.client.post(
+                    "/api/v1/drafts",
+                    headers=self.auth_headers,
+                    json={"source_asset_id": asset_id, "crop_bbox": bbox},
+                )
+                self.assertEqual(response.status_code, 422)
+
+    def test_recognize_rejects_too_small_bbox_already_stored_in_database(self):
+        asset_id = self._create_source_asset()
+        draft_id = self._create_draft(asset_id)
+        with self.SessionLocal() as db:
+            draft = db.query(Draft).filter(Draft.id == draft_id).one()
+            draft.crop_bbox = [0, 0, 0.01, 0.01]
+            db.commit()
+
+        response = self.client.post(
+            f"/api/v1/drafts/{draft_id}/recognize", headers=self.auth_headers
+        )
+        self.assertEqual(response.status_code, 400)
+        with self.SessionLocal() as db:
+            draft = db.query(Draft).filter(Draft.id == draft_id).one()
+            self.assertEqual(draft.status, DraftStatus.FAILED)
+            event = db.query(DraftEvent).filter(
+                DraftEvent.draft_id == draft_id,
+                DraftEvent.event_type == DraftEventType.RECOGNIZE_FAIL,
+            ).one()
+            self.assertEqual(event.metadata_["failure_stage"], "crop")
+
+    def test_recognize_rejects_duplicate_in_flight_but_allows_failed_retry(self):
+        asset_id = self._create_source_asset()
+        draft_id = self._create_draft(asset_id)
+        self._set_draft_state(draft_id, DraftStatus.RECOGNIZING)
+
+        duplicate = self.client.post(f"/api/v1/drafts/{draft_id}/recognize", headers=self.auth_headers)
+        self.assertEqual(duplicate.status_code, 409)
+        self.assertIn("正在识别", duplicate.json()["detail"])
+
+        self._set_draft_state(draft_id, DraftStatus.FAILED)
+        retried = self._recognize_draft_successfully(draft_id)
+        self.assertTrue(retried.json()["success"])
+        with self.SessionLocal() as db:
+            events = db.query(DraftEvent).filter(DraftEvent.draft_id == draft_id).all()
+            self.assertEqual(
+                [event.event_type for event in events],
+                [DraftEventType.CREATE, DraftEventType.START_RECOGNIZE, DraftEventType.RECOGNIZE_SUCCESS],
+            )
+
+    def test_recognition_uses_crop_for_layout_and_ocr_and_cleans_all_temps(self):
+        asset_id = self._create_source_asset(width=200, height=100)
+        response = self.client.post(
+            "/api/v1/drafts",
+            headers=self.auth_headers,
+            json={"source_asset_id": asset_id, "crop_bbox": [0.25, 0.2, 0.5, 0.6]},
+        )
+        draft_id = response.json()["id"]
+        seen: dict[str, str] = {}
+
+        from app.services.layout_service import FigureBox, LayoutResult
+
+        with patch.object(
+            endpoints.layout_service,
+            "detect",
+            side_effect=lambda path: seen.update(layout=path)
+            or LayoutResult(
+                success=True,
+                boxes=[FigureBox(bbox=[0.1, 0.1, 0.2, 0.2], label="figure", score=0.9)],
+            ),
+        ), patch.object(
+            endpoints.draft_ocr_service,
+            "recognize",
+            side_effect=lambda path: seen.update(ocr=path)
+            or {"success": True, "content": "raw", "cost_seconds": 0.1},
+        ), patch.object(
+            endpoints.nlp_service,
+            "analyze",
+            return_value={"success": True, "corrected_text": "clean", "tags": [], "cost_seconds": 0.1},
+        ):
+            recognized = self.client.post(
+                f"/api/v1/drafts/{draft_id}/recognize", headers=self.auth_headers
+            )
+
+        self.assertEqual(recognized.status_code, 200)
+        self.assertIn("tmp_draft_crop_", seen["layout"])
+        self.assertIn("tmp_masked_", seen["ocr"])
+        self.assertFalse(Path(seen["layout"]).exists())
+        self.assertFalse(Path(seen["ocr"]).exists())
 
     def test_create_draft_returns_404_when_source_asset_missing(self):
         response = self.client.post(

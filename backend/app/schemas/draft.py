@@ -3,14 +3,20 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.schemas.question import KnowledgeTag
+from app.services.draft_image_service import normalize_draft_bbox
 
 
 class DraftCreate(BaseModel):
     source_asset_id: int
-    crop_bbox: Optional[Any] = None
+    crop_bbox: list[float] | dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("crop_bbox", mode="before")
+    @classmethod
+    def validate_crop_bbox(cls, value: Any) -> list[float] | dict[str, Any]:
+        return normalize_draft_bbox(value)
 
 
 class DraftUpdate(BaseModel):

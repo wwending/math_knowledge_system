@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+from PIL import Image
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -187,6 +188,39 @@ class DraftImageAccessTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.content, PNG_BYTES)
         self.assertTrue(response.headers["content-type"].startswith("image/"))
+
+    def test_cropped_draft_image_endpoint_returns_only_selected_region(self):
+        cropped_name = "crop-source.png"
+        image = Image.new("RGB", (100, 80), color="white")
+        for x in range(50, 100):
+            for y in range(20, 60):
+                image.putpixel((x, y), (255, 0, 0))
+        image.save(self.upload_dir / cropped_name)
+        with self.SessionLocal() as db:
+            asset_id = self._create_asset_in_db(
+                db, user_id=self.owner_user_id, original_path=cropped_name
+            )
+            draft = Draft(
+                user_id=self.owner_user_id,
+                source_asset_id=asset_id,
+                crop_bbox=[0.5, 0.25, 0.5, 0.5],
+                status="draft_ready",
+                current_content={"text": "recognized content", "knowledge_tags": []},
+            )
+            db.add(draft)
+            db.commit()
+            draft_id = draft.id
+
+        response = self.client.get(
+            f"{self.IMAGE_URL_PREFIX}/{draft_id}/image", headers=self.owner_headers
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["content-type"], "image/png")
+        from io import BytesIO
+
+        with Image.open(BytesIO(response.content)) as cropped:
+            self.assertEqual(cropped.size, (50, 40))
+            self.assertEqual(cropped.convert("RGB").getpixel((25, 20)), (255, 0, 0))
 
     def test_shared_asset_bytes_readable_via_own_draft(self):
         # The second user owns the referencing draft even though the underlying
