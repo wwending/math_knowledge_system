@@ -27,6 +27,7 @@ from app.models.question import Question
 from app.models.question_revision import QuestionRevision
 from app.models.source_asset import SourceAsset
 from app.models.user import User, UserStatus
+from app.services.draft_image_service import compose_bbox_to_page
 from app.services.layout_service import FigureBox, LayoutResult
 
 
@@ -293,6 +294,77 @@ class DraftFigureTests(unittest.TestCase):
         )
         self.assertEqual(image_response.status_code, 200)
         self.assertIn("image/", image_response.headers.get("content-type", ""))
+
+    def test_figure_bbox_composition_does_not_apply_question_crop_minimum(self):
+        self.assertEqual(
+            compose_bbox_to_page([0.25, 0.2, 0.5, 0.6], [0.2, 0.25, 0.01, 0.01]),
+            [0.35, 0.35, 0.005, 0.006],
+        )
+
+    def test_save_to_bank_keeps_small_figure_in_small_question_crop(self):
+        # The figure occupies 4% of the crop (above LAYOUT_MIN_AREA_RATIO in
+        # crop-relative space) but under 1% of the page once composed. Save must
+        # validate in crop-relative space so the figure is not silently dropped.
+        asset_id = self._create_image_asset(width=200, height=100)
+        create_response = self.client.post(
+            "/api/v1/drafts",
+            headers=self.auth_headers,
+            json={"source_asset_id": asset_id, "crop_bbox": [0.25, 0.2, 0.1, 0.1]},
+        )
+        self.assertEqual(create_response.status_code, 200)
+        draft_id = create_response.json()["id"]
+        with self.SessionLocal() as db:
+            draft = db.query(Draft).filter(Draft.id == draft_id).one()
+            draft.status = DraftStatus.DRAFT_READY
+            draft.current_content = {"text": "clean math text", "knowledge_tags": []}
+            db.commit()
+
+        response = self.client.post(
+            f"/api/v1/drafts/{draft_id}/save-to-bank",
+            headers=self.auth_headers,
+            json={"figure_bbox": [0, 0, 0.2, 0.2]},
+        )
+        self.assertEqual(response.status_code, 200)
+        with self.SessionLocal() as db:
+            question = db.query(Question).filter(Question.id == response.json()["question_id"]).one()
+            self.assertEqual(question.figure_crop_bbox, [0.25, 0.2, 0.02, 0.02])
+            self.assertIsNotNone(question.figure_image)
+            revision = db.query(QuestionRevision).filter(
+                QuestionRevision.question_id == question.id
+            ).one()
+            self.assertIsNotNone(revision.figure_asset_id)
+
+    def test_save_to_bank_composes_crop_relative_figure_bbox_to_page_coordinates(self):
+        asset_id = self._create_image_asset(width=200, height=100)
+        create_response = self.client.post(
+            "/api/v1/drafts",
+            headers=self.auth_headers,
+            json={"source_asset_id": asset_id, "crop_bbox": [0.25, 0.2, 0.5, 0.6]},
+        )
+        self.assertEqual(create_response.status_code, 200)
+        draft_id = create_response.json()["id"]
+        with self.SessionLocal() as db:
+            draft = db.query(Draft).filter(Draft.id == draft_id).one()
+            draft.status = DraftStatus.DRAFT_READY
+            draft.current_content = {"text": "clean math text", "knowledge_tags": []}
+            db.commit()
+
+        response = self.client.post(
+            f"/api/v1/drafts/{draft_id}/save-to-bank",
+            headers=self.auth_headers,
+            json={"figure_bbox": [0.2, 0.25, 0.4, 0.5]},
+        )
+        self.assertEqual(response.status_code, 200)
+        with self.SessionLocal() as db:
+            question = db.query(Question).filter(Question.id == response.json()["question_id"]).one()
+            self.assertEqual(question.figure_crop_bbox, [0.35, 0.35, 0.2, 0.3])
+            revision = db.query(QuestionRevision).filter(
+                QuestionRevision.question_id == question.id
+            ).one()
+            figure_asset = db.query(SourceAsset).filter(
+                SourceAsset.id == revision.figure_asset_id
+            ).one()
+            self.assertEqual((figure_asset.width, figure_asset.height), (40, 30))
 
     def test_save_to_bank_ignores_invalid_figure_bbox(self):
         draft_id, _ = self._ready_draft_with_content()
