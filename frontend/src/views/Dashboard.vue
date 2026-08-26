@@ -148,17 +148,26 @@
               <el-radio-group v-model="processMode" size="large">
                 <el-radio-button label="full">整页识别</el-radio-button>
                 <el-radio-button label="crop">裁剪识别</el-radio-button>
+                <el-radio-button label="batch">批量分题</el-radio-button>
               </el-radio-group>
             </div>
 
-            <div class="preview-container">
+            <div v-if="processMode === 'batch'" class="preview-container">
+              <question-segmentation-editor
+                :image-url="currentImageUrl"
+                :initial-boxes="batchJobs"
+                @confirm="startBatchRecognition"
+              />
+            </div>
+
+            <div v-else class="preview-container">
               <!-- #31: the toolbar stays in normal flow ABOVE the viewport so it can
                    never cover the question; overlay bars used to hide top-of-page crops. -->
               <div v-if="processMode === 'crop'" class="cropper-block">
                 <div class="cropper-toolbar">
                   <div class="cropper-hints">
                     <span>拖动图片定位题目，可使用滚轮或 +/- 缩放。</span>
-                    <span class="cropper-hint-image">一页多题请逐题框选录入；题目含图可直接框入，识别时自动检出图形区域，确认页可修正后入库。</span>
+                    <span class="cropper-hint-image">一页仅一道题时使用；题目含图可直接框入，识别时自动检出图形区域，确认页可修正后入库。一页多题请改用「批量分题」逐题框选。</span>
                   </div>
                   <el-button-group>
                     <el-button aria-label="缩小裁剪图片" @click="changeCropperScale(-10)">−</el-button>
@@ -197,12 +206,26 @@
 
               <div v-else class="full-preview">
                 <img :src="currentImageUrl" alt="待识别的整页题目图片预览" />
+                <p class="full-preview-hint">整页识别适用于一页仅含一道题；一页多题请使用「批量分题」。</p>
                 <el-button type="primary" :loading="ocrLoading" :disabled="isDraftBusy" @click="uploadFullImage">
                   确认整页上传
                 </el-button>
               </div>
             </div>
           </div>
+
+          <question-batch-review
+            v-if="step === 'batch-result'"
+            :jobs="batchJobs"
+            @back="returnToSegmentation"
+            @retry="retryBatchJob"
+            @edit="enterBatchEdit"
+            @cancel-edit="cancelBatchEdit"
+            @update-content="updateBatchEditContent"
+            @update-figure="updateBatchFigureBbox"
+            @save-edit="saveBatchEdit"
+            @save-bank="saveBatchJobToBank"
+          />
 
           <!-- #73: 识别进度文案对读屏器可感知。 -->
           <div v-if="ocrLoading && step === 'uploading'" class="loading-state" aria-live="polite">
@@ -442,6 +465,17 @@ import FigureOverlayEditor from '../components/FigureOverlayEditor.vue'
 import PaperPanel from '../components/PaperPanel.vue'
 import UserManagementPanel from '../components/UserManagementPanel.vue'
 import FeedbackInboxPanel from '../components/FeedbackInboxPanel.vue'
+import QuestionSegmentationEditor from '../components/QuestionSegmentationEditor.vue'
+import QuestionBatchReview from '../components/QuestionBatchReview.vue'
+import {
+  QUESTION_RECOGNITION_CONCURRENCY,
+  QUESTION_RECOGNITION_TIMEOUT_MS,
+  createConcurrencyGate,
+  createQuestionJobs,
+  isRecognizeTimeout,
+  reconcileDraftStatus,
+  runWithConcurrency,
+} from '../utils/questionSegmentation.mjs'
 
 import * as pdfjsLib from 'pdfjs-dist'
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.mjs?url'
@@ -494,6 +528,9 @@ let draftImageRequestId = 0
 // user-confirmed bbox sent to save-to-bank (null = save without a figure).
 const detectedFigures = ref([])
 const confirmedFigureBbox = ref(null)
+const batchJobs = ref([])
+const batchSourceAssetId = ref(null)
+const batchRecognitionGate = createConcurrencyGate(QUESTION_RECOGNITION_CONCURRENCY)
 
 const changeCropperScale = (amount) => {
   cropperRef.value?.changeScale(amount)
@@ -918,6 +955,8 @@ const revokeImageObjectUrl = (source) => {
 const setCurrentImageSource = (source) => {
   if (currentImageUrl.value !== source) {
     revokeImageObjectUrl(currentImageUrl.value)
+    batchSourceAssetId.value = null
+    batchJobs.value = []
   }
   currentImageUrl.value = source
 }
@@ -1116,6 +1155,162 @@ const runRecognition = async (file) => {
   }
 }
 
+const applyBatchPayload = (job, payload) => {
+  job.status = payload?.status || job.status
+  job.content = getDraftContent(payload)
+  job.editContent = job.content
+  job.warning = payload?.partial_success ? (payload.warning || '当前为降级识别结果，请核对后保存。') : ''
+  job.qualityWarnings = getQualityWarnings(payload)
+  job.recognitionDebug = getRecognitionDebug(payload)
+  job.detectedFigures = getDetectedFigures(payload)
+}
+
+const uploadBatchSourceOnce = async () => {
+  if (batchSourceAssetId.value) return batchSourceAssetId.value
+  const response = await fetch(currentImageUrl.value)
+  const blob = await response.blob()
+  const formData = new FormData()
+  formData.append('file', createImageUploadFile(blob, 'segmented_page'))
+  const assetResponse = await axios.post(`${API_V1_BASE_URL}/assets`, formData)
+  const id = extractId(assetResponse.data || {}, ['source_asset_id', 'asset_id', 'existing_asset_id', 'id'])
+  if (!id) throw new Error('页面上传成功，但响应中缺少 source_asset_id。')
+  batchSourceAssetId.value = id
+  return id
+}
+
+const reconcileBatchJob = async (job) => {
+  job.status = 'reconciling'
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const response = await axios.get(`${API_V1_BASE_URL}/drafts/${job.draftId}`)
+    const payload = response.data || {}
+    const reconciled = reconcileDraftStatus(payload)
+    if (reconciled.terminal) {
+      applyBatchPayload(job, payload)
+      if (!reconciled.succeeded) job.error = getRecognizeErrorMessage(payload)
+      return
+    }
+    if (attempt < 2) await new Promise((resolve) => window.setTimeout(resolve, 1200))
+  }
+  job.status = 'failed'
+  job.error = '识别请求超时，状态核对后仍在处理中。请稍后点击“重试此题”；系统不会改用整页识别。'
+}
+
+const recognizeBatchJob = async (job) => {
+  job.error = ''
+  job.warning = ''
+  try {
+    if (!job.draftId) {
+      job.status = 'creating_draft'
+      const draftResponse = await axios.post(`${API_V1_BASE_URL}/drafts`, {
+        source_asset_id: batchSourceAssetId.value,
+        crop_bbox: job.bbox,
+      })
+      job.draftId = extractId(draftResponse.data, ['draft_id', 'id'])
+      if (!job.draftId) throw new Error('草稿创建成功，但响应中缺少 draft_id。')
+    }
+    job.status = 'recognizing'
+    const response = await axios.post(
+      `${API_V1_BASE_URL}/drafts/${job.draftId}/recognize`,
+      undefined,
+      { timeout: QUESTION_RECOGNITION_TIMEOUT_MS },
+    )
+    applyBatchPayload(job, response.data || {})
+    if (job.status !== 'draft_ready') {
+      job.status = 'failed'
+      job.error = getRecognizeErrorMessage(response.data || {})
+    }
+  } catch (error) {
+    console.error(error)
+    // A timeout aborts the browser request without necessarily stopping the
+    // server, and a 409 means the server is still recognizing this Draft; both
+    // are reconciled against the server status instead of failing immediately.
+    if (job.draftId && (isRecognizeTimeout(error) || error.response?.status === 409)) {
+      try {
+        await reconcileBatchJob(job)
+        return
+      } catch (reconcileError) {
+        console.error(reconcileError)
+      }
+    }
+    job.status = 'failed'
+    job.error = !error.response && !error.isAxiosError && error.message ? error.message : getRequestErrorMessage(error)
+  }
+}
+
+const startBatchRecognition = async (boxes) => {
+  if (!boxes.length) return
+  // Re-confirming after 返回框选 reuses unchanged Drafts and skips questions
+  // that were already saved, so it never creates duplicates for saved questions.
+  batchJobs.value = createQuestionJobs(boxes, batchJobs.value)
+  step.value = 'batch-result'
+  try {
+    await uploadBatchSourceOnce()
+    const jobsToRun = batchJobs.value.filter((job) => job.status !== 'saved_to_bank')
+    await runWithConcurrency(
+      jobsToRun,
+      (job) => batchRecognitionGate(() => recognizeBatchJob(job)),
+      QUESTION_RECOGNITION_CONCURRENCY,
+    )
+  } catch (error) {
+    console.error(error)
+    const message = !error.response && !error.isAxiosError && error.message ? error.message : getRequestErrorMessage(error)
+    batchJobs.value.forEach((job) => { if (job.status === 'queued') { job.status = 'failed'; job.error = message } })
+    ElMessage.error(message)
+  }
+}
+
+const retryBatchJob = async (job) => {
+  if (['creating_draft', 'recognizing', 'reconciling'].includes(job.status)) return
+  if (!batchSourceAssetId.value) {
+    try { await uploadBatchSourceOnce() } catch (error) { job.error = getRequestErrorMessage(error); return }
+  }
+  await batchRecognitionGate(() => recognizeBatchJob(job))
+}
+const returnToSegmentation = async () => {
+  const hasRunning = batchJobs.value.some((job) => ['queued', 'creating_draft', 'recognizing', 'reconciling'].includes(job.status))
+  const hasUnsaved = batchJobs.value.some((job) => job.status === 'draft_ready' || (job.editing && job.editContent !== job.content))
+  if (hasRunning || hasUnsaved) {
+    const message = hasRunning
+      ? '仍有题目正在处理。返回框选不会中止后台请求，当前题框和结果会保留。确认返回吗？'
+      : '仍有尚未入库的识别结果或未保存编辑。返回框选会保留题框和当前结果，确认返回吗？'
+    try {
+      await ElMessageBox.confirm(message, '返回分题框选', {
+        confirmButtonText: '返回框选',
+        cancelButtonText: '继续核对',
+        type: 'warning',
+      })
+    } catch {
+      return
+    }
+  }
+  processMode.value = 'batch'
+  step.value = 'process-image'
+}
+const enterBatchEdit = (job) => { job.editContent = job.content; job.editing = true }
+const cancelBatchEdit = (job) => { job.editContent = job.content; job.editing = false }
+const updateBatchEditContent = (job, value) => { job.editContent = value }
+const updateBatchFigureBbox = (job, value) => { job.confirmedFigureBbox = value ? [...value] : null }
+const saveBatchEdit = async (job) => {
+  if (!job.editContent.trim() || job.saving) return
+  job.saving = true
+  try {
+    const response = await axios.patch(`${API_V1_BASE_URL}/drafts/${job.draftId}`, { content: job.editContent })
+    applyBatchPayload(job, response.data || {})
+    job.editing = false
+    ElMessage.success(`第 ${job.number} 题修改已保存`)
+  } catch (error) { job.error = getRequestErrorMessage(error) } finally { job.saving = false }
+}
+const saveBatchJobToBank = async (job) => {
+  if (job.saving || job.status !== 'draft_ready') return
+  job.saving = true
+  try {
+    const response = await axios.post(`${API_V1_BASE_URL}/drafts/${job.draftId}/save-to-bank`, { figure_bbox: job.confirmedFigureBbox })
+    applyBatchPayload(job, response.data || {})
+    job.status = 'saved_to_bank'
+    job.saveResult = { question_id: response.data?.question_id, question_revision_id: response.data?.question_revision_id }
+    ElMessage.success(`第 ${job.number} 题已保存入题库`)
+  } catch (error) { job.error = getRequestErrorMessage(error) } finally { job.saving = false }
+}
 // Legacy compatibility path. Do not use for Dashboard main Draft flow.
 const runLegacyRecognition = async (file) => {
   step.value = 'uploading'
@@ -1745,6 +1940,12 @@ onBeforeUnmount(() => {
   border-radius: 14px;
   background: #fff;
   box-shadow: 0 12px 28px rgba(18, 49, 66, 0.08);
+}
+
+.full-preview-hint {
+  margin: 0;
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
 }
 
 .loading-state {

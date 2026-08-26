@@ -54,6 +54,11 @@ from app.schemas.ocr import OCRResponse
 from app.schemas.paper import PaperCreate, PaperListItem, PaperRead, PaperUpdate
 from app.schemas.paper_render import PaperRenderItem, PaperRenderModel, PaperRenderRequest
 from app.schemas.question import KnowledgeTag, QuestionDetail, QuestionListItem, QuestionUpdate
+from app.services.draft_image_service import (
+    compose_bbox_to_page,
+    create_cropped_temp_image,
+    render_draft_image,
+)
 from app.services.draft_state import transition_draft_status
 from app.services.llm import nlp_service
 from app.services.layout_service import layout_service, remove_quiet, write_masked_image
@@ -684,7 +689,7 @@ def create_draft(
     draft = Draft(
         user_id=current_user.id,
         source_asset_id=payload.source_asset_id,
-        crop_bbox=payload.crop_bbox if payload.crop_bbox is not None else {},
+        crop_bbox=payload.crop_bbox,
         status=DraftStatus.DRAFT_CREATED,
         current_content={"text": "", "knowledge_tags": []},
     )
@@ -737,7 +742,18 @@ def get_draft_image(
     if not file_path:
         raise HTTPException(status_code=404, detail=NOT_FOUND_MESSAGE)
 
-    return FileResponse(file_path, media_type=asset.mime)
+    if not draft.crop_bbox:
+        return FileResponse(file_path, media_type=asset.mime)
+    try:
+        content, media_type = render_draft_image(file_path, draft.crop_bbox)
+    except Exception:
+        logger.exception("Failed to render cropped Draft image draft_id={}", draft.id)
+        raise HTTPException(status_code=404, detail=NOT_FOUND_MESSAGE)
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
+    )
 
 
 @router.patch("/drafts/{draft_id}", response_model=DraftDetail)
@@ -792,6 +808,8 @@ def recognize_draft(
     draft = _ensure_owned_draft(db, draft_id, current_user.id)
     if draft.status == DraftStatus.SAVED_TO_BANK:
         raise HTTPException(status_code=409, detail=DRAFT_ALREADY_SAVED_RECOGNIZE_MESSAGE)
+    if draft.status == DraftStatus.RECOGNIZING:
+        raise HTTPException(status_code=409, detail="Draft 正在识别中，请勿重复提交")
 
     asset = _ensure_owned_asset(db, draft.source_asset_id, current_user.id)
     if not asset.mime.startswith("image/"):
@@ -807,13 +825,28 @@ def recognize_draft(
     )
 
     file_path = _asset_file_path(asset)
+    cropped_temp_path = None
+    try:
+        cropped_temp_path = create_cropped_temp_image(file_path, draft.crop_bbox)
+    except Exception:
+        logger.exception("Failed to crop Draft image draft_id={} bbox={}", draft.id, draft.crop_bbox)
+        transition_draft_status(
+            db,
+            draft,
+            DraftStatus.FAILED,
+            DraftEventType.RECOGNIZE_FAIL,
+            metadata={"failure_stage": "crop"},
+            commit=True,
+        )
+        raise HTTPException(status_code=400, detail="Draft 裁剪区域无法处理")
+    recognition_image_path = str(cropped_temp_path) if cropped_temp_path is not None else file_path
 
     # #58: detect figure regions before OCR so figure areas can be masked out
     # of the OCR input. Any detection problem degrades to the pre-#58 flow
     # (no figures recorded, original image sent to OCR).
     layout_started_at = time.time()
     try:
-        layout_result = layout_service.detect(file_path)
+        layout_result = layout_service.detect(recognition_image_path)
     except Exception:
         logger.exception("Unexpected layout crash draft_id={} user_id={}", draft.id, current_user.id)
         layout_result = None
@@ -826,7 +859,13 @@ def recognize_draft(
             {"bbox": box.bbox, "label": box.label, "score": box.score}
             for box in layout_result.boxes
         ]
-        masked_temp_path = write_masked_image(file_path, layout_result.boxes)
+        try:
+            masked_temp_path = write_masked_image(recognition_image_path, layout_result.boxes)
+        except Exception:
+            # Masking failure degrades to unmasked OCR instead of leaking the
+            # question crop temp file (it is always removed in the OCR finally).
+            logger.exception("Unexpected figure masking crash draft_id={} user_id={}", draft.id, current_user.id)
+            masked_temp_path = None
     elif layout_result is not None and not layout_result.success:
         logger.warning(
             "[LayoutDetect] degraded draft_id={} error_type={} detail={} latency_ms={}",
@@ -837,8 +876,13 @@ def recognize_draft(
         )
     draft.detected_figures = detected_figures
 
-    ocr_input_mode = "masked_with_figures" if masked_temp_path is not None else "original"
-    ocr_input_path = str(masked_temp_path) if masked_temp_path is not None else file_path
+    if masked_temp_path is not None:
+        ocr_input_mode = "masked_with_figures"
+    elif cropped_temp_path is not None:
+        ocr_input_mode = "cropped"
+    else:
+        ocr_input_mode = "original"
+    ocr_input_path = str(masked_temp_path) if masked_temp_path is not None else recognition_image_path
     ocr_started_at = time.time()
     try:
         ocr_result = _ocr_result_to_legacy_payload(draft_ocr_service.recognize(ocr_input_path))
@@ -855,6 +899,7 @@ def recognize_draft(
         }
     finally:
         remove_quiet(masked_temp_path)
+        remove_quiet(cropped_temp_path)
     ocr_ms = int((time.time() - ocr_started_at) * 1000)
 
     raw_content = (ocr_result.get("content") or "").strip()
@@ -1044,8 +1089,16 @@ def _attach_question_figure(
     asset: SourceAsset,
     figure_bbox: Any,
     draft_id: int,
+    crop_bbox: Any = None,
 ) -> None:
-    """Crop the confirmed figure region out of the original asset (#58).
+    """Crop the confirmed figure region out of the original page asset (#58).
+
+    figure_bbox is normalized relative to the Draft's effective question image
+    (which is the whole page for legacy/full-image Drafts). It is validated
+    against LAYOUT_MIN_AREA_RATIO in that same crop-relative space — matching
+    how the layout detector reports figures — then composed into page
+    coordinates before cropping from the full-resolution source, so small
+    figures in small question crops are not silently dropped.
 
     Best-effort: any failure logs and leaves the question without a figure
     instead of blocking save-to-bank.
@@ -1054,11 +1107,15 @@ def _attach_question_figure(
     if normalized is None:
         logger.warning("[FigureCrop] ignored invalid figure_bbox draft_id={} bbox={}", draft_id, figure_bbox)
         return
+    page_bbox = compose_bbox_to_page(crop_bbox, normalized)
+    if page_bbox is None:
+        logger.warning("[FigureCrop] ignored uncomposable figure_bbox draft_id={} bbox={}", draft_id, figure_bbox)
+        return
     try:
         source_path = _asset_file_path(asset)
         with Image.open(source_path) as img:
             rgb = img.convert("RGB")
-            x, y, w, h = normalized
+            x, y, w, h = page_bbox
             left = min(max(round(x * rgb.width), 0), rgb.width - 1)
             top = min(max(round(y * rgb.height), 0), rgb.height - 1)
             right = min(max(round((x + w) * rgb.width), left + 1), rgb.width)
@@ -1093,13 +1150,13 @@ def _attach_question_figure(
             db.flush()
 
         question.figure_image = figure_asset.normalized_path or figure_asset.original_path
-        question.figure_crop_bbox = normalized
+        question.figure_crop_bbox = page_bbox
         revision.figure_asset_id = figure_asset.id
         logger.info(
             "[FigureCrop] attached figure asset_id={} question_id={} bbox={}",
             figure_asset.id,
             question.id,
-            normalized,
+            page_bbox,
         )
     except Exception:
         logger.exception("Figure crop failed; saving question without figure question_id={}", question.id)
@@ -1150,7 +1207,15 @@ def save_draft_to_bank(
 
     figure_bbox = payload.figure_bbox if payload else None
     if figure_bbox is not None and draft.source_asset is not None:
-        _attach_question_figure(db, question, revision, draft.source_asset, figure_bbox, draft_id=draft.id)
+        _attach_question_figure(
+            db,
+            question,
+            revision,
+            draft.source_asset,
+            figure_bbox,
+            draft_id=draft.id,
+            crop_bbox=draft.crop_bbox,
+        )
 
     transition_draft_status(
         db,
