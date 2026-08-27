@@ -66,7 +66,7 @@ from app.services.ocr_engine import ocr_service
 from app.services.ocr_providers.base import OCRResult
 from app.services.ocr_service import ocr_service as draft_ocr_service
 from app.services.paper_service import create_paper, get_paper, list_papers, update_paper
-from app.services.question_service import update as update_question, trash as trash_question, restore as restore_question, permanent as permanent_question
+from app.services.question_service import update as update_question, trash as trash_question, restore as restore_question, permanent as permanent_question, latest as latest_question_revision
 from app.services.paper_render_service import build_paper_render_model, resolve_paper_figure_files
 from app.services.paper_html_renderer import (
     PaperFigureTooLargeError,
@@ -1551,6 +1551,12 @@ def list_questions(
         QuestionListItem(
             id=item.id,
             content=item.content,
+            answer=item.answer,
+            analysis=item.analysis,
+            current_revision_no=(latest_question_revision(db, item.id).rev_no if latest_question_revision(db, item.id) else None),
+            deleted_at=item.deleted_at,
+            purge_at=item.purge_at,
+            purged_at=item.purged_at,
             knowledge_tags=normalize_tags(item.knowledge_tags),
             question_type=item.question_type,
             difficulty_level=item.difficulty_level,
@@ -1595,6 +1601,12 @@ def get_question_detail(
     return QuestionDetail(
         id=question.id,
         content=question.content,
+        answer=question.answer,
+        analysis=question.analysis,
+        current_revision_no=(latest_question_revision(db, question.id).rev_no if latest_question_revision(db, question.id) else None),
+        deleted_at=question.deleted_at,
+        purge_at=question.purge_at,
+        purged_at=question.purged_at,
         knowledge_tags=normalize_tags(question.knowledge_tags),
         question_type=question.question_type,
         difficulty_level=question.difficulty_level,
@@ -1655,6 +1667,8 @@ def get_question_image(
         raise HTTPException(status_code=404, detail=NOT_FOUND_MESSAGE)
     if question.user_id != current_user.id:
         raise HTTPException(status_code=403, detail=FORBIDDEN_MESSAGE)
+    if question.purged_at or (question.purge_at and question.purge_at <= datetime.now(timezone.utc)):
+        raise HTTPException(status_code=404, detail=NOT_FOUND_MESSAGE)
 
     # Ownership is enforced above on the Question row on purpose: SourceAsset rows are
     # deduplicated by sha256 across users, so the asset itself carries no owner
