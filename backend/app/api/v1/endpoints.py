@@ -104,6 +104,15 @@ DRAFT_CONTENT_EMPTY_MESSAGE = "Draft \u9898\u76ee\u6b63\u6587\u4e0d\u80fd\u4e3a\
 QUESTION_TYPES = {"single_choice", "multiple_choice", "fill_blank", "solution", "judge", "unknown"}
 
 
+def _question_is_expired(question: Question) -> bool:
+    purge_at = question.purge_at
+    if purge_at is None:
+        return False
+    if purge_at.tzinfo is None:
+        purge_at = purge_at.replace(tzinfo=timezone.utc)
+    return purge_at <= datetime.now(timezone.utc)
+
+
 class SourceAssetResponse(BaseModel):
     asset_id: int
     kind: str
@@ -1661,7 +1670,7 @@ def get_question_image(
         raise HTTPException(status_code=404, detail=NOT_FOUND_MESSAGE)
     if question.user_id != current_user.id:
         raise HTTPException(status_code=403, detail=FORBIDDEN_MESSAGE)
-    if question.purged_at or (question.purge_at and question.purge_at <= datetime.now(timezone.utc)):
+    if question.purged_at or _question_is_expired(question):
         raise HTTPException(status_code=404, detail=NOT_FOUND_MESSAGE)
 
     # Ownership is enforced above on the Question row on purpose: SourceAsset rows are
@@ -1714,7 +1723,7 @@ def get_question_figure(
         raise HTTPException(status_code=404, detail=NOT_FOUND_MESSAGE)
     if question.user_id != current_user.id:
         raise HTTPException(status_code=403, detail=FORBIDDEN_MESSAGE)
-    if question.purged_at or (question.purge_at and question.purge_at <= datetime.now(timezone.utc)):
+    if question.purged_at or _question_is_expired(question):
         raise HTTPException(status_code=404, detail=NOT_FOUND_MESSAGE)
 
     # Same ownership rationale as get_question_image (#58): the Question row
