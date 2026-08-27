@@ -137,7 +137,7 @@ def create_paper(db: Session, current_user: User, payload: PaperCreate) -> Paper
 
     questions = (
         db.query(Question)
-        .filter(Question.user_id == current_user.id, Question.id.in_(question_ids))
+        .filter(Question.user_id == current_user.id, Question.id.in_(question_ids), Question.deleted_at.is_(None), Question.purged_at.is_(None))
         .all()
     )
     questions_by_id = {question.id: question for question in questions}

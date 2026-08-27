@@ -31,7 +31,10 @@ def normalize_revision(q, rev):
     return {"text":c.get("text",q.content),"answer":c.get("answer",q.answer),"analysis":c.get("analysis",q.analysis),"knowledge_tags":_tags(c.get("knowledge_tags",q.knowledge_tags)),"question_type":c.get("question_type",q.question_type),"difficulty_level":c.get("difficulty_level",q.difficulty_level),"difficulty_label":c.get("difficulty_label",q.difficulty_label)}
 
 def update(db,user,qid,payload:QuestionUpdate):
-    q=owned(db,user,qid); rev=latest(db,qid); cur=normalize_revision(q,rev)
+    q=owned(db,user,qid); rev=latest(db,qid)
+    if payload.expected_revision_no is not None and (rev is None or rev.rev_no != payload.expected_revision_no):
+        raise HTTPException(409, "版本冲突")
+    cur=normalize_revision(q,rev)
     values=dict(cur)
     for field in payload.model_fields_set - {"expected_revision_no"}:
         if field == "question_type" and getattr(payload, field) not in QUESTION_TYPES:

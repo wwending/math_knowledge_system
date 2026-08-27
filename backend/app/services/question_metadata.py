@@ -70,7 +70,9 @@ def evaluate_question_metadata_task(question_id: int) -> None:
             error = "not_found"
             return
 
+        generation = question.metadata_generation or 0
         now = datetime.now(timezone.utc)
+        if question.deleted_at or question.purged_at: status = "skipped"; error = "lifecycle"; return
         question.metadata_status = "processing"
         question.metadata_started_at = now
         question.metadata_error = None
@@ -101,6 +103,9 @@ def evaluate_question_metadata_task(question_id: int) -> None:
             api_ms = int(perf.get("api_ms") or api_ms)
             parse_ms = int(perf.get("parse_ms") or 0)
         finished_at = datetime.now(timezone.utc)
+        db.refresh(question)
+        if question.metadata_generation != generation or question.deleted_at or question.purged_at:
+            status = "skipped"; error = "stale_generation"; return
         if result.get("success"):
             _apply_success(question, result, finished_at)
             status = "ready"
