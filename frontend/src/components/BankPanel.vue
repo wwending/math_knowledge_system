@@ -297,17 +297,19 @@ const canSubmitPaper = computed(() => {
   return selectedQuestionIds.value.length > 0 && paperForm.value.title.trim().length > 0 && !creatingPaper.value
 })
 
+const listRequestToken = ref(0)
 const fetchQuestions = async () => {
+  const token = ++listRequestToken.value
   loading.value = true
   try {
     const endpoint = activeBankTab.value === 'trash' ? `${API_BASE}/questions/trash?limit=${questionListLimit}` : `${API_BASE}/questions?limit=${questionListLimit}`
     const res = await axios.get(endpoint)
-    list.value = res.data || []
+    if (token === listRequestToken.value) list.value = res.data || []
   } catch (error) {
     console.error(error)
     ElMessage.error('获取题目列表失败')
   } finally {
-    loading.value = false
+    if (token === listRequestToken.value) loading.value = false
   }
 }
 
@@ -330,7 +332,9 @@ const openDetail = async (item) => {
 }
 
 const handleQuestionSaved = (saved) => {
-  if (saved && typeof saved === 'object') currentItem.value = { ...currentItem.value, ...saved }
+  const question = saved?.question || saved
+  const revision = saved?.current_revision_no ?? question?.current_revision_no
+  if (question && typeof question === 'object') currentItem.value = { ...currentItem.value, ...question, current_revision_no: revision ?? currentItem.value?.current_revision_no }
   editing.value = false
   fetchQuestions()
 }

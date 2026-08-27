@@ -2,6 +2,9 @@ import { reactive } from 'vue'
 import axios from 'axios'
 
 import { buildQuestionImageUrl } from '../config/api'
+import { acceptsImageGeneration } from './questionImageLoaderHelpers.mjs'
+
+export { acceptsImageGeneration }
 
 // Loads question images through the authenticated endpoint (#44). <el-image> cannot
 // attach an Authorization header, so images are prefetched as blobs (reusing the
@@ -33,15 +36,15 @@ export function createQuestionImageLoader() {
     axios
       .get(buildQuestionImageUrl(questionId), { responseType: 'blob' })
       .then((response) => {
-        if (generations.get(questionId) !== generation) return
+        if (!acceptsImageGeneration(generations.get(questionId), generation)) return
         blobUrlByQuestionId[questionId] = URL.createObjectURL(response.data)
       })
       .catch((error) => {
         console.error(`Failed to load image for question ${questionId}`, error)
-        if (generations.get(questionId) === generation) blobUrlByQuestionId[questionId] = ''
+        if (acceptsImageGeneration(generations.get(questionId), generation)) blobUrlByQuestionId[questionId] = ''
       })
       .finally(() => {
-        if (generations.get(questionId) === generation) pendingIds.delete(questionId)
+        if (acceptsImageGeneration(generations.get(questionId), generation)) pendingIds.delete(questionId)
       })
   }
 
