@@ -1,7 +1,7 @@
 import { reactive } from 'vue'
 import axios from 'axios'
 
-import { buildQuestionImageUrl } from '../config/api'
+import { buildQuestionImageUrl } from '../config/api.js'
 import { acceptsImageGeneration } from './questionImageLoaderHelpers.mjs'
 
 export { acceptsImageGeneration }
@@ -10,7 +10,7 @@ export { acceptsImageGeneration }
 // attach an Authorization header, so images are prefetched as blobs (reusing the
 // global axios interceptors, including the 401 refresh retry) and rendered via
 // object URLs. Callers must invoke dispose() on unmount to release the blobs.
-export function createQuestionImageLoader() {
+export function createQuestionImageLoader({ http = axios, urlApi = URL } = {}) {
   const blobUrlByQuestionId = reactive({})
   const pendingIds = new Set()
   const generations = new Map()
@@ -33,11 +33,17 @@ export function createQuestionImageLoader() {
     pendingIds.add(questionId)
     const generation = (generations.get(questionId) || 0) + 1
     generations.set(questionId, generation)
-    axios
+    http
       .get(buildQuestionImageUrl(questionId), { responseType: 'blob' })
       .then((response) => {
-        if (!acceptsImageGeneration(generations.get(questionId), generation)) return
-        blobUrlByQuestionId[questionId] = URL.createObjectURL(response.data)
+        if (!acceptsImageGeneration(generations.get(questionId), generation)) {
+          if (response.data) {
+            const staleUrl = urlApi.createObjectURL(response.data)
+            urlApi.revokeObjectURL(staleUrl)
+          }
+          return
+        }
+        blobUrlByQuestionId[questionId] = urlApi.createObjectURL(response.data)
       })
       .catch((error) => {
         console.error(`Failed to load image for question ${questionId}`, error)
@@ -52,7 +58,7 @@ export function createQuestionImageLoader() {
     if (!questionId) return
     generations.set(questionId, (generations.get(questionId) || 0) + 1)
     const url = blobUrlByQuestionId[questionId]
-    if (url) URL.revokeObjectURL(url)
+    if (url) urlApi.revokeObjectURL(url)
     delete blobUrlByQuestionId[questionId]
     pendingIds.delete(questionId)
   }
@@ -75,7 +81,7 @@ export function createQuestionImageLoader() {
   const dispose = () => {
     for (const url of Object.values(blobUrlByQuestionId)) {
       if (url) {
-        URL.revokeObjectURL(url)
+        urlApi.revokeObjectURL(url)
       }
     }
     Object.keys(blobUrlByQuestionId).forEach((key) => {
