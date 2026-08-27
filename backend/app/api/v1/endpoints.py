@@ -1665,11 +1665,13 @@ def get_question_image(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_active_user),
 ):
-    question = db.query(Question).filter(Question.id == question_id).first()
+    question = (
+        db.query(Question)
+        .filter(Question.id == question_id, Question.user_id == current_user.id)
+        .first()
+    )
     if not question:
         raise HTTPException(status_code=404, detail=NOT_FOUND_MESSAGE)
-    if question.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail=FORBIDDEN_MESSAGE)
     if question.purged_at or _question_is_expired(question):
         raise HTTPException(status_code=404, detail=NOT_FOUND_MESSAGE)
 
@@ -1718,11 +1720,13 @@ def get_question_figure(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_active_user),
 ):
-    question = db.query(Question).filter(Question.id == question_id).first()
+    question = (
+        db.query(Question)
+        .filter(Question.id == question_id, Question.user_id == current_user.id)
+        .first()
+    )
     if not question:
         raise HTTPException(status_code=404, detail=NOT_FOUND_MESSAGE)
-    if question.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail=FORBIDDEN_MESSAGE)
     if question.purged_at or _question_is_expired(question):
         raise HTTPException(status_code=404, detail=NOT_FOUND_MESSAGE)
 
