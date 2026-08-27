@@ -94,5 +94,46 @@ class QuestionEditTrashTests(unittest.TestCase):
         q.purge_at = utcnow() - timedelta(seconds=1); self.db.commit()
         with self.assertRaisesRegex(HTTPException, "资源不存在"): owned(self.db, self.user, q.id, include_trash=True)
 
+    def test_metadata_success_does_not_overwrite_manual_generation(self):
+        self.q.metadata_status = "processing"
+        self.q.metadata_generation = 1
+        self.db.commit()
+        with patch("app.services.question_metadata.SessionLocal", return_value=self.db), patch(
+            "app.services.question_metadata.nlp_service.evaluate_question_metadata",
+            side_effect=self._advance_generation,
+        ):
+            from app.services.question_metadata import evaluate_question_metadata_task
+
+            evaluate_question_metadata_task(self.q.id)
+        question = self.db.query(Question).filter(Question.id == self.q.id).one()
+        self.assertEqual(question.metadata_generation, 2)
+        self.assertEqual(question.metadata_status, "manual")
+
+    def _advance_generation(self, _content):
+        self.q.metadata_generation = 2
+        self.q.metadata_status = "manual"
+        self.db.commit()
+        return {"success": True, "question_type": "solution", "difficulty": {"level": 3}}
+
+    def test_metadata_exception_does_not_overwrite_manual_generation(self):
+        self.q.metadata_generation = 1
+        self.db.commit()
+        with patch("app.services.question_metadata.SessionLocal", return_value=self.db), patch(
+            "app.services.question_metadata.nlp_service.evaluate_question_metadata",
+            side_effect=self._raise_after_manual_change,
+        ):
+            from app.services.question_metadata import evaluate_question_metadata_task
+
+            evaluate_question_metadata_task(self.q.id)
+        question = self.db.query(Question).filter(Question.id == self.q.id).one()
+        self.assertEqual(question.metadata_generation, 2)
+        self.assertEqual(question.metadata_status, "manual")
+
+    def _raise_after_manual_change(self, _content):
+        self.q.metadata_generation = 2
+        self.q.metadata_status = "manual"
+        self.db.commit()
+        raise RuntimeError("late failure")
+
 
 if __name__ == "__main__": unittest.main()
