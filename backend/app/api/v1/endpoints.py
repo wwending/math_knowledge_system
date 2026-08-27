@@ -1617,12 +1617,41 @@ def get_question_image(
 
     # Ownership is enforced above on the Question row on purpose: SourceAsset rows are
     # deduplicated by sha256 across users, so the asset itself carries no owner
-    # semantics and only marks where the shared bytes live.
-    file_path = resolve_upload_file_path(question.origin_image)
+    # semantics and only marks where the shared bytes live. A saved multi-question
+    # draft keeps the page asset and question-relative bbox on its revision; use those
+    # together so each question gets its own region instead of the whole page.
+    revision = (
+        db.query(QuestionRevision)
+        .filter(QuestionRevision.question_id == question.id)
+        .order_by(QuestionRevision.rev_no.desc(), QuestionRevision.id.desc())
+        .first()
+    )
+    source_reference = question.origin_image
+    crop_bbox = None
+    if revision is not None:
+        crop_bbox = revision.crop_bbox
+        if revision.source_asset is not None:
+            source_reference = revision.source_asset.normalized_path or revision.source_asset.original_path
+
+    file_path = resolve_upload_file_path(source_reference)
     if not file_path:
         raise HTTPException(status_code=404, detail=NOT_FOUND_MESSAGE)
 
-    return FileResponse(file_path)
+    # None is the legacy no-revision/no-bbox case and deliberately falls back to the
+    # historical origin image. {} is the established full-image marker. Any other
+    # malformed bbox is fail-closed rather than leaking the page or returning 500.
+    if crop_bbox is None:
+        return FileResponse(file_path)
+    try:
+        content, media_type = render_draft_image(file_path, crop_bbox)
+    except Exception:
+        logger.warning("Invalid or unreadable question crop question_id={}", question.id)
+        raise HTTPException(status_code=404, detail=NOT_FOUND_MESSAGE)
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
+    )
 
 
 @router.get("/questions/{question_id}/figure")
