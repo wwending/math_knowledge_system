@@ -1,5 +1,8 @@
 import unittest
 from datetime import timedelta
+from unittest.mock import Mock, patch
+
+from sqlalchemy.exc import IntegrityError
 
 from fastapi import HTTPException
 from sqlalchemy import create_engine
@@ -45,6 +48,24 @@ class QuestionEditTrashTests(unittest.TestCase):
             update(self.db, self.user, self.q.id, QuestionUpdate(question_type=question_type))
         with self.assertRaisesRegex(HTTPException, "非法题型"):
             update(self.db, self.user, self.q.id, QuestionUpdate(question_type="choice"))
+
+    def test_revision_integrity_race_rolls_back_and_session_remains_usable(self):
+        original_commit = self.db.commit
+        state = {"first": True}
+
+        def commit_with_race():
+            if state["first"]:
+                state["first"] = False
+                self.db.rollback()
+                raise IntegrityError("uq_question_revisions_question_id_rev_no", {}, Exception("race"))
+            return original_commit()
+
+        with patch.object(self.db, "commit", side_effect=commit_with_race):
+            with self.assertRaisesRegex(HTTPException, "版本冲突"):
+                update(self.db, self.user, self.q.id, QuestionUpdate(content="raced"))
+        self.assertEqual(self.db.query(Question).count(), 1)
+        update(self.db, self.user, self.q.id, QuestionUpdate(content="usable"))
+        self.assertEqual(self.db.query(Question).one().content, "usable")
 
     def test_all_editable_fields_are_projected_into_revision(self):
         _, _, rev = update(self.db, self.user, self.q.id, QuestionUpdate(

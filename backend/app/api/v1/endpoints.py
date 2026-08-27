@@ -1650,11 +1650,6 @@ def permanently_delete_question(question_id: int, db: Session = Depends(get_db),
     return {"success": True, "question_id": q.id, "purged_at": q.purged_at}
 
 
-def list_question_trash(db: Session = Depends(get_db), current_user: User = Depends(require_active_user)):
-    now = datetime.now(timezone.utc)
-    return [QuestionListItem.model_validate(q) for q in db.query(Question).filter(Question.user_id == current_user.id, Question.deleted_at.isnot(None), Question.purge_at > now, Question.purged_at.is_(None)).order_by(Question.deleted_at.desc()).all()]
-
-
 @router.get("/questions/{question_id}/image")
 def get_question_image(
     question_id: int,
