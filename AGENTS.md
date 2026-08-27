@@ -41,6 +41,16 @@ Before a non-trivial task:
 
 If documentation and code disagree, report the drift and use the task scope to decide whether the code, docs, or both should change. Do not silently rewrite history.
 
+## Domain terminology
+
+- **原始页图**：用户上传的完整页面图片。
+- **题目区域图**：从原始页图裁出的、包含一道完整题目的区域。
+- **题目配图**：题目区域中的图形、表格或几何图片。
+- **图形检测框**：在源图上定位题目配图的 bbox。
+- **裁剪坐标**：相对于源图的归一化或像素坐标，用于裁出区域。
+- **图文排版坐标**：题目画布中配图相对于文字的布局位置和尺寸。
+- 编辑图形检测框不等于编辑题内图文排版；两者属于不同语义和功能边界。
+
 ## Product invariants
 
 Unless the user explicitly asks to change them:
