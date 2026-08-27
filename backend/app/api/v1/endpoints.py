@@ -66,6 +66,7 @@ from app.services.ocr_engine import ocr_service
 from app.services.ocr_providers.base import OCRResult
 from app.services.ocr_service import ocr_service as draft_ocr_service
 from app.services.paper_service import create_paper, get_paper, list_papers, update_paper
+from app.services.question_service import update as update_question, trash as trash_question, restore as restore_question, permanent as permanent_question
 from app.services.paper_render_service import build_paper_render_model, resolve_paper_figure_files
 from app.services.paper_html_renderer import (
     PaperFigureTooLargeError,
@@ -1535,7 +1536,7 @@ def list_questions(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_active_user),
 ):
-    query = db.query(Question).filter(Question.user_id == current_user.id)
+    query = db.query(Question).filter(Question.user_id == current_user.id, Question.deleted_at.is_(None), Question.purged_at.is_(None))
     if q:
         query = query.filter(Question.content.contains(q))
 
@@ -1576,11 +1577,9 @@ def get_question_detail(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_active_user),
 ):
-    question = db.query(Question).filter(Question.id == question_id).first()
+    question = db.query(Question).filter(Question.id == question_id, Question.user_id == current_user.id, Question.deleted_at.is_(None), Question.purged_at.is_(None)).first()
     if not question:
         raise HTTPException(status_code=404, detail=NOT_FOUND_MESSAGE)
-    if question.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail=FORBIDDEN_MESSAGE)
 
     return QuestionDetail(
         id=question.id,
@@ -1602,6 +1601,26 @@ def get_question_detail(
         created_at=question.created_at,
     )
 
+
+@router.put("/questions/{question_id}")
+def edit_question(question_id: int, payload: QuestionUpdate, db: Session = Depends(get_db), current_user: User = Depends(require_active_user)):
+    q, created, rev = update_question(db, current_user, question_id, payload)
+    return {"success": True, "msg": "保存成功", "revision_created": created, "current_revision_no": rev.rev_no if rev else None, "question": q}
+
+@router.post("/questions/{question_id}/trash")
+def move_question_to_trash(question_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_active_user)):
+    q = trash_question(db, current_user, question_id)
+    return {"success": True, "question_id": q.id, "deleted_at": q.deleted_at, "purge_at": q.purge_at}
+
+@router.post("/questions/{question_id}/restore")
+def restore_question_from_trash(question_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_active_user)):
+    q = restore_question(db, current_user, question_id)
+    return {"success": True, "question_id": q.id}
+
+@router.delete("/questions/{question_id}/permanent")
+def permanently_delete_question(question_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_active_user)):
+    q = permanent_question(db, current_user, question_id)
+    return {"success": True, "question_id": q.id, "purged_at": q.purged_at}
 
 @router.get("/questions/{question_id}/image")
 def get_question_image(
