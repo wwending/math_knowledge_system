@@ -679,6 +679,21 @@ class PaperMvpTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 404)
 
+    def test_update_rejects_permanently_deleted_question(self):
+        existing_id = self._create_question(content="existing")
+        added_id = self._create_question(content="added")
+        created = self._create_paper([existing_id]).json()
+        self.assertEqual(self.client.post(f"/api/v1/questions/{added_id}/trash", headers=self.auth_headers).status_code, 200)
+        self.assertEqual(self.client.delete(f"/api/v1/questions/{added_id}/permanent", headers=self.auth_headers).status_code, 200)
+        response = self._update_paper(
+            created["id"],
+            {"title": created["title"], "description": None, "items": [
+                self._existing_item(created["items"][0]),
+                {"kind": "question", "question_id": added_id, "score": 1},
+            ]},
+        )
+        self.assertEqual(response.status_code, 404)
+
     def test_existing_paper_snapshot_survives_question_edit_and_permanent_delete(self):
         question_id = self._create_question(content="frozen")
         created = self._create_paper([question_id]).json()

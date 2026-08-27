@@ -9,6 +9,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.db.base import Base
+from app.main import app
 from app.models.question import Question
 from app.models.question_revision import QuestionRevision
 from app.models.user import User
@@ -89,6 +90,17 @@ class QuestionEditTrashTests(unittest.TestCase):
         self.assertIsNotNone(q.purged_at)
         self.assertIsNotNone(self.db.get(QuestionRevision, 1)) if self.db.query(QuestionRevision).count() else None
 
+    def test_question_routes_are_unique_and_static_trash_precedes_dynamic(self):
+        routes = [route for route in app.routes if getattr(route, "path", "").startswith("/api/v1/questions")]
+        route_keys = [(route.path, tuple(sorted(route.methods or ()))) for route in routes]
+        self.assertEqual(len(route_keys), len(set(route_keys)))
+        trash_index = next(index for index, route in enumerate(routes) if route.path == "/api/v1/questions/trash")
+        dynamic_index = next(
+            index for index, route in enumerate(routes)
+            if route.path == "/api/v1/questions/{question_id}" and "GET" in (route.methods or set())
+        )
+        self.assertLess(trash_index, dynamic_index)
+
     def test_expired_question_is_invisible(self):
         q = trash(self.db, self.user, self.q.id)
         q.purge_at = utcnow() - timedelta(seconds=1); self.db.commit()
@@ -114,6 +126,26 @@ class QuestionEditTrashTests(unittest.TestCase):
         self.q.metadata_status = "manual"
         self.db.commit()
         return {"success": True, "question_type": "solution", "difficulty": {"level": 3}}
+
+    def test_metadata_service_failure_does_not_overwrite_manual_generation(self):
+        self.q.metadata_generation = 1
+        self.db.commit()
+        with patch("app.services.question_metadata.SessionLocal", return_value=self.db), patch(
+            "app.services.question_metadata.nlp_service.evaluate_question_metadata",
+            side_effect=self._fail_after_manual_change,
+        ):
+            from app.services.question_metadata import evaluate_question_metadata_task
+
+            evaluate_question_metadata_task(self.q.id)
+        question = self.db.query(Question).filter(Question.id == self.q.id).one()
+        self.assertEqual(question.metadata_generation, 2)
+        self.assertEqual(question.metadata_status, "manual")
+
+    def _fail_after_manual_change(self, _content):
+        self.q.metadata_generation = 2
+        self.q.metadata_status = "manual"
+        self.db.commit()
+        return {"success": False, "error_type": "service_error", "detail": "late failure"}
 
     def test_metadata_exception_does_not_overwrite_manual_generation(self):
         self.q.metadata_generation = 1
