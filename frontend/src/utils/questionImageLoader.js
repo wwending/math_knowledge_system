@@ -41,7 +41,7 @@ export function createQuestionImageLoader() {
         if (generations.get(questionId) === generation) blobUrlByQuestionId[questionId] = ''
       })
       .finally(() => {
-        pendingIds.delete(questionId)
+        if (generations.get(questionId) === generation) pendingIds.delete(questionId)
       })
   }
 

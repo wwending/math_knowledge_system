@@ -325,7 +325,7 @@ const openDetail = async (item) => {
     console.error(error)
     ElMessage.error('获取题目详情失败')
   } finally {
-    detailLoading.value = false
+    if (token === detailRequestToken.value) detailLoading.value = false
   }
 }
 
@@ -363,11 +363,11 @@ const moveToTrash = async (item) => {
 }
 const restoreQuestion = async (item) => {
   if (!(await confirmAction('恢复这道题目？'))) return
-  try { await axios.post(`${API_BASE}/questions/trash/${item.id}/restore`); cleanupQuestion(item.id); ElMessage.success('题目已恢复'); fetchQuestions() } catch (error) { ElMessage.error(error.response?.data?.detail || '恢复题目失败') }
+  try { await axios.post(`${API_BASE}/questions/${item.id}/restore`); cleanupQuestion(item.id); ElMessage.success('题目已恢复'); fetchQuestions() } catch (error) { ElMessage.error(error.response?.data?.detail || '恢复题目失败') }
 }
 const permanentlyDeleteQuestion = async (item) => {
   if (!(await confirmAction('永久删除后将无法从回收站恢复。'))) return
-  try { await axios.delete(`${API_BASE}/questions/trash/${item.id}/permanent`); cleanupQuestion(item.id); ElMessage.success('题目已永久删除'); fetchQuestions() } catch (error) { ElMessage.error(error.response?.data?.detail || '永久删除题目失败') }
+  try { await axios.delete(`${API_BASE}/questions/${item.id}/permanent`); cleanupQuestion(item.id); ElMessage.success('题目已永久删除'); fetchQuestions() } catch (error) { ElMessage.error(error.response?.data?.detail || '永久删除题目失败') }
 }
 
 const isQuestionSelected = (questionId) => selectedQuestionIds.value.includes(questionId)
