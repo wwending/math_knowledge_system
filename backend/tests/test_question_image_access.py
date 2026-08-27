@@ -2,6 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from PIL import Image
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -12,6 +13,8 @@ from app.core.security import get_password_hash
 from app.db.base import Base
 from app.main import app
 from app.models.question import Question
+from app.models.question_revision import QuestionRevision
+from app.models.source_asset import SourceAsset
 from app.models.user import User, UserStatus
 
 PNG_BYTES = b"\x89PNG\r\n\x1a\nfake-image-bytes"
@@ -158,6 +161,96 @@ class QuestionImageAccessTests(unittest.TestCase):
         response = self.client.get(
             f"{self.IMAGE_URL_PREFIX}/{self.shared_question_id}/image",
             headers=self.other_headers,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content, PNG_BYTES)
+
+    def test_revision_bbox_returns_question_region_from_shared_page_asset(self):
+        page_name = "shared-page.png"
+        page_path = self.upload_dir / page_name
+        image = Image.new("RGB", (4, 2))
+        image.putpixel((0, 0), (255, 0, 0))
+        image.putpixel((1, 0), (255, 0, 0))
+        image.putpixel((2, 0), (0, 0, 255))
+        image.putpixel((3, 0), (0, 0, 255))
+        image.putpixel((0, 1), (255, 0, 0))
+        image.putpixel((1, 1), (255, 0, 0))
+        image.putpixel((2, 1), (0, 0, 255))
+        image.putpixel((3, 1), (0, 0, 255))
+        image.save(page_path, format="PNG")
+        with self.SessionLocal() as db:
+            asset = SourceAsset(
+                user_id=self.owner_user_id, kind="page", original_path=page_name,
+                mime="image/png", size_bytes=page_path.stat().st_size,
+                width=4, height=2, sha256="shared-page-digest",
+            )
+            db.add(asset)
+            db.flush()
+            left_question = Question(user_id=self.owner_user_id, origin_image=page_name, content="left")
+            right_question = Question(user_id=self.owner_user_id, origin_image=page_name, content="right")
+            db.add_all([left_question, right_question])
+            db.flush()
+            db.add_all([
+                QuestionRevision(
+                    question_id=left_question.id, rev_no=1, content={"text": "left"},
+                    crop_bbox=[0.0, 0.0, 0.5, 1.0], source_asset_id=asset.id,
+                    change_reason="test",
+                ),
+                QuestionRevision(
+                    question_id=right_question.id, rev_no=1, content={"text": "right"},
+                    crop_bbox=[0.5, 0.0, 0.5, 1.0], source_asset_id=asset.id,
+                    change_reason="test",
+                ),
+            ])
+            db.commit()
+            question_ids = (left_question.id, right_question.id)
+
+        responses = [
+            self.client.get(
+                f"{self.IMAGE_URL_PREFIX}/{question_id}/image", headers=self.owner_headers
+            )
+            for question_id in question_ids
+        ]
+        self.assertEqual([response.status_code for response in responses], [200, 200])
+        crops = [Image.open(__import__("io").BytesIO(response.content)) for response in responses]
+        try:
+            self.assertEqual([crop.size for crop in crops], [(2, 2), (2, 2)])
+            self.assertEqual(crops[0].getpixel((0, 0)), (255, 0, 0))
+            self.assertEqual(crops[1].getpixel((0, 0)), (0, 0, 255))
+            self.assertNotEqual(responses[0].content, responses[1].content)
+        finally:
+            for crop in crops:
+                crop.close()
+
+    def test_invalid_revision_bbox_fails_closed(self):
+        with self.SessionLocal() as db:
+            question = Question(user_id=self.owner_user_id, origin_image=IMAGE_FILENAME, content="bad")
+            db.add(question)
+            db.flush()
+            db.add(QuestionRevision(
+                question_id=question.id, rev_no=1, content={"text": "bad"},
+                crop_bbox=[0.9, 0.0, 0.5, 1.0], change_reason="test",
+            ))
+            db.commit()
+            question_id = question.id
+        response = self.client.get(
+            f"{self.IMAGE_URL_PREFIX}/{question_id}/image", headers=self.owner_headers
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_missing_bbox_revision_uses_legacy_origin_image(self):
+        with self.SessionLocal() as db:
+            question = Question(user_id=self.owner_user_id, origin_image=IMAGE_FILENAME, content="legacy")
+            db.add(question)
+            db.flush()
+            db.add(QuestionRevision(
+                question_id=question.id, rev_no=1, content={"text": "legacy"},
+                crop_bbox=None, change_reason="legacy",
+            ))
+            db.commit()
+            question_id = question.id
+        response = self.client.get(
+            f"{self.IMAGE_URL_PREFIX}/{question_id}/image", headers=self.owner_headers
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.content, PNG_BYTES)

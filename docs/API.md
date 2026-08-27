@@ -48,6 +48,7 @@ LLM 目标输出结构：
 
 - `POST /api/v1/drafts/{draft_id}/recognize` 和 `GET /api/v1/drafts/{draft_id}` 仍保留可空的 `question_type`、`difficulty_level`、`difficulty_label`、`difficulty_confidence`、`difficulty_reason` 字段用于兼容。
 - `GET /api/v1/questions` 和 `GET /api/v1/questions/{question_id}` 返回题型、难度、置信度、理由、评估模型、评估时间，以及 `metadata_status`、`metadata_error`、`metadata_started_at`、`metadata_finished_at`。
+- `GET /api/v1/questions/{question_id}/image` 先按 Question 所有权鉴权，再读取最新 `QuestionRevision` 的 `source_asset_id` 与页面归一化 `crop_bbox`；有合法 bbox 时返回该题区域裁图，多题可共享同一 SourceAsset 但各自区域不同。无 revision 或无 bbox 的历史题回退 `origin_image` 整图；bbox 非法、文件缺失或无法解析时 fail-closed 返回 404。
 - `GET /api/v1/papers/{paper_id}` 的 `items` 返回可选快照字段 `question_type_snapshot`、`difficulty_level_snapshot`、`difficulty_label_snapshot`；如果创建试卷时题目元数据尚未 ready，快照字段为空。
 
 ## 组卷 MVP
