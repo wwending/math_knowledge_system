@@ -10,6 +10,7 @@ import { buildQuestionImageUrl } from '../config/api'
 export function createQuestionImageLoader() {
   const blobUrlByQuestionId = reactive({})
   const pendingIds = new Set()
+  const generations = new Map()
 
   const hasImageField = (item) => Boolean(item && (item.image_url || item.origin_image))
 
@@ -27,24 +28,38 @@ export function createQuestionImageLoader() {
     }
 
     pendingIds.add(questionId)
+    const generation = (generations.get(questionId) || 0) + 1
+    generations.set(questionId, generation)
     axios
       .get(buildQuestionImageUrl(questionId), { responseType: 'blob' })
       .then((response) => {
+        if (generations.get(questionId) !== generation) return
         blobUrlByQuestionId[questionId] = URL.createObjectURL(response.data)
       })
       .catch((error) => {
         console.error(`Failed to load image for question ${questionId}`, error)
-        blobUrlByQuestionId[questionId] = ''
+        if (generations.get(questionId) === generation) blobUrlByQuestionId[questionId] = ''
       })
       .finally(() => {
         pendingIds.delete(questionId)
       })
   }
 
+  const remove = (questionId) => {
+    if (!questionId) return
+    generations.set(questionId, (generations.get(questionId) || 0) + 1)
+    const url = blobUrlByQuestionId[questionId]
+    if (url) URL.revokeObjectURL(url)
+    delete blobUrlByQuestionId[questionId]
+    pendingIds.delete(questionId)
+  }
+
   const syncItems = (items) => {
-    for (const item of items || []) {
-      ensureLoaded(item)
-    }
+    const ids = new Set((items || []).map((item) => item?.id).filter(Boolean))
+    Object.keys(blobUrlByQuestionId).forEach((id) => {
+      if (!ids.has(Number(id)) && !ids.has(id)) remove(id)
+    })
+    for (const item of items || []) ensureLoaded(item)
   }
 
   const imageUrlFor = (item) => {
@@ -64,7 +79,8 @@ export function createQuestionImageLoader() {
       delete blobUrlByQuestionId[key]
     })
     pendingIds.clear()
+    generations.clear()
   }
 
-  return { hasImageField, syncItems, imageUrlFor, dispose }
+  return { hasImageField, syncItems, imageUrlFor, remove, dispose }
 }

@@ -112,6 +112,9 @@
             <el-button type="primary" plain round @click.stop="openDetail(item)">
               查看详情
             </el-button>
+            <el-button type="danger" plain round @click.stop="moveToTrash(item)">
+              删除
+            </el-button>
           </div>
         </div>
       </el-card>
@@ -146,6 +149,15 @@
         </div>
 
         <div class="detail-right">
+          <div class="detail-actions">
+            <el-button type="primary" @click="editing = true">编辑题目</el-button>
+          </div>
+          <QuestionEditWorkbench
+            v-if="editing"
+            :question="currentItem"
+            :image-url="getImageUrl(currentItem)"
+            @saved="handleQuestionSaved"
+          />
           <div class="detail-meta">
             <el-tag size="small" type="info">ID: {{ currentItem.id }}</el-tag>
             <el-tag size="small" type="warning" effect="plain">
@@ -225,6 +237,7 @@ import { readStringQuery, replaceQueryValues } from '../utils/urlQueryState'
 import { renderMarkdown } from '@/utils/renderMarkdown'
 import { useRoute, useRouter } from 'vue-router'
 import { formatDateTime } from '../utils/formatDateTime'
+import QuestionEditWorkbench from './QuestionEditWorkbench.vue'
 
 const API_BASE = API_V1_BASE_URL
 const emit = defineEmits(['paper-created', 'go-upload'])
@@ -241,6 +254,7 @@ const router = useRouter()
 const keyword = ref(readStringQuery(route, 'bank_q'))
 const dialogVisible = ref(false)
 const currentItem = ref(null)
+const editing = ref(false)
 const selectedQuestionIds = ref([])
 const createPaperDialogVisible = ref(false)
 const creatingPaper = ref(false)
@@ -297,6 +311,12 @@ const openDetail = async (item) => {
   } finally {
     detailLoading.value = false
   }
+}
+
+const handleQuestionSaved = (saved) => {
+  if (saved && typeof saved === 'object') currentItem.value = { ...currentItem.value, ...saved }
+  editing.value = false
+  fetchQuestions()
 }
 
 const isQuestionSelected = (questionId) => selectedQuestionIds.value.includes(questionId)
