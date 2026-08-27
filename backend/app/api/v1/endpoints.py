@@ -1588,11 +1588,14 @@ def list_question_trash(db: Session = Depends(get_db), current_user: User = Depe
     now = datetime.now(timezone.utc)
     return [QuestionListItem.model_validate(q) for q in db.query(Question).filter(Question.user_id == current_user.id, Question.deleted_at.isnot(None), Question.purge_at > now, Question.purged_at.is_(None)).order_by(Question.deleted_at.desc()).all()]
 
+
 @router.get("/questions/trash/{question_id}", response_model=QuestionDetail)
 def get_question_trash(question_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_active_user)):
     q = db.query(Question).filter(Question.id == question_id, Question.user_id == current_user.id, Question.deleted_at.isnot(None), Question.purge_at > datetime.now(timezone.utc), Question.purged_at.is_(None)).first()
-    if not q: raise HTTPException(404, NOT_FOUND_MESSAGE)
+    if not q:
+        raise HTTPException(404, NOT_FOUND_MESSAGE)
     return QuestionDetail.model_validate(q)
+
 
 @router.get("/questions/{question_id}", response_model=QuestionDetail)
 def get_question_detail(
@@ -1631,11 +1634,6 @@ def get_question_detail(
     )
 
 
-@router.put("/questions/{question_id}")
-def edit_question(question_id: int, payload: QuestionUpdate, db: Session = Depends(get_db), current_user: User = Depends(require_active_user)):
-    q, created, rev = update_question(db, current_user, question_id, payload)
-    return {"success": True, "msg": "保存成功", "revision_created": created, "current_revision_no": rev.rev_no if rev else None, "question": q}
-
 @router.post("/questions/{question_id}/trash")
 def move_question_to_trash(question_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_active_user)):
     q = trash_question(db, current_user, question_id)
@@ -1651,16 +1649,11 @@ def permanently_delete_question(question_id: int, db: Session = Depends(get_db),
     q = permanent_question(db, current_user, question_id)
     return {"success": True, "question_id": q.id, "purged_at": q.purged_at}
 
-@router.get("/questions/trash", response_model=List[QuestionListItem])
+
 def list_question_trash(db: Session = Depends(get_db), current_user: User = Depends(require_active_user)):
     now = datetime.now(timezone.utc)
     return [QuestionListItem.model_validate(q) for q in db.query(Question).filter(Question.user_id == current_user.id, Question.deleted_at.isnot(None), Question.purge_at > now, Question.purged_at.is_(None)).order_by(Question.deleted_at.desc()).all()]
 
-@router.get("/questions/trash/{question_id}", response_model=QuestionDetail)
-def get_question_trash(question_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_active_user)):
-    q = db.query(Question).filter(Question.id == question_id, Question.user_id == current_user.id, Question.deleted_at.isnot(None), Question.purge_at > datetime.now(timezone.utc), Question.purged_at.is_(None)).first()
-    if not q: raise HTTPException(404, NOT_FOUND_MESSAGE)
-    return QuestionDetail.model_validate(q)
 
 @router.get("/questions/{question_id}/image")
 def get_question_image(

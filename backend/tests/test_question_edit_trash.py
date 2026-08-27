@@ -40,10 +40,16 @@ class QuestionEditTrashTests(unittest.TestCase):
         with self.assertRaisesRegex(HTTPException, "资源不存在"):
             owned(self.db, self.other, self.q.id)
 
+    def test_question_type_uses_canonical_values(self):
+        for question_type in ("single_choice", "multiple_choice", "fill_blank", "solution", "judge", "unknown"):
+            update(self.db, self.user, self.q.id, QuestionUpdate(question_type=question_type))
+        with self.assertRaisesRegex(HTTPException, "非法题型"):
+            update(self.db, self.user, self.q.id, QuestionUpdate(question_type="choice"))
+
     def test_all_editable_fields_are_projected_into_revision(self):
         _, _, rev = update(self.db, self.user, self.q.id, QuestionUpdate(
             content="题干", answer="答案", analysis="解析", knowledge_tags=[{"label": "圆"}],
-            question_type="proof", difficulty_level=4,
+            question_type="solution", difficulty_level=4,
         ))
         self.assertEqual(rev.content["text"], "题干")
         self.assertEqual(rev.content["answer"], "答案")

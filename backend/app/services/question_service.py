@@ -2,13 +2,14 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from app.models.question import Question
 from app.models.question_revision import QuestionRevision
 from app.models.user import User
 from app.schemas.question import QuestionUpdate
 
 NOT_FOUND = "资源不存在"
-QUESTION_TYPES = {"choice", "fill_blank", "short_answer", "proof", "unknown"}
+QUESTION_TYPES = {"single_choice", "multiple_choice", "fill_blank", "solution", "judge", "unknown"}
 
 def utcnow(): return datetime.now(timezone.utc)
 def _expired(value):
@@ -56,7 +57,16 @@ def update(db,user,qid,payload:QuestionUpdate):
     q.content=values["text"]; q.answer=values["answer"]; q.analysis=values["analysis"]; q.knowledge_tags=values["knowledge_tags"]; q.question_type=values["question_type"]; q.difficulty_level=values["difficulty_level"]; q.difficulty_label=values["difficulty_label"]; q.metadata_generation=(q.metadata_generation or 0)+1
     n=(rev.rev_no if rev else 0)+1
     new=QuestionRevision(question=q,rev_no=n,content=values,source_asset_id=rev.source_asset_id if rev else None,figure_asset_id=rev.figure_asset_id if rev else None,crop_bbox=rev.crop_bbox if rev else None,change_reason="manual_edit")
-    db.add(new); db.commit(); db.refresh(q); return q,True,new
+    db.add(new)
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        if "question_id" in str(exc).lower() and "rev_no" in str(exc).lower():
+            raise HTTPException(409, "版本冲突") from exc
+        raise
+    db.refresh(q)
+    return q, True, new
 
 def trash(db,user,qid):
     q=owned(db,user,qid); q.deleted_at=utcnow(); q.purge_at=q.deleted_at+timedelta(days=30); q.metadata_generation=(q.metadata_generation or 0)+1; db.commit(); return q

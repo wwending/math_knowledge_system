@@ -203,7 +203,12 @@ def update_paper(db: Session, current_user: User, paper_id: int, payload: PaperU
     if new_question_ids:
         questions = (
             db.query(Question)
-            .filter(Question.user_id == current_user.id, Question.id.in_(new_question_ids))
+            .filter(
+                Question.user_id == current_user.id,
+                Question.id.in_(new_question_ids),
+                Question.deleted_at.is_(None),
+                Question.purged_at.is_(None),
+            )
             .all()
         )
         questions_by_id = {question.id: question for question in questions}

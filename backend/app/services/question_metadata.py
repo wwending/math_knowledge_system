@@ -61,6 +61,7 @@ def evaluate_question_metadata_task(question_id: int) -> None:
     parse_ms = 0
     db_ms = 0
     question = None
+    generation = None
     try:
         load_started_at = time.time()
         question = db.query(Question).filter(Question.id == question_id).first()
@@ -127,7 +128,16 @@ def evaluate_question_metadata_task(question_id: int) -> None:
         db.rollback()
         try:
             question = db.query(Question).filter(Question.id == question_id).first()
-            if question:
+            purge_at = question.purge_at if question else None
+            if purge_at and purge_at.tzinfo is None:
+                purge_at = purge_at.replace(tzinfo=timezone.utc)
+            active = bool(
+                question
+                and not question.deleted_at
+                and not question.purged_at
+                and not (purge_at and purge_at <= datetime.now(timezone.utc))
+            )
+            if question and active and generation is not None and question.metadata_generation == generation:
                 question.metadata_status = "failed"
                 question.metadata_error = _short_error(None, exc)
                 question.metadata_finished_at = datetime.now(timezone.utc)
@@ -135,6 +145,9 @@ def evaluate_question_metadata_task(question_id: int) -> None:
                 db.commit()
                 db_ms += int((time.time() - db_started_at) * 1000)
                 error = question.metadata_error
+            else:
+                status = "skipped"
+                error = "stale_generation"
         except Exception:
             db.rollback()
             logger.exception("Failed to persist question metadata failure question_id={}", question_id)
