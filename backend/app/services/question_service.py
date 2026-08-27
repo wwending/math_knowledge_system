@@ -11,6 +11,12 @@ NOT_FOUND = "资源不存在"
 QUESTION_TYPES = {"choice", "fill_blank", "short_answer", "proof", "unknown"}
 
 def utcnow(): return datetime.now(timezone.utc)
+def _expired(value):
+    if not value:
+        return False
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value <= utcnow()
 def _tags(tags):
     out=[]; seen=set()
     for tag in tags or []:
@@ -23,7 +29,7 @@ def latest(db,qid): return db.query(QuestionRevision).filter_by(question_id=qid)
 def owned(db,user,qid, *, include_trash=False):
     q=db.query(Question).filter(Question.id==qid, Question.user_id==user.id).first()
     now=utcnow()
-    if not q or q.purged_at or (q.purge_at and q.purge_at <= now) or (not include_trash and q.deleted_at): raise HTTPException(404,NOT_FOUND)
+    if not q or q.purged_at or _expired(q.purge_at) or (not include_trash and q.deleted_at): raise HTTPException(404,NOT_FOUND)
     return q
 
 def normalize_revision(q, rev):
