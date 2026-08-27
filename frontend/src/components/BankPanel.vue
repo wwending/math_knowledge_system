@@ -359,7 +359,7 @@ const confirmAction = async (message) => {
 
 const moveToTrash = async (item) => {
   if (!(await confirmAction('删除后题目将进入回收站，保留 30 天。'))) return
-  try { await axios.delete(`${API_BASE}/questions/${item.id}`); cleanupQuestion(item.id); ElMessage.success('题目已移入回收站'); fetchQuestions() } catch (error) { ElMessage.error(error.response?.data?.detail || '删除题目失败') }
+  try { await axios.post(`${API_BASE}/questions/${item.id}/trash`); cleanupQuestion(item.id); ElMessage.success('题目已移入回收站'); fetchQuestions() } catch (error) { ElMessage.error(error.response?.data?.detail || '删除题目失败') }
 }
 const restoreQuestion = async (item) => {
   if (!(await confirmAction('恢复这道题目？'))) return
