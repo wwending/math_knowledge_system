@@ -186,23 +186,41 @@ class QuestionImageAccessTests(unittest.TestCase):
             )
             db.add(asset)
             db.flush()
-            question = Question(user_id=self.owner_user_id, origin_image=page_name, content="cropped")
-            db.add(question)
+            left_question = Question(user_id=self.owner_user_id, origin_image=page_name, content="left")
+            right_question = Question(user_id=self.owner_user_id, origin_image=page_name, content="right")
+            db.add_all([left_question, right_question])
             db.flush()
-            db.add(QuestionRevision(
-                question_id=question.id, rev_no=1, content={"text": "cropped"},
-                crop_bbox=[0.0, 0.0, 0.5, 1.0], source_asset_id=asset.id,
-                change_reason="test",
-            ))
+            db.add_all([
+                QuestionRevision(
+                    question_id=left_question.id, rev_no=1, content={"text": "left"},
+                    crop_bbox=[0.0, 0.0, 0.5, 1.0], source_asset_id=asset.id,
+                    change_reason="test",
+                ),
+                QuestionRevision(
+                    question_id=right_question.id, rev_no=1, content={"text": "right"},
+                    crop_bbox=[0.5, 0.0, 0.5, 1.0], source_asset_id=asset.id,
+                    change_reason="test",
+                ),
+            ])
             db.commit()
-            question_id = question.id
-        response = self.client.get(
-            f"{self.IMAGE_URL_PREFIX}/{question_id}/image", headers=self.owner_headers
-        )
-        self.assertEqual(response.status_code, 200)
-        with Image.open(__import__("io").BytesIO(response.content)) as cropped:
-            self.assertEqual(cropped.size, (2, 2))
-            self.assertEqual(cropped.getpixel((0, 0)), (255, 0, 0))
+            question_ids = (left_question.id, right_question.id)
+
+        responses = [
+            self.client.get(
+                f"{self.IMAGE_URL_PREFIX}/{question_id}/image", headers=self.owner_headers
+            )
+            for question_id in question_ids
+        ]
+        self.assertEqual([response.status_code for response in responses], [200, 200])
+        crops = [Image.open(__import__("io").BytesIO(response.content)) for response in responses]
+        try:
+            self.assertEqual([crop.size for crop in crops], [(2, 2), (2, 2)])
+            self.assertEqual(crops[0].getpixel((0, 0)), (255, 0, 0))
+            self.assertEqual(crops[1].getpixel((0, 0)), (0, 0, 255))
+            self.assertNotEqual(responses[0].content, responses[1].content)
+        finally:
+            for crop in crops:
+                crop.close()
 
     def test_invalid_revision_bbox_fails_closed(self):
         with self.SessionLocal() as db:
