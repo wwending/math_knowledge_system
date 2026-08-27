@@ -66,7 +66,7 @@ from app.services.ocr_engine import ocr_service
 from app.services.ocr_providers.base import OCRResult
 from app.services.ocr_service import ocr_service as draft_ocr_service
 from app.services.paper_service import create_paper, get_paper, list_papers, update_paper
-from app.services.question_service import update as update_question, trash as trash_question, restore as restore_question, permanent as permanent_question, latest as latest_question_revision
+from app.services.question_service import update as update_question_service, trash as trash_question, restore as restore_question, permanent as permanent_question, latest as latest_question_revision
 from app.services.paper_render_service import build_paper_render_model, resolve_paper_figure_files
 from app.services.paper_html_renderer import (
     PaperFigureTooLargeError,
@@ -454,7 +454,11 @@ def get_all_tags(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_active_user),
 ):
-    questions = db.query(Question).filter(Question.user_id == current_user.id).all()
+    questions = db.query(Question).filter(
+        Question.user_id == current_user.id,
+        Question.deleted_at.is_(None),
+        Question.purged_at.is_(None),
+    ).all()
 
     unique_tags = set()
     for question in questions:
@@ -471,16 +475,14 @@ def update_question(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_active_user),
 ):
-    question = db.query(Question).filter(Question.id == question_id).first()
-    if not question:
-        raise HTTPException(status_code=404, detail=NOT_FOUND_MESSAGE)
-    if question.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail=FORBIDDEN_MESSAGE)
-
-    question.content = question_update.content
-    db.commit()
-    db.refresh(question)
-    return {"success": True, "msg": QUESTION_UPDATED_MESSAGE}
+    question, created, revision = update_question_service(db, current_user, question_id, question_update)
+    return {
+        "success": True,
+        "msg": QUESTION_UPDATED_MESSAGE,
+        "revision_created": created,
+        "current_revision_no": revision.rev_no if revision else None,
+        "question": question,
+    }
 
 
 @router.get("/history", response_model=List[OCRResponse])
@@ -492,7 +494,11 @@ def read_history(
 ):
     questions = (
         db.query(Question)
-        .filter(Question.user_id == current_user.id)
+        .filter(
+            Question.user_id == current_user.id,
+            Question.deleted_at.is_(None),
+            Question.purged_at.is_(None),
+        )
         .order_by(Question.created_at.desc())
         .offset(skip)
         .limit(limit)
@@ -1720,6 +1726,8 @@ def get_question_figure(
         raise HTTPException(status_code=404, detail=NOT_FOUND_MESSAGE)
     if question.user_id != current_user.id:
         raise HTTPException(status_code=403, detail=FORBIDDEN_MESSAGE)
+    if question.purged_at or (question.purge_at and question.purge_at <= datetime.now(timezone.utc)):
+        raise HTTPException(status_code=404, detail=NOT_FOUND_MESSAGE)
 
     # Same ownership rationale as get_question_image (#58): the Question row
     # carries ownership; the referenced asset only marks where bytes live.

@@ -41,7 +41,9 @@ def update(db,user,qid,payload:QuestionUpdate):
             raise HTTPException(422, "非法题型")
         value=getattr(payload,field)
         if field in {"answer","analysis"}: value=(value or "").strip() or None
-        if field=="content": value=value.strip()
+        if field=="content":
+            value=value.strip()
+            field="text"
         if field=="knowledge_tags": value=_tags(value)
         values[field]=value
     if values==cur: return q,False,rev
