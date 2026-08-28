@@ -254,6 +254,10 @@ import { renderMarkdown } from '@/utils/renderMarkdown'
 import { useRoute, useRouter } from 'vue-router'
 import { formatDateTime } from '../utils/formatDateTime'
 import QuestionEditWorkbench from './QuestionEditWorkbench.vue'
+import {
+  applyDraftToQuestion,
+  mergeSavedQuestionResponse
+} from '../utils/questionEditState.mjs'
 
 const API_BASE = API_V1_BASE_URL
 const emit = defineEmits(['paper-created', 'go-upload'])
@@ -275,7 +279,7 @@ const currentItem = ref(null)
 const detailDraft = ref(null)
 const displayItem = computed(() => {
   if (!currentItem.value || !detailDraft.value) return currentItem.value
-  return { ...currentItem.value, ...detailDraft.value }
+  return applyDraftToQuestion(currentItem.value, detailDraft.value)
 })
 const editing = ref(false)
 const selectedQuestionIds = ref([])
@@ -342,15 +346,7 @@ const openDetail = async (item) => {
 }
 
 const handleQuestionSaved = (saved) => {
-  const question = saved?.question || saved
-  const revision = saved?.current_revision_no ?? question?.current_revision_no
-  if (question && typeof question === 'object') {
-    currentItem.value = {
-      ...currentItem.value,
-      ...question,
-      current_revision_no: revision ?? currentItem.value?.current_revision_no
-    }
-  }
+  currentItem.value = mergeSavedQuestionResponse(currentItem.value, saved)
   detailDraft.value = null
   editing.value = false
   fetchQuestions()

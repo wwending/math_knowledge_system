@@ -22,6 +22,11 @@ import { computed, ref, watch } from 'vue'
 import axios from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { API_V1_BASE_URL } from '../config/api'
+import {
+  cloneQuestionDraft,
+  isQuestionDraftDirty,
+  normalizeQuestionDraft
+} from '../utils/questionEditState.mjs'
 
 const props = defineProps({ question: { type: Object, required: true } })
 const emit = defineEmits(['saved', 'draft-change'])
@@ -37,24 +42,15 @@ const questionTypes = [
   { value: 'unknown', label: '未知' }
 ]
 
-const normalize = (q) => ({
-  content: q.content || '',
-  answer: q.answer || '',
-  analysis: q.analysis || '',
-  knowledge_tags: (q.knowledge_tags || []).map((x) => typeof x === 'string' ? x : x.label).filter(Boolean),
-  question_type: q.question_type || 'unknown',
-  difficulty_level: Number(q.difficulty_level) || 0
-})
-const clone = (value) => JSON.parse(JSON.stringify(value))
-const emitDraft = () => emit('draft-change', clone(draft.value))
+const emitDraft = () => emit('draft-change', cloneQuestionDraft(draft.value))
 const reset = () => {
-  draft.value = normalize(props.question)
-  baseline.value = clone(draft.value)
+  draft.value = normalizeQuestionDraft(props.question)
+  baseline.value = cloneQuestionDraft(draft.value)
   emitDraft()
 }
 watch(() => props.question, reset, { immediate: true, deep: true })
 watch(draft, emitDraft, { deep: true })
-const dirty = computed(() => JSON.stringify(draft.value) !== JSON.stringify(baseline.value))
+const dirty = computed(() => isQuestionDraftDirty(draft.value, baseline.value))
 
 const discard = async () => {
   if (!dirty.value) return reset()
@@ -73,8 +69,8 @@ const save = async () => {
     const body = res.data || {}
     const fresh = body.question || body
     const revision = body.current_revision_no ?? fresh.current_revision_no
-    baseline.value = clone({ ...draft.value, ...normalize(fresh) })
-    draft.value = clone(baseline.value)
+    baseline.value = cloneQuestionDraft({ ...draft.value, ...normalizeQuestionDraft(fresh) })
+    draft.value = cloneQuestionDraft(baseline.value)
     emit('saved', { question: fresh, current_revision_no: revision })
     emitDraft()
     ElMessage.success('题目已保存')
