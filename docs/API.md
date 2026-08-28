@@ -1,5 +1,19 @@
 # API
 
+## 题库题目编辑与回收站（#116）
+
+题目接口均按当前用户 owner-scoped 查询；不存在、他人题目、已到期或已永久删除资源统一返回 `404`。
+
+- `GET /api/v1/questions`：仅返回 active 题目。
+- `GET /api/v1/questions/{id}`：返回当前投影及 `current_revision_no`。
+- `PUT /api/v1/questions/{id}`：编辑题干、答案、解析、标签、题型和难度；有变化创建不可变 revision；可携带 `expected_revision_no`，冲突返回 `409`；仅提交 `content` 兼容旧客户端。
+- `POST /api/v1/questions/{id}/trash`：进入回收站并设置 30 天 `purge_at`。
+- `GET /api/v1/questions/trash`、`GET /api/v1/questions/trash/{id}`：查看未到期回收站题目。
+- `POST /api/v1/questions/{id}/restore`：恢复 active 状态。
+- `DELETE /api/v1/questions/{id}/permanent`：逻辑永久删除（设置 `purged_at`，不物理删除历史 revision、试卷快照或共享文件）。
+
+回收、恢复、编辑不会改变已有 `PaperItem` 快照；新建试卷只能读取 active 题目的最新 revision。`/history`、`/tags`、题图和配图旁路同样排除到期/永久删除资源。
+
 ## 当前 Dashboard 主路径
 
 当前 `Dashboard.vue` 上传主路径已接入 Draft 流水线：

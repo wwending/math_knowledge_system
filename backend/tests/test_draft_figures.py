@@ -416,7 +416,7 @@ class DraftFigureTests(unittest.TestCase):
         foreign = self.client.get(
             f"/api/v1/questions/{question_id}/figure", headers=self.other_headers
         )
-        self.assertEqual(foreign.status_code, 403)
+        self.assertEqual(foreign.status_code, 404)
 
         unknown = self.client.get("/api/v1/questions/999999/figure", headers=self.auth_headers)
         self.assertEqual(unknown.status_code, 404)

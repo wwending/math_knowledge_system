@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -14,7 +14,14 @@ class Tag(KnowledgeTag):
 
 
 class QuestionUpdate(BaseModel):
-    content: str
+    content: Optional[str] = Field(None, min_length=1, max_length=20000)
+    answer: Optional[str] = None
+    analysis: Optional[str] = None
+    knowledge_tags: Optional[list[KnowledgeTag]] = None
+    question_type: Optional[str] = None
+    difficulty_level: Optional[int] = Field(None, ge=1, le=5)
+    expected_revision_no: Optional[int] = Field(None, ge=1)
+
 
 
 class QuestionListItem(BaseModel):
@@ -22,6 +29,12 @@ class QuestionListItem(BaseModel):
 
     id: int
     content: Optional[str] = None
+    answer: Optional[str] = None
+    analysis: Optional[str] = None
+    current_revision_no: Optional[int] = None
+    deleted_at: Optional[datetime] = None
+    purge_at: Optional[datetime] = None
+    purged_at: Optional[datetime] = None
     knowledge_tags: list[KnowledgeTag] = Field(default_factory=list)
     question_type: Optional[str] = None
     difficulty_level: Optional[int] = None

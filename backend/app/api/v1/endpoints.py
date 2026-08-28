@@ -66,6 +66,7 @@ from app.services.ocr_engine import ocr_service
 from app.services.ocr_providers.base import OCRResult
 from app.services.ocr_service import ocr_service as draft_ocr_service
 from app.services.paper_service import create_paper, get_paper, list_papers, update_paper
+from app.services.question_service import update as update_question_service, trash as trash_question, restore as restore_question, permanent as permanent_question, latest as latest_question_revision
 from app.services.paper_render_service import build_paper_render_model, resolve_paper_figure_files
 from app.services.paper_html_renderer import (
     PaperFigureTooLargeError,
@@ -101,6 +102,15 @@ DRAFT_ALREADY_SAVED_RECOGNIZE_MESSAGE = "\u5df2\u4fdd\u5b58\u5165\u9898\u5e93\u7
 DRAFT_EDIT_READY_REQUIRED_MESSAGE = "\u53ea\u6709\u5df2\u8bc6\u522b\u5b8c\u6210\u7684 Draft \u53ef\u4ee5\u4eba\u5de5\u4fee\u6539"
 DRAFT_CONTENT_EMPTY_MESSAGE = "Draft \u9898\u76ee\u6b63\u6587\u4e0d\u80fd\u4e3a\u7a7a"
 QUESTION_TYPES = {"single_choice", "multiple_choice", "fill_blank", "solution", "judge", "unknown"}
+
+
+def _question_is_expired(question: Question) -> bool:
+    purge_at = question.purge_at
+    if purge_at is None:
+        return False
+    if purge_at.tzinfo is None:
+        purge_at = purge_at.replace(tzinfo=timezone.utc)
+    return purge_at <= datetime.now(timezone.utc)
 
 
 class SourceAssetResponse(BaseModel):
@@ -453,7 +463,11 @@ def get_all_tags(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_active_user),
 ):
-    questions = db.query(Question).filter(Question.user_id == current_user.id).all()
+    questions = db.query(Question).filter(
+        Question.user_id == current_user.id,
+        Question.deleted_at.is_(None),
+        Question.purged_at.is_(None),
+    ).all()
 
     unique_tags = set()
     for question in questions:
@@ -470,16 +484,14 @@ def update_question(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_active_user),
 ):
-    question = db.query(Question).filter(Question.id == question_id).first()
-    if not question:
-        raise HTTPException(status_code=404, detail=NOT_FOUND_MESSAGE)
-    if question.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail=FORBIDDEN_MESSAGE)
-
-    question.content = question_update.content
-    db.commit()
-    db.refresh(question)
-    return {"success": True, "msg": QUESTION_UPDATED_MESSAGE}
+    question, created, revision = update_question_service(db, current_user, question_id, question_update)
+    return {
+        "success": True,
+        "msg": QUESTION_UPDATED_MESSAGE,
+        "revision_created": created,
+        "current_revision_no": revision.rev_no if revision else None,
+        "question": question,
+    }
 
 
 @router.get("/history", response_model=List[OCRResponse])
@@ -491,7 +503,11 @@ def read_history(
 ):
     questions = (
         db.query(Question)
-        .filter(Question.user_id == current_user.id)
+        .filter(
+            Question.user_id == current_user.id,
+            Question.deleted_at.is_(None),
+            Question.purged_at.is_(None),
+        )
         .order_by(Question.created_at.desc())
         .offset(skip)
         .limit(limit)
@@ -1535,7 +1551,7 @@ def list_questions(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_active_user),
 ):
-    query = db.query(Question).filter(Question.user_id == current_user.id)
+    query = db.query(Question).filter(Question.user_id == current_user.id, Question.deleted_at.is_(None), Question.purged_at.is_(None))
     if q:
         query = query.filter(Question.content.contains(q))
 
@@ -1550,6 +1566,12 @@ def list_questions(
         QuestionListItem(
             id=item.id,
             content=item.content,
+            answer=item.answer,
+            analysis=item.analysis,
+            current_revision_no=(latest_question_revision(db, item.id).rev_no if latest_question_revision(db, item.id) else None),
+            deleted_at=item.deleted_at,
+            purge_at=item.purge_at,
+            purged_at=item.purged_at,
             knowledge_tags=normalize_tags(item.knowledge_tags),
             question_type=item.question_type,
             difficulty_level=item.difficulty_level,
@@ -1570,21 +1592,39 @@ def list_questions(
     ]
 
 
+@router.get("/questions/trash", response_model=List[QuestionListItem])
+def list_question_trash(db: Session = Depends(get_db), current_user: User = Depends(require_active_user)):
+    now = datetime.now(timezone.utc)
+    return [QuestionListItem.model_validate(q) for q in db.query(Question).filter(Question.user_id == current_user.id, Question.deleted_at.isnot(None), Question.purge_at > now, Question.purged_at.is_(None)).order_by(Question.deleted_at.desc()).all()]
+
+
+@router.get("/questions/trash/{question_id}", response_model=QuestionDetail)
+def get_question_trash(question_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_active_user)):
+    q = db.query(Question).filter(Question.id == question_id, Question.user_id == current_user.id, Question.deleted_at.isnot(None), Question.purge_at > datetime.now(timezone.utc), Question.purged_at.is_(None)).first()
+    if not q:
+        raise HTTPException(404, NOT_FOUND_MESSAGE)
+    return QuestionDetail.model_validate(q)
+
+
 @router.get("/questions/{question_id}", response_model=QuestionDetail)
 def get_question_detail(
     question_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_active_user),
 ):
-    question = db.query(Question).filter(Question.id == question_id).first()
+    question = db.query(Question).filter(Question.id == question_id, Question.user_id == current_user.id, Question.deleted_at.is_(None), Question.purged_at.is_(None)).first()
     if not question:
         raise HTTPException(status_code=404, detail=NOT_FOUND_MESSAGE)
-    if question.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail=FORBIDDEN_MESSAGE)
 
     return QuestionDetail(
         id=question.id,
         content=question.content,
+        answer=question.answer,
+        analysis=question.analysis,
+        current_revision_no=(latest_question_revision(db, question.id).rev_no if latest_question_revision(db, question.id) else None),
+        deleted_at=question.deleted_at,
+        purge_at=question.purge_at,
+        purged_at=question.purged_at,
         knowledge_tags=normalize_tags(question.knowledge_tags),
         question_type=question.question_type,
         difficulty_level=question.difficulty_level,
@@ -1603,17 +1643,37 @@ def get_question_detail(
     )
 
 
+@router.post("/questions/{question_id}/trash")
+def move_question_to_trash(question_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_active_user)):
+    q = trash_question(db, current_user, question_id)
+    return {"success": True, "question_id": q.id, "deleted_at": q.deleted_at, "purge_at": q.purge_at}
+
+@router.post("/questions/{question_id}/restore")
+def restore_question_from_trash(question_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_active_user)):
+    q = restore_question(db, current_user, question_id)
+    return {"success": True, "question_id": q.id}
+
+@router.delete("/questions/{question_id}/permanent")
+def permanently_delete_question(question_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_active_user)):
+    q = permanent_question(db, current_user, question_id)
+    return {"success": True, "question_id": q.id, "purged_at": q.purged_at}
+
+
 @router.get("/questions/{question_id}/image")
 def get_question_image(
     question_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_active_user),
 ):
-    question = db.query(Question).filter(Question.id == question_id).first()
+    question = (
+        db.query(Question)
+        .filter(Question.id == question_id, Question.user_id == current_user.id)
+        .first()
+    )
     if not question:
         raise HTTPException(status_code=404, detail=NOT_FOUND_MESSAGE)
-    if question.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail=FORBIDDEN_MESSAGE)
+    if question.purged_at or _question_is_expired(question):
+        raise HTTPException(status_code=404, detail=NOT_FOUND_MESSAGE)
 
     # Ownership is enforced above on the Question row on purpose: SourceAsset rows are
     # deduplicated by sha256 across users, so the asset itself carries no owner
@@ -1660,11 +1720,15 @@ def get_question_figure(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_active_user),
 ):
-    question = db.query(Question).filter(Question.id == question_id).first()
+    question = (
+        db.query(Question)
+        .filter(Question.id == question_id, Question.user_id == current_user.id)
+        .first()
+    )
     if not question:
         raise HTTPException(status_code=404, detail=NOT_FOUND_MESSAGE)
-    if question.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail=FORBIDDEN_MESSAGE)
+    if question.purged_at or _question_is_expired(question):
+        raise HTTPException(status_code=404, detail=NOT_FOUND_MESSAGE)
 
     # Same ownership rationale as get_question_image (#58): the Question row
     # carries ownership; the referenced asset only marks where bytes live.

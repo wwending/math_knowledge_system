@@ -29,6 +29,11 @@
       </div>
     </div>
 
+    <el-tabs v-model="activeBankTab" class="bank-tabs" @tab-change="handleBankTabChange">
+      <el-tab-pane label="题库" name="active" />
+      <el-tab-pane label="回收站" name="trash" />
+    </el-tabs>
+
     <el-alert
       title="说明"
       type="info"
@@ -65,6 +70,7 @@
           <div class="select-box" @click.stop>
             <el-checkbox
               :aria-label="`选择题目 #${item.id}`"
+              v-if="activeBankTab === 'active'"
               :model-value="isQuestionSelected(item.id)"
               @change="toggleQuestionSelection(item.id)"
             />
@@ -91,7 +97,7 @@
                 {{ formatQuestionType(item.question_type) }}
               </el-tag>
               <span class="difficulty-text">难度：{{ formatDifficultyStatus(item) }}</span>
-              <span class="time">{{ formatTime(item.created_at) }}</span>
+              <span class="time">{{ activeBankTab === 'trash' ? `删除：${formatTime(item.deleted_at)}｜到期：${formatTime(item.purge_at)}` : formatTime(item.created_at) }}</span>
             </div>
             <div class="preview-text">
               {{ getPreviewText(item.content) }}
@@ -112,6 +118,13 @@
             <el-button type="primary" plain round @click.stop="openDetail(item)">
               查看详情
             </el-button>
+            <el-button v-if="activeBankTab === 'active'" type="danger" plain round @click.stop="moveToTrash(item)">
+              删除
+            </el-button>
+            <template v-else>
+              <el-button type="success" plain round @click.stop="restoreQuestion(item)">恢复</el-button>
+              <el-button type="danger" plain round @click.stop="permanentlyDeleteQuestion(item)">永久删除</el-button>
+            </template>
           </div>
         </div>
       </el-card>
@@ -146,6 +159,17 @@
         </div>
 
         <div class="detail-right">
+          <div class="detail-actions">
+            <el-button v-if="activeBankTab === 'active'" type="primary" @click="editing = true">编辑题目</el-button>
+            <el-button v-if="activeBankTab === 'trash'" type="success" @click="restoreQuestion(currentItem)">恢复题目</el-button>
+            <el-button v-if="activeBankTab === 'trash'" type="danger" @click="permanentlyDeleteQuestion(currentItem)">永久删除</el-button>
+          </div>
+          <QuestionEditWorkbench
+            v-if="editing"
+            :question="currentItem"
+            :image-url="getImageUrl(currentItem)"
+            @saved="handleQuestionSaved"
+          />
           <div class="detail-meta">
             <el-tag size="small" type="info">ID: {{ currentItem.id }}</el-tag>
             <el-tag size="small" type="warning" effect="plain">
@@ -217,7 +241,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import axios from 'axios'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh, Search, Picture as IconPicture } from '@element-plus/icons-vue'
 import { API_V1_BASE_URL } from '../config/api'
 import { createQuestionImageLoader } from '../utils/questionImageLoader'
@@ -225,6 +249,7 @@ import { readStringQuery, replaceQueryValues } from '../utils/urlQueryState'
 import { renderMarkdown } from '@/utils/renderMarkdown'
 import { useRoute, useRouter } from 'vue-router'
 import { formatDateTime } from '../utils/formatDateTime'
+import QuestionEditWorkbench from './QuestionEditWorkbench.vue'
 
 const API_BASE = API_V1_BASE_URL
 const emit = defineEmits(['paper-created', 'go-upload'])
@@ -233,7 +258,9 @@ const emit = defineEmits(['paper-created', 'go-upload'])
 const questionListLimit = 100
 
 const loading = ref(false)
+const activeBankTab = ref('active')
 const detailLoading = ref(false)
+const detailRequestToken = ref(0)
 const list = ref([])
 // #75：搜索词与 ?bank_q= 同步——初始值从 URL 恢复，输入变化时 replace 回写。
 const route = useRoute()
@@ -241,6 +268,7 @@ const router = useRouter()
 const keyword = ref(readStringQuery(route, 'bank_q'))
 const dialogVisible = ref(false)
 const currentItem = ref(null)
+const editing = ref(false)
 const selectedQuestionIds = ref([])
 const createPaperDialogVisible = ref(false)
 const creatingPaper = ref(false)
@@ -250,7 +278,7 @@ const paperForm = ref({
 })
 
 // 题目图片经鉴权接口以 blob 方式加载（#44），不再使用公开静态 URL。
-const { hasImageField, syncItems, imageUrlFor, dispose: disposeImageLoader } = createQuestionImageLoader()
+const { hasImageField, syncItems, imageUrlFor, remove: imageLoaderRemove, dispose: disposeImageLoader } = createQuestionImageLoader()
 
 watch(list, (items) => syncItems(items))
 watch(keyword, (value) => {
@@ -269,34 +297,81 @@ const canSubmitPaper = computed(() => {
   return selectedQuestionIds.value.length > 0 && paperForm.value.title.trim().length > 0 && !creatingPaper.value
 })
 
+const listRequestToken = ref(0)
 const fetchQuestions = async () => {
+  const token = ++listRequestToken.value
   loading.value = true
   try {
-    const res = await axios.get(`${API_BASE}/questions?limit=${questionListLimit}`)
-    list.value = res.data || []
+    const endpoint = activeBankTab.value === 'trash' ? `${API_BASE}/questions/trash?limit=${questionListLimit}` : `${API_BASE}/questions?limit=${questionListLimit}`
+    const res = await axios.get(endpoint)
+    if (token === listRequestToken.value) list.value = res.data || []
   } catch (error) {
     console.error(error)
     ElMessage.error('获取题目列表失败')
   } finally {
-    loading.value = false
+    if (token === listRequestToken.value) loading.value = false
   }
 }
 
 
 const openDetail = async (item) => {
+  const token = ++detailRequestToken.value
   dialogVisible.value = true
   detailLoading.value = true
   currentItem.value = item
-
   try {
-    const res = await axios.get(`${API_BASE}/questions/${item.id}`)
-    currentItem.value = res.data
+    const endpoint = activeBankTab.value === 'trash' ? `${API_BASE}/questions/trash/${item.id}` : `${API_BASE}/questions/${item.id}`
+    const res = await axios.get(endpoint)
+    if (token === detailRequestToken.value) currentItem.value = res.data
   } catch (error) {
     console.error(error)
     ElMessage.error('获取题目详情失败')
   } finally {
-    detailLoading.value = false
+    if (token === detailRequestToken.value) detailLoading.value = false
   }
+}
+
+const handleQuestionSaved = (saved) => {
+  const question = saved?.question || saved
+  const revision = saved?.current_revision_no ?? question?.current_revision_no
+  if (question && typeof question === 'object') currentItem.value = { ...currentItem.value, ...question, current_revision_no: revision ?? currentItem.value?.current_revision_no }
+  editing.value = false
+  fetchQuestions()
+}
+
+const handleBankTabChange = () => {
+  selectedQuestionIds.value = []
+  currentItem.value = null
+  editing.value = false
+  dialogVisible.value = false
+  fetchQuestions()
+}
+
+const cleanupQuestion = (id) => {
+  selectedQuestionIds.value = selectedQuestionIds.value.filter((questionId) => questionId !== id)
+  imageLoaderRemove?.(id)
+  if (currentItem.value?.id === id) {
+    currentItem.value = null
+    editing.value = false
+    dialogVisible.value = false
+  }
+}
+
+const confirmAction = async (message) => {
+  try { await ElMessageBox.confirm(message, '请确认操作', { type: 'warning', confirmButtonText: '确认', cancelButtonText: '取消' }); return true } catch { return false }
+}
+
+const moveToTrash = async (item) => {
+  if (!(await confirmAction('删除后题目将进入回收站，保留 30 天。'))) return
+  try { await axios.post(`${API_BASE}/questions/${item.id}/trash`); cleanupQuestion(item.id); ElMessage.success('题目已移入回收站'); fetchQuestions() } catch (error) { ElMessage.error(error.response?.data?.detail || '删除题目失败') }
+}
+const restoreQuestion = async (item) => {
+  if (!(await confirmAction('恢复这道题目？'))) return
+  try { await axios.post(`${API_BASE}/questions/${item.id}/restore`); cleanupQuestion(item.id); ElMessage.success('题目已恢复'); fetchQuestions() } catch (error) { ElMessage.error(error.response?.data?.detail || '恢复题目失败') }
+}
+const permanentlyDeleteQuestion = async (item) => {
+  if (!(await confirmAction('永久删除后将无法从回收站恢复。'))) return
+  try { await axios.delete(`${API_BASE}/questions/${item.id}/permanent`); cleanupQuestion(item.id); ElMessage.success('题目已永久删除'); fetchQuestions() } catch (error) { ElMessage.error(error.response?.data?.detail || '永久删除题目失败') }
 }
 
 const isQuestionSelected = (questionId) => selectedQuestionIds.value.includes(questionId)
