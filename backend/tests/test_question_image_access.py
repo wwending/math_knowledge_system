@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from PIL import Image
@@ -139,12 +140,12 @@ class QuestionImageAccessTests(unittest.TestCase):
         response = self.client.get(f"{self.IMAGE_URL_PREFIX}/{self.owner_question_id}/image")
         self.assertEqual(response.status_code, 401)
 
-    def test_non_owner_receives_403_for_foreign_question_image(self):
+    def test_non_owner_receives_404_for_foreign_question_image(self):
         response = self.client.get(
             f"{self.IMAGE_URL_PREFIX}/{self.owner_question_id}/image",
             headers=self.other_headers,
         )
-        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.status_code, 404)
 
     def test_owner_receives_image_bytes(self):
         response = self.client.get(
@@ -347,6 +348,29 @@ class QuestionImageAccessTests(unittest.TestCase):
         self.assertIn(self.shared_question_id, other_ids)
         self.assertNotIn(self.owner_question_id, other_ids)
         self.assertNotIn(self.imageless_question_id, other_ids)
+
+    def test_question_side_routes_hide_cross_user_and_trashed_questions(self):
+        with self.SessionLocal() as db:
+            question = db.query(Question).filter(Question.id == self.owner_question_id).one()
+            question.figure_image = IMAGE_FILENAME
+            question_id = question.id
+            db.commit()
+        self.assertEqual(self.client.get("/api/v1/history?limit=50", headers=self.other_headers).status_code, 200)
+        self.assertEqual(self.client.get(f"/api/v1/questions/{question_id}/image", headers=self.other_headers).status_code, 404)
+        self.assertEqual(self.client.get(f"/api/v1/questions/{question_id}/figure", headers=self.other_headers).status_code, 404)
+        self.assertEqual(self.client.post(f"/api/v1/questions/{question_id}/trash", headers=self.owner_headers).status_code, 200)
+        history = self.client.get("/api/v1/history?limit=50", headers=self.owner_headers)
+        self.assertNotIn(question_id, {item["id"] for item in history.json()})
+        tags = self.client.get("/api/v1/tags", headers=self.owner_headers)
+        self.assertEqual(tags.status_code, 200)
+        self.assertEqual(self.client.get(f"/api/v1/questions/{question_id}/image", headers=self.owner_headers).status_code, 200)
+        self.assertEqual(self.client.get(f"/api/v1/questions/{question_id}/figure", headers=self.owner_headers).status_code, 200)
+        with self.SessionLocal() as db:
+            question = db.query(Question).filter(Question.id == question_id).one()
+            question.purge_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+            db.commit()
+        self.assertEqual(self.client.get(f"/api/v1/questions/{question_id}/image", headers=self.owner_headers).status_code, 404)
+        self.assertEqual(self.client.get(f"/api/v1/questions/{question_id}/figure", headers=self.owner_headers).status_code, 404)
 
     def test_public_static_mount_no_longer_serves_uploads(self):
         response = self.client.get(f"/static/uploads/{IMAGE_FILENAME}")
