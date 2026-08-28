@@ -8,8 +8,8 @@ from fastapi import HTTPException
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from app.api.v1.endpoints import router as question_router
 from app.db.base import Base
-from app.main import app
 from app.models.question import Question
 from app.models.question_revision import QuestionRevision
 from app.models.user import User
@@ -91,13 +91,21 @@ class QuestionEditTrashTests(unittest.TestCase):
         self.assertIsNotNone(self.db.get(QuestionRevision, 1)) if self.db.query(QuestionRevision).count() else None
 
     def test_question_routes_are_unique_and_static_trash_precedes_dynamic(self):
-        routes = [route for route in app.routes if getattr(route, "path", "").startswith("/api/v1/questions")]
+        routes = [
+            route
+            for route in question_router.routes
+            if getattr(route, "path", "").startswith("/questions")
+        ]
         route_keys = [(route.path, tuple(sorted(route.methods or ()))) for route in routes]
         self.assertEqual(len(route_keys), len(set(route_keys)))
-        trash_index = next(index for index, route in enumerate(routes) if route.path == "/api/v1/questions/trash")
+        trash_index = next(
+            index for index, route in enumerate(routes)
+            if route.path == "/questions/trash"
+        )
         dynamic_index = next(
             index for index, route in enumerate(routes)
-            if route.path == "/api/v1/questions/{question_id}" and "GET" in (route.methods or set())
+            if route.path == "/questions/{question_id}"
+            and "GET" in (route.methods or set())
         )
         self.assertLess(trash_index, dynamic_index)
 
