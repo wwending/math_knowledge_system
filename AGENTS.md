@@ -7,6 +7,20 @@ Keep this file concise. Current project facts live in `docs/`.
 
 Project-specific machine/checkout rules belong in a repository-root `AGENTS.override.md`, which is intentionally ignored by Git. Do not require `math_knowledge_system`-specific rules in the user's global Codex home.
 
+## Agent skills
+
+### Issue tracker
+
+Issues are tracked in this repository's GitHub Issues using the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the five default triage labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, and `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Use the single-context domain documentation layout. See `docs/agents/domain.md`.
+
 ## Authority and instruction order
 
 - The human user is the project owner and final decision maker.
