@@ -167,31 +167,35 @@
           <QuestionEditWorkbench
             v-if="editing"
             :question="currentItem"
-            :image-url="getImageUrl(currentItem)"
             @saved="handleQuestionSaved"
+            @draft-change="handleDraftChange"
           />
           <div class="detail-meta">
             <el-tag size="small" type="info">ID: {{ currentItem.id }}</el-tag>
             <el-tag size="small" type="warning" effect="plain">
-              {{ formatQuestionType(currentItem.question_type) }}
+              {{ formatQuestionType(displayItem.question_type) }}
             </el-tag>
-            <span class="difficulty-text">难度：{{ formatDifficultyStatus(currentItem) }}</span>
+            <span class="difficulty-text">难度：{{ formatDifficultyStatus(displayItem) }}</span>
             <span class="time">{{ formatTime(currentItem.created_at) }}</span>
           </div>
           <el-divider content-position="left">知识点</el-divider>
           <div class="knowledge-tags">
             <el-tag
-              v-for="(tag, i) in getTags(currentItem)"
+              v-for="(tag, i) in getTags(displayItem)"
               :key="i"
               type="success"
               effect="dark"
             >
               {{ tag.label }}
             </el-tag>
-            <span v-if="getTags(currentItem).length === 0" class="empty-text">暂无知识点</span>
+            <span v-if="getTags(displayItem).length === 0" class="empty-text">暂无知识点</span>
           </div>
           <el-divider content-position="left">题目内容</el-divider>
-          <div class="markdown-body detail-content" v-html="renderTex(currentItem.content)"></div>
+          <div class="markdown-body detail-content" v-html="renderTex(displayItem.content)"></div>
+          <el-divider content-position="left">答案</el-divider>
+          <div class="markdown-body detail-content" v-html="renderTex(displayItem.answer)"></div>
+          <el-divider content-position="left">解析</el-divider>
+          <div class="markdown-body detail-content" v-html="renderTex(displayItem.analysis)"></div>
         </div>
       </div>
     </el-dialog>
@@ -250,6 +254,10 @@ import { renderMarkdown } from '@/utils/renderMarkdown'
 import { useRoute, useRouter } from 'vue-router'
 import { formatDateTime } from '../utils/formatDateTime'
 import QuestionEditWorkbench from './QuestionEditWorkbench.vue'
+import {
+  applyDraftToQuestion,
+  mergeSavedQuestionResponse
+} from '../utils/questionEditState.mjs'
 
 const API_BASE = API_V1_BASE_URL
 const emit = defineEmits(['paper-created', 'go-upload'])
@@ -268,6 +276,11 @@ const router = useRouter()
 const keyword = ref(readStringQuery(route, 'bank_q'))
 const dialogVisible = ref(false)
 const currentItem = ref(null)
+const detailDraft = ref(null)
+const displayItem = computed(() => {
+  if (!currentItem.value || !detailDraft.value) return currentItem.value
+  return applyDraftToQuestion(currentItem.value, detailDraft.value)
+})
 const editing = ref(false)
 const selectedQuestionIds = ref([])
 const createPaperDialogVisible = ref(false)
@@ -319,6 +332,7 @@ const openDetail = async (item) => {
   dialogVisible.value = true
   detailLoading.value = true
   currentItem.value = item
+  detailDraft.value = null
   try {
     const endpoint = activeBankTab.value === 'trash' ? `${API_BASE}/questions/trash/${item.id}` : `${API_BASE}/questions/${item.id}`
     const res = await axios.get(endpoint)
@@ -332,16 +346,20 @@ const openDetail = async (item) => {
 }
 
 const handleQuestionSaved = (saved) => {
-  const question = saved?.question || saved
-  const revision = saved?.current_revision_no ?? question?.current_revision_no
-  if (question && typeof question === 'object') currentItem.value = { ...currentItem.value, ...question, current_revision_no: revision ?? currentItem.value?.current_revision_no }
+  currentItem.value = mergeSavedQuestionResponse(currentItem.value, saved)
+  detailDraft.value = null
   editing.value = false
   fetchQuestions()
+}
+
+const handleDraftChange = (draft) => {
+  detailDraft.value = draft
 }
 
 const handleBankTabChange = () => {
   selectedQuestionIds.value = []
   currentItem.value = null
+  detailDraft.value = null
   editing.value = false
   dialogVisible.value = false
   fetchQuestions()
@@ -352,6 +370,7 @@ const cleanupQuestion = (id) => {
   imageLoaderRemove?.(id)
   if (currentItem.value?.id === id) {
     currentItem.value = null
+    detailDraft.value = null
     editing.value = false
     dialogVisible.value = false
   }
