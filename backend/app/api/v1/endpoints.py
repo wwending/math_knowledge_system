@@ -5,6 +5,7 @@ import os
 import re
 import time
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, List, Optional
@@ -26,6 +27,8 @@ from app.core.constants import (
     MAX_ASSET_SIZE_BYTES,
     MAX_PDF_PAGES,
     PDF_TEMP_TTL_SECONDS,
+    QUESTION_MAX_FIGURE_BYTES,
+    QUESTION_MAX_FIGURES_PER_IMAGE_AREA,
     DraftEventType,
     DraftStatus,
 )
@@ -66,6 +69,8 @@ from app.schemas.question import (
 from app.services.draft_image_service import (
     compose_bbox_to_page,
     create_cropped_temp_image,
+    normalize_unit_bbox,
+    pixel_crop_box,
     render_draft_image,
 )
 from app.services.draft_state import transition_draft_status
@@ -83,7 +88,11 @@ from app.services.paper_html_renderer import (
     render_paper_html,
 )
 from app.services.pdf_generation_service import GotenbergPdfGenerationService, PdfGenerationError, PdfGenerationOptions
-from app.services.question_content import build_legacy_v2_snapshot, legacy_figure_stable_id
+from app.services.question_content import (
+    build_draft_v2_snapshot,
+    build_legacy_v2_snapshot,
+    draft_figure_stable_id,
+)
 from app.services.question_document_service import (
     QuestionDocumentInvalid,
     get_document,
@@ -1127,101 +1136,185 @@ def recognize_draft(
     )
 
 
-def _valid_figure_bbox(figure_bbox: Any) -> Optional[list[float]]:
-    """Validate a user-confirmed figure bbox: [x, y, w, h] normalized to [0, 1]."""
+@dataclass
+class PreparedDraftFigure:
+    relative_bbox: list[float]
+    page_bbox: list[float]
+    temp_path: Path
+    digest: str
+    size_bytes: int
+    width: int
+    height: int
+
+
+def _draft_figure_error(code: str, message: str, **location: Any) -> HTTPException:
+    error = {"code": code, "message": message, **location}
+    return HTTPException(
+        status_code=422,
+        detail={
+            "code": "draft_figures_invalid",
+            "message": "配图区域未通过校验",
+            "errors": [error],
+        },
+    )
+
+
+def _figure_bboxes_overlap(left: list[float], right: list[float], epsilon: float = 1e-9) -> bool:
+    lx, ly, lw, lh = left
+    rx, ry, rw, rh = right
+    return min(lx + lw, rx + rw) - max(lx, rx) > epsilon and min(
+        ly + lh, ry + rh
+    ) - max(ly, ry) > epsilon
+
+
+def _normalize_draft_figure_bboxes(values: list[list[float]]) -> list[list[float]]:
+    if len(values) > QUESTION_MAX_FIGURES_PER_IMAGE_AREA:
+        raise _draft_figure_error(
+            "too_many_figures",
+            f"上传确认页最多保存 {QUESTION_MAX_FIGURES_PER_IMAGE_AREA} 张配图",
+            field="figure_bboxes",
+        )
+    normalized: list[list[float]] = []
+    for index, value in enumerate(values):
+        try:
+            bbox = normalize_unit_bbox(value)
+        except ValueError as exc:
+            raise _draft_figure_error(
+                "invalid_figure_bbox", str(exc), figure_index=index
+            ) from exc
+        if bbox == {} or bbox[2] * bbox[3] < float(settings.LAYOUT_MIN_AREA_RATIO):
+            raise _draft_figure_error(
+                "figure_bbox_too_small",
+                f"配图区域面积不能小于 {settings.LAYOUT_MIN_AREA_RATIO:.4f}",
+                figure_index=index,
+            )
+        normalized.append(bbox)
+    normalized.sort(key=lambda bbox: (bbox[1], bbox[0]))
+    for index, bbox in enumerate(normalized):
+        for other_index, other in enumerate(normalized[index + 1 :], start=index + 1):
+            if _figure_bboxes_overlap(bbox, other):
+                raise _draft_figure_error(
+                    "figure_bbox_overlap",
+                    "配图区域不能互相重叠",
+                    figure_indexes=[index, other_index],
+                )
+    return normalized
+
+
+def _source_pixel_box(image: Image.Image, bbox: list[float]) -> tuple[int, int, int, int]:
+    x, y, width, height = bbox
+    left = min(max(round(x * image.width), 0), image.width - 1)
+    top = min(max(round(y * image.height), 0), image.height - 1)
+    right = min(max(round((x + width) * image.width), left + 1), image.width)
+    bottom = min(max(round((y + height) * image.height), top + 1), image.height)
+    return left, top, right, bottom
+
+
+def _prepare_draft_figures(
+    asset: SourceAsset,
+    draft_crop_bbox: Any,
+    relative_bboxes: list[list[float]],
+) -> tuple[list[PreparedDraftFigure], int]:
+    if not relative_bboxes:
+        source_width = int(asset.width or 0)
+        if draft_crop_bbox and source_width:
+            source_width = max(1, round(source_width * float(draft_crop_bbox[2])))
+        return [], source_width
+
+    page_bboxes: list[list[float]] = []
+    for index, bbox in enumerate(relative_bboxes):
+        page_bbox = compose_bbox_to_page(draft_crop_bbox, bbox)
+        if page_bbox is None:
+            raise _draft_figure_error(
+                "invalid_figure_bbox", "配图区域无法映射到原始页图", figure_index=index
+            )
+        page_bboxes.append(page_bbox)
+
+    source_path = _asset_file_path(asset)
+    prepared: list[PreparedDraftFigure] = []
+    temp_paths: list[Path] = []
     try:
-        values = [float(v) for v in figure_bbox]
-    except (TypeError, ValueError):
-        return None
-    if len(values) != 4:
-        return None
-    x, y, w, h = values
-    if not all(0.0 <= value <= 1.0 for value in (x, y, w, h)):
-        return None
-    if w <= 0 or h <= 0 or (w * h) < float(settings.LAYOUT_MIN_AREA_RATIO):
-        return None
-    return [x, y, w, h]
+        with Image.open(source_path) as image:
+            image.load()
+            rgb = image.convert("RGB")
+            if draft_crop_bbox:
+                crop_left, _, crop_right, _ = pixel_crop_box(image, draft_crop_bbox)
+                canvas_width = crop_right - crop_left
+            else:
+                canvas_width = image.width
+            for relative_bbox, page_bbox in zip(relative_bboxes, page_bboxes):
+                crop = rgb.crop(_source_pixel_box(image, page_bbox))
+                crop.load()
+                temp_path = settings.UPLOAD_DIR_PATH / f".tmp_draft_figure_{uuid.uuid4().hex}.jpg"
+                temp_path.parent.mkdir(parents=True, exist_ok=True)
+                temp_paths.append(temp_path)
+                crop.save(temp_path, format="JPEG", quality=90)
+                data = temp_path.read_bytes()
+                if len(data) > QUESTION_MAX_FIGURE_BYTES:
+                    raise _draft_figure_error(
+                        "figure_too_large",
+                        f"单张配图不能超过 {QUESTION_MAX_FIGURE_BYTES} 字节",
+                    )
+                prepared.append(
+                    PreparedDraftFigure(
+                        relative_bbox=relative_bbox,
+                        page_bbox=page_bbox,
+                        temp_path=temp_path,
+                        digest=hashlib.sha256(data).hexdigest(),
+                        size_bytes=len(data),
+                        width=crop.width,
+                        height=crop.height,
+                    )
+                )
+        if sum(item.size_bytes for item in prepared) > settings.QUESTION_MAX_TOTAL_FIGURE_BYTES:
+            raise _draft_figure_error("question_figure_bytes_exceeded", "题目配图累计体积超过上限")
+        return prepared, canvas_width
+    except Exception:
+        for path in temp_paths:
+            path.unlink(missing_ok=True)
+        raise
 
 
-def _attach_question_figure(
+def _materialize_draft_figures(
     db: Session,
     question: Question,
     revision: QuestionRevision,
-    asset: SourceAsset,
-    figure_bbox: Any,
-    draft_id: int,
-    crop_bbox: Any = None,
+    source_asset: SourceAsset,
+    prepared: list[PreparedDraftFigure],
+    canvas_width: int,
+    promoted_paths: list[Path],
 ) -> None:
-    """Crop the confirmed figure region out of the original page asset (#58).
-
-    figure_bbox is normalized relative to the Draft's effective question image
-    (which is the whole page for legacy/full-image Drafts). It is validated
-    against LAYOUT_MIN_AREA_RATIO in that same crop-relative space — matching
-    how the layout detector reports figures — then composed into page
-    coordinates before cropping from the full-resolution source, so small
-    figures in small question crops are not silently dropped.
-
-    Best-effort: any failure logs and leaves the question without a figure
-    instead of blocking save-to-bank.
-    """
-    normalized = _valid_figure_bbox(figure_bbox)
-    if normalized is None:
-        logger.warning("[FigureCrop] ignored invalid figure_bbox draft_id={} bbox={}", draft_id, figure_bbox)
-        return
-    page_bbox = compose_bbox_to_page(crop_bbox, normalized)
-    if page_bbox is None:
-        logger.warning("[FigureCrop] ignored uncomposable figure_bbox draft_id={} bbox={}", draft_id, figure_bbox)
-        return
-    out_path = None
-    savepoint = db.begin_nested()
-    try:
-        source_path = _asset_file_path(asset)
-        with Image.open(source_path) as img:
-            rgb = img.convert("RGB")
-            x, y, w, h = page_bbox
-            left = min(max(round(x * rgb.width), 0), rgb.width - 1)
-            top = min(max(round(y * rgb.height), 0), rgb.height - 1)
-            right = min(max(round((x + w) * rgb.width), left + 1), rgb.width)
-            bottom = min(max(round((y + h) * rgb.height), top + 1), rgb.height)
-            crop = rgb.crop((left, top, right, bottom))
-            crop.load()
-
-        filename = f"{uuid.uuid4().hex}_figure.jpg"
-        out_path = settings.UPLOAD_DIR_PATH / filename
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        crop.save(out_path, format="JPEG", quality=90)
-        data = out_path.read_bytes()
-        digest = hashlib.sha256(data).hexdigest()
-
-        existing = db.query(SourceAsset).filter(SourceAsset.sha256 == digest).first()
-        if existing is not None:
-            # Same crop bytes already stored (sha256 dedup): drop our duplicate file.
-            out_path.unlink(missing_ok=True)
-            figure_asset = existing
-        else:
+    layouts: list[dict[str, Any]] = []
+    total = len(prepared)
+    resolved: list[tuple[QuestionFigure, SourceAsset, PreparedDraftFigure]] = []
+    for index, item in enumerate(prepared):
+        figure_asset = db.query(SourceAsset).filter(SourceAsset.sha256 == item.digest).first()
+        if figure_asset is None:
+            filename = f"{uuid.uuid4().hex}_figure.jpg"
+            final_path = settings.UPLOAD_DIR_PATH / filename
+            item.temp_path.replace(final_path)
+            promoted_paths.append(final_path)
             figure_asset = SourceAsset(
                 user_id=question.user_id,
                 kind="figure",
                 original_path=filename,
                 mime="image/jpeg",
-                size_bytes=len(data),
-                width=crop.width,
-                height=crop.height,
-                sha256=digest,
+                size_bytes=item.size_bytes,
+                width=item.width,
+                height=item.height,
+                sha256=item.digest,
             )
             db.add(figure_asset)
             db.flush()
-
-        question.figure_image = figure_asset.normalized_path or figure_asset.original_path
-        question.figure_crop_bbox = page_bbox
-        revision.figure_asset_id = figure_asset.id
-        stable_id = legacy_figure_stable_id(question.id)
+        else:
+            item.temp_path.unlink(missing_ok=True)
+        stable_id = draft_figure_stable_id(question.id, index, total)
         question_figure = QuestionFigure(
             stable_id=stable_id,
             question_id=question.id,
-            source_asset_id=asset.id,
+            source_asset_id=source_asset.id,
             figure_asset_id=figure_asset.id,
-            source_crop_bbox=page_bbox,
+            source_crop_bbox=item.page_bbox,
         )
         db.add(question_figure)
         db.flush()
@@ -1232,29 +1325,24 @@ def _attach_question_figure(
                 question_figure_id=question_figure.id,
             )
         )
-        aspect_ratio = crop.height / crop.width if crop.width else 1.0
-        snapshot = build_legacy_v2_snapshot(
-            content=question.content,
-            answer=question.answer,
-            analysis=question.analysis,
-            seed=f"question:{question.id}",
-            figure_id=stable_id,
-            figure_aspect_ratio=aspect_ratio,
+        layouts.append(
+            {"figure_id": stable_id, "width": item.width, "height": item.height}
         )
-        question.section_snapshot = snapshot
-        revision.section_snapshot = snapshot
-        savepoint.commit()
-        logger.info(
-            "[FigureCrop] attached figure asset_id={} question_id={} bbox={}",
-            figure_asset.id,
-            question.id,
-            page_bbox,
-        )
-    except Exception:
-        savepoint.rollback()
-        if out_path is not None:
-            out_path.unlink(missing_ok=True)
-        logger.exception("Figure crop failed; saving question without figure question_id={}", question.id)
+        resolved.append((question_figure, figure_asset, item))
+
+    snapshot = build_draft_v2_snapshot(
+        content=question.content,
+        seed=f"question:{question.id}",
+        figures=layouts,
+        canvas_width=canvas_width,
+    )
+    question.section_snapshot = snapshot
+    revision.section_snapshot = snapshot
+    if len(resolved) == 1:
+        _, figure_asset, item = resolved[0]
+        question.figure_image = figure_asset.normalized_path or figure_asset.original_path
+        question.figure_crop_bbox = item.page_bbox
+        revision.figure_asset_id = figure_asset.id
 
 
 @router.post("/drafts/{draft_id}/save-to-bank", response_model=DraftSaveToBankResponse)
@@ -1274,72 +1362,103 @@ def save_draft_to_bank(
 
     content_text = _content_text(draft.current_content).strip()
     knowledge_tags = [tag.model_dump() for tag in _content_tags(draft.current_content)]
-
-    question = Question(
-        user_id=current_user.id,
-        content=content_text,
-        knowledge_tags=knowledge_tags,
-        metadata_status="pending",
-        origin_image=(draft.source_asset.normalized_path or draft.source_asset.original_path)
-        if draft.source_asset
-        else None,
+    figure_bboxes = _normalize_draft_figure_bboxes(
+        payload.resolved_figure_bboxes() if payload else []
     )
-    db.add(question)
-    db.flush()
+    if figure_bboxes and draft.source_asset is None:
+        raise _draft_figure_error("missing_source_asset", "当前 Draft 没有可用于裁图的原始图片")
 
-    revision = QuestionRevision(
-        question_id=question.id,
-        rev_no=1,
-        content=draft.current_content or {"text": content_text, "knowledge_tags": knowledge_tags},
-        crop_bbox=draft.crop_bbox,
-        source_asset_id=draft.source_asset_id,
-        ocr_run_id=draft.last_ocr_run_id,
-        llm_run_id=draft.last_llm_run_id,
-        change_reason="draft_save_to_bank",
-    )
-    db.add(revision)
-    db.flush()
-    initial_snapshot = build_legacy_v2_snapshot(
-        content=content_text,
-        answer=None,
-        analysis=None,
-        seed=f"question:{question.id}",
-    )
-    question.section_snapshot = initial_snapshot
-    revision.section_snapshot = initial_snapshot
-
-    figure_bbox = payload.figure_bbox if payload else None
-    if figure_bbox is not None and draft.source_asset is not None:
-        _attach_question_figure(
-            db,
-            question,
-            revision,
-            draft.source_asset,
-            figure_bbox,
-            draft_id=draft.id,
-            crop_bbox=draft.crop_bbox,
+    prepared: list[PreparedDraftFigure] = []
+    canvas_width = 0
+    if figure_bboxes:
+        prepared, canvas_width = _prepare_draft_figures(
+            draft.source_asset, draft.crop_bbox, figure_bboxes
         )
 
-    transition_draft_status(
-        db,
-        draft,
-        DraftStatus.SAVED_TO_BANK,
-        DraftEventType.SAVE_TO_BANK,
-        metadata={"question_id": question.id, "question_revision_id": revision.id, "rev_no": revision.rev_no},
-        commit=True,
-    )
-    db.refresh(question)
-    db.refresh(revision)
-    db.refresh(draft)
-    background_tasks.add_task(evaluate_question_metadata_task, question.id)
+    promoted_paths: list[Path] = []
+    committed = False
+    try:
+        question = Question(
+            user_id=current_user.id,
+            content=content_text,
+            knowledge_tags=knowledge_tags,
+            metadata_status="pending",
+            origin_image=(draft.source_asset.normalized_path or draft.source_asset.original_path)
+            if draft.source_asset
+            else None,
+        )
+        db.add(question)
+        db.flush()
 
-    detail = _build_draft_detail(draft)
-    return DraftSaveToBankResponse(
-        **detail.model_dump(),
-        question_id=question.id,
-        question_revision_id=revision.id,
-        rev_no=revision.rev_no,
-    )
+        revision = QuestionRevision(
+            question_id=question.id,
+            rev_no=1,
+            content=draft.current_content
+            or {"text": content_text, "knowledge_tags": knowledge_tags},
+            crop_bbox=draft.crop_bbox,
+            source_asset_id=draft.source_asset_id,
+            ocr_run_id=draft.last_ocr_run_id,
+            llm_run_id=draft.last_llm_run_id,
+            change_reason="draft_save_to_bank",
+        )
+        db.add(revision)
+        db.flush()
+        initial_snapshot = build_legacy_v2_snapshot(
+            content=content_text,
+            answer=None,
+            analysis=None,
+            seed=f"question:{question.id}",
+        )
+        question.section_snapshot = initial_snapshot
+        revision.section_snapshot = initial_snapshot
+
+        if prepared:
+            _materialize_draft_figures(
+                db,
+                question,
+                revision,
+                draft.source_asset,
+                prepared,
+                canvas_width,
+                promoted_paths,
+            )
+
+        transition_draft_status(
+            db,
+            draft,
+            DraftStatus.SAVED_TO_BANK,
+            DraftEventType.SAVE_TO_BANK,
+            metadata={
+                "question_id": question.id,
+                "question_revision_id": revision.id,
+                "rev_no": revision.rev_no,
+                "figure_count": len(prepared),
+            },
+            commit=False,
+        )
+        db.commit()
+        committed = True
+        db.refresh(question)
+        db.refresh(revision)
+        db.refresh(draft)
+        background_tasks.add_task(evaluate_question_metadata_task, question.id)
+
+        detail = _build_draft_detail(draft)
+        return DraftSaveToBankResponse(
+            **detail.model_dump(),
+            question_id=question.id,
+            question_revision_id=revision.id,
+            rev_no=revision.rev_no,
+        )
+    except Exception:
+        db.rollback()
+        if not committed:
+            for path in promoted_paths:
+                path.unlink(missing_ok=True)
+        raise
+    finally:
+        for item in prepared:
+            item.temp_path.unlink(missing_ok=True)
 
 
 @router.post("/papers", response_model=PaperRead)

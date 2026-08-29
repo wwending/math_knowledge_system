@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.schemas.question import KnowledgeTag
 from app.services.draft_image_service import normalize_draft_bbox
@@ -70,13 +70,27 @@ class DraftDetail(BaseModel):
 
 
 class DraftSaveToBankRequest(BaseModel):
-    """Optional body for save-to-bank (#58).
+    """Optional figure confirmation body for save-to-bank (#129).
 
-    figure_bbox is the user-confirmed figure region ([x, y, w, h] normalized).
-    Absent/None means the question has no figure; an invalid value is ignored.
+    ``figure_bboxes`` is the public plural contract. ``figure_bbox`` remains a
+    temporary compatibility input for older clients; callers must not send both.
     """
 
+    figure_bboxes: Optional[list[list[float]]] = None
     figure_bbox: Optional[list[float]] = None
+
+    @model_validator(mode="after")
+    def reject_ambiguous_figure_fields(self) -> "DraftSaveToBankRequest":
+        if {"figure_bboxes", "figure_bbox"}.issubset(self.model_fields_set):
+            raise ValueError("figure_bboxes and figure_bbox cannot both be provided")
+        return self
+
+    def resolved_figure_bboxes(self) -> list[list[float]]:
+        if "figure_bboxes" in self.model_fields_set:
+            return self.figure_bboxes or []
+        if "figure_bbox" in self.model_fields_set and self.figure_bbox is not None:
+            return [self.figure_bbox]
+        return []
 
 
 class DraftRecognizeResponse(DraftDetail):

@@ -222,7 +222,7 @@
             @edit="enterBatchEdit"
             @cancel-edit="cancelBatchEdit"
             @update-content="updateBatchEditContent"
-            @update-figure="updateBatchFigureBbox"
+            @update-figure="updateBatchFigureBboxes"
             @save-edit="saveBatchEdit"
             @save-bank="saveBatchJobToBank"
           />
@@ -307,7 +307,7 @@
                          unchanged from #63. -->
                     <figure-overlay-editor
                       v-if="detectedFigures.length > 0 && resultImageSrc"
-                      v-model="confirmedFigureBbox"
+                      v-model="confirmedFigureBboxes"
                       :image-url="resultImageSrc"
                       :initial-boxes="detectedFigures"
                       class="result-figure-editor"
@@ -324,6 +324,9 @@
                       </template>
                     </el-image>
                     <div v-else class="result-image-empty">暂无原图</div>
+                    <p v-if="resultImageSrc && detectedFigures.length === 0" class="figure-detection-empty">
+                      未检测到配图或检测服务暂不可用，可按纯文字题正常保存。
+                    </p>
                   </div>
                 </div>
               </aside>
@@ -396,6 +399,13 @@
                 </li>
               </ul>
             </el-alert>
+            <el-alert
+              v-if="draftStatus === 'draft_ready' && confirmedFiguresError"
+              :title="confirmedFiguresError"
+              type="error"
+              :closable="false"
+              show-icon
+            />
             <div v-if="draftStatus === 'draft_ready' && !editMode" class="result-actions">
               <el-button :disabled="saveLoading" @click="enterEditMode">编辑识别结果</el-button>
               <el-button type="primary" :loading="saveLoading" :disabled="!canSaveDraft" @click="saveDraftToBank">
@@ -468,6 +478,12 @@ import FeedbackInboxPanel from '../components/FeedbackInboxPanel.vue'
 import QuestionSegmentationEditor from '../components/QuestionSegmentationEditor.vue'
 import QuestionBatchReview from '../components/QuestionBatchReview.vue'
 import {
+  MAX_CONFIRMED_FIGURES,
+  findOverlappingFigureBboxes,
+  isValidFigureBbox,
+  sortFigureBboxesReadingOrder,
+} from '../utils/figureOverlay.mjs'
+import {
   QUESTION_RECOGNITION_CONCURRENCY,
   QUESTION_RECOGNITION_TIMEOUT_MS,
   createConcurrencyGate,
@@ -524,10 +540,10 @@ const editSaving = ref(false)
 const draftImageObjectUrl = ref('')
 const draftImageLoading = ref(false)
 let draftImageRequestId = 0
-// Figure detection (#58): regions auto-detected in the draft asset, and the
-// user-confirmed bbox sent to save-to-bank (null = save without a figure).
+// Figure confirmation (#129): all valid detections start retained; an empty
+// array is the explicit text-only decision.
 const detectedFigures = ref([])
-const confirmedFigureBbox = ref(null)
+const confirmedFigureBboxes = ref([])
 const batchJobs = ref([])
 const batchSourceAssetId = ref(null)
 const batchRecognitionGate = createConcurrencyGate(QUESTION_RECOGNITION_CONCURRENCY)
@@ -770,7 +786,7 @@ const resetDraftState = () => {
   editContent.value = ''
   editSaving.value = false
   detectedFigures.value = []
-  confirmedFigureBbox.value = null
+  confirmedFigureBboxes.value = []
   releaseDraftImageObjectUrl()
 }
 
@@ -791,6 +807,21 @@ const getDraftContent = (payload) => payload?.content || payload?.current_conten
 const getRecognitionDebug = (payload) => payload?.recognition_debug || null
 const getQualityWarnings = (payload) => Array.isArray(payload?.quality_warnings) ? payload.quality_warnings : []
 const getDetectedFigures = (payload) => Array.isArray(payload?.detected_figures) ? payload.detected_figures : []
+const getConfirmedFigureBboxes = (payload) => sortFigureBboxesReadingOrder(
+  getDetectedFigures(payload).map((figure) => figure?.bbox)
+)
+const figureBboxesError = (bboxes) => {
+  if (!Array.isArray(bboxes) || bboxes.some((bbox) => !isValidFigureBbox(bbox))) {
+    return '配图框坐标无效，请重置后重试。'
+  }
+  if (bboxes.length > MAX_CONFIRMED_FIGURES) {
+    return `上传确认页最多保存 ${MAX_CONFIRMED_FIGURES} 张配图，请删除多余检测框。`
+  }
+  if (findOverlappingFigureBboxes(bboxes).length > 0) {
+    return '配图框存在重叠，请调整或删除冲突框。'
+  }
+  return ''
+}
 const applyDraftDetail = (payload) => {
   ocrResult.value = getDraftContent(payload)
   recognitionDebug.value = getRecognitionDebug(payload)
@@ -806,6 +837,7 @@ const formatQualityWarning = (warning) => {
 }
 
 const isDraftBusy = computed(() => cropEncoding.value || ocrLoading.value || draftStatus.value === 'recognizing')
+const confirmedFiguresError = computed(() => figureBboxesError(confirmedFigureBboxes.value))
 const canSaveDraft = computed(
   () =>
     draftStatus.value === 'draft_ready' &&
@@ -813,6 +845,7 @@ const canSaveDraft = computed(
     !ocrLoading.value &&
     !saveLoading.value &&
     !saveBlocked.value &&
+    !confirmedFiguresError.value &&
     !editMode.value &&
     !editSaving.value
 )
@@ -1123,6 +1156,7 @@ const runRecognition = async (file) => {
       recognitionDebug.value = getRecognitionDebug(payload)
       qualityWarnings.value = getQualityWarnings(payload)
       detectedFigures.value = getDetectedFigures(payload)
+      confirmedFigureBboxes.value = getConfirmedFigureBboxes(payload)
       step.value = 'result'
       if (payload.partial_success) {
         recognizeWarning.value =
@@ -1155,7 +1189,7 @@ const runRecognition = async (file) => {
   }
 }
 
-const applyBatchPayload = (job, payload) => {
+const applyBatchPayload = (job, payload, { resetFigures = false } = {}) => {
   job.status = payload?.status || job.status
   job.content = getDraftContent(payload)
   job.editContent = job.content
@@ -1163,6 +1197,7 @@ const applyBatchPayload = (job, payload) => {
   job.qualityWarnings = getQualityWarnings(payload)
   job.recognitionDebug = getRecognitionDebug(payload)
   job.detectedFigures = getDetectedFigures(payload)
+  if (resetFigures) job.confirmedFigureBboxes = getConfirmedFigureBboxes(payload)
 }
 
 const uploadBatchSourceOnce = async () => {
@@ -1185,7 +1220,7 @@ const reconcileBatchJob = async (job) => {
     const payload = response.data || {}
     const reconciled = reconcileDraftStatus(payload)
     if (reconciled.terminal) {
-      applyBatchPayload(job, payload)
+      applyBatchPayload(job, payload, { resetFigures: true })
       if (!reconciled.succeeded) job.error = getRecognizeErrorMessage(payload)
       return
     }
@@ -1214,7 +1249,7 @@ const recognizeBatchJob = async (job) => {
       undefined,
       { timeout: QUESTION_RECOGNITION_TIMEOUT_MS },
     )
-    applyBatchPayload(job, response.data || {})
+    applyBatchPayload(job, response.data || {}, { resetFigures: true })
     if (job.status !== 'draft_ready') {
       job.status = 'failed'
       job.error = getRecognizeErrorMessage(response.data || {})
@@ -1289,7 +1324,9 @@ const returnToSegmentation = async () => {
 const enterBatchEdit = (job) => { job.editContent = job.content; job.editing = true }
 const cancelBatchEdit = (job) => { job.editContent = job.content; job.editing = false }
 const updateBatchEditContent = (job, value) => { job.editContent = value }
-const updateBatchFigureBbox = (job, value) => { job.confirmedFigureBbox = value ? [...value] : null }
+const updateBatchFigureBboxes = (job, value) => {
+  job.confirmedFigureBboxes = Array.isArray(value) ? value.map((bbox) => [...bbox]) : []
+}
 const saveBatchEdit = async (job) => {
   if (!job.editContent.trim() || job.saving) return
   job.saving = true
@@ -1302,9 +1339,17 @@ const saveBatchEdit = async (job) => {
 }
 const saveBatchJobToBank = async (job) => {
   if (job.saving || job.status !== 'draft_ready') return
+  const figureError = figureBboxesError(job.confirmedFigureBboxes)
+  if (figureError) {
+    job.error = figureError
+    ElMessage.error(figureError)
+    return
+  }
   job.saving = true
   try {
-    const response = await axios.post(`${API_V1_BASE_URL}/drafts/${job.draftId}/save-to-bank`, { figure_bbox: job.confirmedFigureBbox })
+    const response = await axios.post(`${API_V1_BASE_URL}/drafts/${job.draftId}/save-to-bank`, {
+      figure_bboxes: sortFigureBboxesReadingOrder(job.confirmedFigureBboxes)
+    })
     applyBatchPayload(job, response.data || {})
     job.status = 'saved_to_bank'
     job.saveResult = { question_id: response.data?.question_id, question_revision_id: response.data?.question_revision_id }
@@ -1451,10 +1496,10 @@ const saveDraftToBank = async () => {
   draftError.value = ''
   setStageMessage('saving_to_bank')
   try {
-    // #58: always send the explicit figure decision — confirmed bbox or null
-    // (no figure) — so the backend crops from the original asset on save.
+    // #129: send every retained detection; an empty array is the explicit
+    // text-only decision. The backend repeats all validation atomically.
     const response = await axios.post(`${API_V1_BASE_URL}/drafts/${draftId.value}/save-to-bank`, {
-      figure_bbox: confirmedFigureBbox.value
+      figure_bboxes: sortFigureBboxesReadingOrder(confirmedFigureBboxes.value)
     })
     saveResult.value = {
       question_id: response.data?.question_id,
