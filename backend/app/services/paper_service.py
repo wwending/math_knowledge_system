@@ -8,6 +8,11 @@ from app.models.paper import Paper, PaperItem
 from app.models.question import Question
 from app.models.question_revision import QuestionRevision
 from app.models.user import User
+from app.services.question_content import (
+    adapt_section_snapshot,
+    legacy_figure_stable_id,
+    project_legacy_text,
+)
 from app.schemas.paper import (
     PaperCreate,
     PaperExistingItemUpdate,
@@ -61,21 +66,36 @@ def _snapshot_from_question(db: Session, question: Question) -> dict[str, Any]:
     revision_content = revision.content if revision and isinstance(revision.content, dict) else None
 
     if revision_content:
-        content_snapshot = _text_value(
-            revision_content.get("text") or revision_content.get("content") or question.content
-        )
-        answer_snapshot = _text_value(revision_content.get("answer"))
-        analysis_snapshot = _text_value(revision_content.get("analysis"))
+        legacy_content = revision_content.get("text") or revision_content.get("content") or question.content
+        legacy_answer = revision_content.get("answer", question.answer)
+        legacy_analysis = revision_content.get("analysis", question.analysis)
         knowledge_tags_snapshot = (
             revision_content.get("knowledge_tags")
             or revision_content.get("knowledge")
             or question.knowledge_tags
         )
     else:
-        content_snapshot = _text_value(question.content)
-        answer_snapshot = None
-        analysis_snapshot = None
+        legacy_content = question.content
+        legacy_answer = question.answer
+        legacy_analysis = question.analysis
         knowledge_tags_snapshot = question.knowledge_tags
+
+    section_snapshot = adapt_section_snapshot(
+        section_snapshot=revision.section_snapshot if revision else question.section_snapshot,
+        content=legacy_content,
+        answer=legacy_answer,
+        analysis=legacy_analysis,
+        seed=f"revision:{revision.id}" if revision else f"question:{question.id}",
+        legacy_figure_id=(
+            legacy_figure_stable_id(question.id)
+            if revision and revision.figure_asset_id
+            else None
+        ),
+    )
+    projected = project_legacy_text(section_snapshot)
+    content_snapshot = _text_value(projected["content"])
+    answer_snapshot = _text_value(projected["answer"])
+    analysis_snapshot = _text_value(projected["analysis"])
 
     metadata_ready = question.metadata_status == "ready" and question.difficulty_level is not None
 

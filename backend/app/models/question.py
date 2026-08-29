@@ -13,6 +13,7 @@ class Question(Base):
     content = Column(Text, nullable=True)
     answer = Column(Text, nullable=True)
     analysis = Column(Text, nullable=True)
+    section_snapshot = Column(JSON, nullable=True)
     deleted_at = Column(DateTime(timezone=True), nullable=True, index=True)
     purge_at = Column(DateTime(timezone=True), nullable=True, index=True)
     purged_at = Column(DateTime(timezone=True), nullable=True, index=True)
@@ -38,3 +39,4 @@ class Question(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     revisions = relationship("QuestionRevision", back_populates="question", cascade="all, delete-orphan")
+    figures = relationship("QuestionFigure", back_populates="question")
