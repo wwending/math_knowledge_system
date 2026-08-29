@@ -131,6 +131,9 @@ class Settings(BaseSettings):
     LAYOUT_MIN_AREA_RATIO: float = 0.01
     LAYOUT_FIGURE_LABELS: str = "figure"
 
+    # Schema-v2 current-document cumulative figure budget (#128).
+    QUESTION_MAX_TOTAL_FIGURE_BYTES: int = 24 * 1024 * 1024
+
     LOG_LEVEL: str = "INFO"
     LOG_DIR: str = "logs"
     GIT_SHA: str = "unknown"

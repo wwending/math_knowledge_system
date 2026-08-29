@@ -189,3 +189,35 @@ def test_unknown_versions_and_out_of_bounds_placements_are_rejected():
     }
     with pytest.raises(ContentSnapshotError, match="fit"):
         normalize_v2_snapshot(invalid)
+
+
+def test_non_finite_layout_numbers_are_rejected():
+    for field, value in (("x", float("nan")), ("height_ratio", float("inf"))):
+        block = {
+            "id": str(uuid4()),
+            "kind": "image_area",
+            "height_ratio": 1,
+            "placements": [
+                {
+                    "figure_id": str(uuid4()),
+                    "x": 0,
+                    "y": 0,
+                    "width": 1,
+                    "height": 1,
+                }
+            ],
+        }
+        if field == "height_ratio":
+            block[field] = value
+        else:
+            block["placements"][0][field] = value
+        snapshot = {
+            "schema_version": 2,
+            "sections": {
+                "stem": {"blocks": [block]},
+                "answer": {"blocks": []},
+                "analysis": {"blocks": []},
+            },
+        }
+        with pytest.raises(ContentSnapshotError, match="finite"):
+            normalize_v2_snapshot(snapshot)
