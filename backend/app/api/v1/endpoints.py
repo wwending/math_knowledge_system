@@ -54,7 +54,15 @@ from app.schemas.draft import (
 from app.schemas.ocr import OCRResponse
 from app.schemas.paper import PaperCreate, PaperListItem, PaperRead, PaperUpdate
 from app.schemas.paper_render import PaperRenderItem, PaperRenderModel, PaperRenderRequest
-from app.schemas.question import KnowledgeTag, QuestionDetail, QuestionListItem, QuestionUpdate
+from app.schemas.question import (
+    KnowledgeTag,
+    QuestionDetail,
+    QuestionDocumentDetail,
+    QuestionDocumentUpdate,
+    QuestionDocumentUpdateResponse,
+    QuestionListItem,
+    QuestionUpdate,
+)
 from app.services.draft_image_service import (
     compose_bbox_to_page,
     create_cropped_temp_image,
@@ -76,6 +84,12 @@ from app.services.paper_html_renderer import (
 )
 from app.services.pdf_generation_service import GotenbergPdfGenerationService, PdfGenerationError, PdfGenerationOptions
 from app.services.question_content import build_legacy_v2_snapshot, legacy_figure_stable_id
+from app.services.question_document_service import (
+    QuestionDocumentInvalid,
+    get_document,
+    get_figure_file,
+    update_document,
+)
 from app.services.question_metadata import evaluate_question_metadata_task
 from app.services.recognition_quality import detect_quality_warnings
 
@@ -150,6 +164,13 @@ def normalize_tags(raw_tags: Any) -> List[KnowledgeTag]:
 def build_question_image_url(question_id: int) -> str:
     # Authenticated image channel. Replaces the retired public /static/uploads URLs (#44).
     return f"{settings.API_V1_STR}/questions/{question_id}/image"
+
+
+def _question_api_state(db: Session, question: Question) -> tuple[QuestionRevision | None, bool, bool]:
+    revision = latest_question_revision(db, question.id)
+    has_question_image = bool((revision and revision.source_asset_id) or question.origin_image)
+    has_figure = bool(revision and revision.figure_links)
+    return revision, has_question_image, has_figure
 
 
 def _safe_remove_file(path: str) -> None:
@@ -477,6 +498,28 @@ def get_all_tags(
             unique_tags.add(tag_obj.label)
 
     return sorted(list(unique_tags))
+
+
+@router.get("/questions/{question_id}/document", response_model=QuestionDocumentDetail)
+def get_question_document(
+    question_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_active_user),
+):
+    return get_document(db, current_user, question_id)
+
+
+@router.put("/questions/{question_id}/document", response_model=QuestionDocumentUpdateResponse)
+def put_question_document(
+    question_id: int,
+    payload: QuestionDocumentUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_active_user),
+):
+    try:
+        return update_document(db, current_user, question_id, payload)
+    except QuestionDocumentInvalid as exc:
+        raise HTTPException(status_code=422, detail=exc.detail()) from exc
 
 
 @router.put("/questions/{question_id}")
@@ -1606,34 +1649,40 @@ def list_questions(
         .all()
     )
 
-    return [
-        QuestionListItem(
-            id=item.id,
-            content=item.content,
-            answer=item.answer,
-            analysis=item.analysis,
-            current_revision_no=(latest_question_revision(db, item.id).rev_no if latest_question_revision(db, item.id) else None),
-            deleted_at=item.deleted_at,
-            purge_at=item.purge_at,
-            purged_at=item.purged_at,
-            knowledge_tags=normalize_tags(item.knowledge_tags),
-            question_type=item.question_type,
-            difficulty_level=item.difficulty_level,
-            difficulty_label=item.difficulty_label,
-            difficulty_confidence=item.difficulty_confidence,
-            difficulty_reason=item.difficulty_reason,
-            difficulty_model=item.difficulty_model,
-            difficulty_evaluated_at=item.difficulty_evaluated_at,
-            metadata_status=item.metadata_status,
-            metadata_error=item.metadata_error,
-            metadata_started_at=item.metadata_started_at,
-            metadata_finished_at=item.metadata_finished_at,
-            origin_image=item.origin_image,
-            image_url=build_question_image_url(item.id),
-            created_at=item.created_at,
+    result = []
+    for item in questions:
+        revision, has_question_image, has_figure = _question_api_state(db, item)
+        result.append(
+            QuestionListItem(
+                id=item.id,
+                content=item.content,
+                answer=item.answer,
+                analysis=item.analysis,
+                current_revision_no=revision.rev_no if revision else None,
+                schema_version=2,
+                has_question_image=has_question_image,
+                has_figure=has_figure,
+                deleted_at=item.deleted_at,
+                purge_at=item.purge_at,
+                purged_at=item.purged_at,
+                knowledge_tags=normalize_tags(item.knowledge_tags),
+                question_type=item.question_type,
+                difficulty_level=item.difficulty_level,
+                difficulty_label=item.difficulty_label,
+                difficulty_confidence=item.difficulty_confidence,
+                difficulty_reason=item.difficulty_reason,
+                difficulty_model=item.difficulty_model,
+                difficulty_evaluated_at=item.difficulty_evaluated_at,
+                metadata_status=item.metadata_status,
+                metadata_error=item.metadata_error,
+                metadata_started_at=item.metadata_started_at,
+                metadata_finished_at=item.metadata_finished_at,
+                origin_image=item.origin_image,
+                image_url=build_question_image_url(item.id) if has_question_image else None,
+                created_at=item.created_at,
+            )
         )
-        for item in questions
-    ]
+    return result
 
 
 @router.get("/questions/trash", response_model=List[QuestionListItem])
@@ -1660,12 +1709,16 @@ def get_question_detail(
     if not question:
         raise HTTPException(status_code=404, detail=NOT_FOUND_MESSAGE)
 
+    revision, has_question_image, has_figure = _question_api_state(db, question)
     return QuestionDetail(
         id=question.id,
         content=question.content,
         answer=question.answer,
         analysis=question.analysis,
-        current_revision_no=(latest_question_revision(db, question.id).rev_no if latest_question_revision(db, question.id) else None),
+        current_revision_no=revision.rev_no if revision else None,
+        schema_version=2,
+        has_question_image=has_question_image,
+        has_figure=has_figure,
         deleted_at=question.deleted_at,
         purge_at=question.purge_at,
         purged_at=question.purged_at,
@@ -1682,7 +1735,7 @@ def get_question_detail(
         metadata_started_at=question.metadata_started_at,
         metadata_finished_at=question.metadata_finished_at,
         origin_image=question.origin_image,
-        image_url=build_question_image_url(question.id),
+        image_url=build_question_image_url(question.id) if has_question_image else None,
         created_at=question.created_at,
     )
 
@@ -1755,6 +1808,21 @@ def get_question_image(
         content=content,
         media_type=media_type,
         headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
+    )
+
+
+@router.get("/questions/{question_id}/figures/{figure_id}")
+def get_question_figure_blob(
+    question_id: int,
+    figure_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_active_user),
+):
+    figure_file = get_figure_file(db, current_user, question_id, figure_id)
+    return FileResponse(
+        figure_file.path,
+        media_type=figure_file.mime,
+        headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"},
     )
 
 

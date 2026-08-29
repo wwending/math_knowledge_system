@@ -1,5 +1,11 @@
 # STATUS
 
+## 2026-08-29 题目区段与多图后端 API（#128）
+
+- 新增 schema v2 整题文档 GET/PUT 合同：三区段、有序文字块/图片区、多图摆放、题目元数据和完整 figure manifest 一次提交，并继续生成 `content/answer/analysis` 兼容投影；旧稀疏 PUT 合同保持不变。
+- 新增多图高分辨率裁取、QuestionFigure/QuestionRevisionFigure 完整 revision 关联、结构化 422 校验、`expected_revision_no` 409 冲突、配图数量/区块/单图与累计体积限制，以及临时文件和事务失败补偿。
+- 新增 owner 鉴权的 `/questions/{question_id}/figures/{figure_id}` Blob 通道，并在题目列表/详情暴露 `schema_version`、`has_question_image`、`has_figure`；未开放裸 SourceAsset，未包含前端编辑器、Paper/PDF 或历史批量改写。
+
 ## 2026-08-29 题目区段与多图版本数据基础（#127）
 
 - 新增 schema v2 三区段快照合同：题干、答案、解析均可包含有序文字块和图片区，block/图片区/配图使用稳定 UUID，来源裁剪坐标与图片区布局坐标保持分离；旧扁平文本继续作为兼容投影。
