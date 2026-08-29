@@ -380,56 +380,119 @@ class DraftFigureTests(unittest.TestCase):
             ).one()
             self.assertEqual((figure_asset.width, figure_asset.height), (40, 30))
 
-    def test_save_to_bank_ignores_invalid_figure_bbox(self):
+    def test_save_to_bank_persists_all_confirmed_figures_in_one_image_area(self):
+        draft_id, _ = self._ready_draft_with_content()
+        response = self.client.post(
+            f"/api/v1/drafts/{draft_id}/save-to-bank",
+            headers=self.auth_headers,
+            json={
+                "figure_bboxes": [
+                    [0.5, 0.0, 0.5, 0.5],
+                    [0.0, 0.0, 0.5, 0.4],
+                ]
+            },
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        question_id = response.json()["question_id"]
+
+        with self.SessionLocal() as db:
+            question = db.query(Question).filter_by(id=question_id).one()
+            revision = db.query(QuestionRevision).filter_by(question_id=question_id).one()
+            figures = sorted(
+                db.query(QuestionFigure).filter_by(question_id=question_id).all(),
+                key=lambda figure: (figure.source_crop_bbox[1], figure.source_crop_bbox[0]),
+            )
+            self.assertEqual(len(figures), 2)
+            self.assertEqual(len(revision.figure_links), 2)
+            self.assertIsNone(question.figure_image)
+            self.assertIsNone(question.figure_crop_bbox)
+            self.assertIsNone(revision.figure_asset_id)
+            self.assertEqual([figure.source_crop_bbox for figure in figures], [
+                [0.0, 0.0, 0.5, 0.4],
+                [0.5, 0.0, 0.5, 0.5],
+            ])
+            blocks = question.section_snapshot["sections"]["stem"]["blocks"]
+            self.assertEqual([block["kind"] for block in blocks], ["text", "image_area"])
+            area = blocks[1]
+            self.assertEqual(area["height_ratio"], 0.25)
+            self.assertEqual([placement["figure_id"] for placement in area["placements"]], [
+                figure.stable_id for figure in figures
+            ])
+            self.assertEqual(area["placements"][0]["width"], 0.5)
+            self.assertEqual(area["placements"][0]["height"], 0.8)
+            self.assertEqual(area["placements"][1]["x"], 0.5)
+            self.assertEqual(area["placements"][1]["height"], 1.0)
+
+        document = self.client.get(
+            f"/api/v1/questions/{question_id}/document", headers=self.auth_headers
+        )
+        self.assertEqual(document.status_code, 200)
+        self.assertEqual(len(document.json()["figures"]), 2)
+        self.assertTrue(document.json()["has_figure"])
+        self.assertEqual(
+            self.client.get(
+                f"/api/v1/questions/{question_id}/figure", headers=self.auth_headers
+            ).status_code,
+            404,
+        )
+
+    def test_save_to_bank_rejects_overlapping_figures_and_ambiguous_fields(self):
+        draft_id, _ = self._ready_draft_with_content()
+        overlap = self.client.post(
+            f"/api/v1/drafts/{draft_id}/save-to-bank",
+            headers=self.auth_headers,
+            json={"figure_bboxes": [[0, 0, 0.6, 0.5], [0.5, 0, 0.5, 0.5]]},
+        )
+        self.assertEqual(overlap.status_code, 422)
+        self.assertEqual(overlap.json()["detail"]["errors"][0]["code"], "figure_bbox_overlap")
+
+        ambiguous = self.client.post(
+            f"/api/v1/drafts/{draft_id}/save-to-bank",
+            headers=self.auth_headers,
+            json={"figure_bboxes": [], "figure_bbox": None},
+        )
+        self.assertEqual(ambiguous.status_code, 422)
+        with self.SessionLocal() as db:
+            self.assertEqual(db.query(Question).count(), 0)
+
+    def test_save_to_bank_rejects_invalid_figure_bbox_atomically(self):
         draft_id, _ = self._ready_draft_with_content()
 
         response = self.client.post(
             f"/api/v1/drafts/{draft_id}/save-to-bank",
             headers=self.auth_headers,
-            json={"figure_bbox": [1.5, 0.2, 0.5, 0.5]},
+            json={"figure_bboxes": [[1.5, 0.2, 0.5, 0.5]]},
         )
-        self.assertEqual(response.status_code, 200)
-        question_id = response.json()["question_id"]
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.json()["detail"]["errors"][0]["code"], "invalid_figure_bbox")
 
         with self.SessionLocal() as db:
-            question = db.query(Question).filter(Question.id == question_id).one()
-            self.assertIsNone(question.figure_image)
-
-        missing_figure = self.client.get(
-            f"/api/v1/questions/{question_id}/figure", headers=self.auth_headers
-        )
-        self.assertEqual(missing_figure.status_code, 404)
+            self.assertEqual(db.query(Question).count(), 0)
+            draft = db.query(Draft).filter_by(id=draft_id).one()
+            self.assertEqual(draft.status, DraftStatus.DRAFT_READY)
+        self.assertEqual(list(self.upload_dir.glob("*figure*")), [])
 
     def test_figure_relational_failure_rolls_back_partial_figure_state(self):
         draft_id, _ = self._ready_draft_with_content()
-        original_builder = endpoints.build_legacy_v2_snapshot
-        calls = {"count": 0}
 
-        def fail_second_snapshot(**kwargs):
-            calls["count"] += 1
-            if calls["count"] == 2:
-                raise RuntimeError("snapshot failure")
-            return original_builder(**kwargs)
+        with patch.object(
+            endpoints, "build_draft_v2_snapshot", side_effect=RuntimeError("snapshot failure")
+        ):
+            with self.assertRaisesRegex(RuntimeError, "snapshot failure"):
+                self.client.post(
+                    f"/api/v1/drafts/{draft_id}/save-to-bank",
+                    headers=self.auth_headers,
+                    json={"figure_bboxes": [[0.1, 0.2, 0.5, 0.5]]},
+                )
 
-        with patch.object(endpoints, "build_legacy_v2_snapshot", side_effect=fail_second_snapshot):
-            response = self.client.post(
-                f"/api/v1/drafts/{draft_id}/save-to-bank",
-                headers=self.auth_headers,
-                json={"figure_bbox": [0.1, 0.2, 0.5, 0.5]},
-            )
-
-        self.assertEqual(response.status_code, 200)
         with self.SessionLocal() as db:
-            question = db.query(Question).filter_by(id=response.json()["question_id"]).one()
-            revision = db.query(QuestionRevision).filter_by(question_id=question.id).one()
-            self.assertIsNone(question.figure_image)
-            self.assertIsNone(question.figure_crop_bbox)
-            self.assertIsNone(revision.figure_asset_id)
-            self.assertEqual(db.query(QuestionFigure).filter_by(question_id=question.id).count(), 0)
-            self.assertEqual(
-                db.query(QuestionRevisionFigure).filter_by(question_revision_id=revision.id).count(),
-                0,
-            )
+            self.assertEqual(db.query(Question).count(), 0)
+            self.assertEqual(db.query(QuestionRevision).count(), 0)
+            self.assertEqual(db.query(QuestionFigure).count(), 0)
+            self.assertEqual(db.query(QuestionRevisionFigure).count(), 0)
+            draft = db.query(Draft).filter_by(id=draft_id).one()
+            self.assertEqual(draft.status, DraftStatus.DRAFT_READY)
+        self.assertEqual(list(self.upload_dir.glob("*figure*")), [])
 
     def test_save_to_bank_without_body_keeps_pre58_behavior(self):
         draft_id, _ = self._ready_draft_with_content()

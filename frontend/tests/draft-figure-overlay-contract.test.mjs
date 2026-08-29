@@ -2,105 +2,43 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 const readSource = (relativePath) => readFileSync(resolve(process.cwd(), relativePath), 'utf8')
-
 const failures = []
-const requireMatch = (source, pattern, message) => {
-  if (!pattern.test(source)) {
-    failures.push(message)
-  }
-}
-const requireAbsent = (source, pattern, message) => {
-  if (pattern.test(source)) {
-    failures.push(message)
-  }
-}
+const requireMatch = (source, pattern, message) => { if (!pattern.test(source)) failures.push(message) }
+const requireAbsent = (source, pattern, message) => { if (pattern.test(source)) failures.push(message) }
 
 const dashboard = readSource('src/views/Dashboard.vue')
 const editor = readSource('src/components/FigureOverlayEditor.vue')
 const util = readSource('src/utils/figureOverlay.mjs')
 
-// Dashboard wiring (#58): detection payload lands in refs and the editor
-// replaces the plain preview only when regions were actually detected.
-requireMatch(
-  dashboard,
-  /import FigureOverlayEditor from '\.\.\/components\/FigureOverlayEditor\.vue'/,
-  'Dashboard must render the figure overlay editor component'
-)
-requireMatch(
-  dashboard,
-  /const detectedFigures = ref\(\[\]\)/,
-  'Dashboard must keep detected figure regions in state'
-)
-requireMatch(
-  dashboard,
-  /const confirmedFigureBbox = ref\(null\)/,
-  'Dashboard must keep the user-confirmed figure bbox in state'
-)
-requireMatch(
-  dashboard,
-  /const getDetectedFigures = \(payload\) => Array\.isArray\(payload\?\.detected_figures\) \? payload\.detected_figures : \[\]/,
-  'Dashboard must parse detected_figures defensively from recognize payloads'
-)
-requireMatch(
-  dashboard,
-  /detectedFigures\.value = getDetectedFigures\(payload\)/,
-  'the recognize success branch must populate the detected figures'
-)
-requireMatch(
-  dashboard,
-  /const resetDraftState = \(\) => \{[\s\S]*?detectedFigures\.value = \[\][\s\S]*?confirmedFigureBbox\.value = null/,
-  'draft reset must clear both detection and confirmation state'
-)
-requireMatch(
-  dashboard,
-  /<figure-overlay-editor[\s\S]*?v-if="detectedFigures\.length > 0 && resultImageSrc"/,
-  'the editor must only replace the plain preview when regions were detected'
-)
-requireMatch(
-  dashboard,
-  /<figure-overlay-editor[\s\S]*?v-model="confirmedFigureBbox"[\s\S]*?:initial-boxes="detectedFigures"/,
-  'the editor must receive detections and write back the confirmed bbox'
-)
-requireAbsent(
-  dashboard,
-  /<figure-overlay-editor[^>]*v-else/,
-  'the editor must not hijack the no-detection branch of the reference panel'
-)
+requireMatch(dashboard, /const detectedFigures = ref\(\[\]\)/, 'Dashboard must retain detection results')
+requireMatch(dashboard, /const confirmedFigureBboxes = ref\(\[\]\)/, 'Dashboard must keep all confirmed boxes')
+requireMatch(dashboard, /confirmedFigureBboxes\.value = getConfirmedFigureBboxes\(payload\)/, 'recognition must confirm every detection by default')
+requireMatch(dashboard, /v-model="confirmedFigureBboxes"/, 'the editor must bind the complete confirmed collection')
+requireMatch(dashboard, /figure_bboxes: sortFigureBboxesReadingOrder\(confirmedFigureBboxes\.value\)/, 'single save must send all confirmed boxes')
+requireMatch(dashboard, /figure_bboxes: sortFigureBboxesReadingOrder\(job\.confirmedFigureBboxes\)/, 'batch save must send all confirmed boxes')
+requireAbsent(dashboard, /figure_bbox:/, 'the public frontend must not send the deprecated singular field')
+requireMatch(dashboard, /confirmedFiguresError/, 'overlap and count errors must gate single save')
+requireMatch(dashboard, /未检测到配图或检测服务暂不可用/, 'zero detection must have an explicit text-only state')
 
-// Save-to-bank always sends an explicit decision: bbox or null (无图).
-requireMatch(
-  dashboard,
-  /save-to-bank`,\s*\{\s*figure_bbox: confirmedFigureBbox\.value\s*\}\)/,
-  'save-to-bank must send the explicit figure_bbox decision'
-)
-
-// Editor interaction contract: drag/resize/select/delete plus zoom.
-requireMatch(editor, /@pointerdown\.prevent="onStagePointerDown"/, 'dragging on empty stage must start a new box draft')
-requireMatch(editor, /onHandlePointerDown/, 'boxes must expose a resize handle')
-requireMatch(editor, /setPrimary\(/, 'users must be able to choose which box is saved as the figure')
-requireMatch(editor, /removeBox\(/, 'users must be able to delete a detected box')
-requireMatch(editor, /markNoFigure/, 'users must be able to mark the question as having no figure')
-requireMatch(editor, /resetBoxes/, 'users must be able to restore the original detections')
-requireMatch(editor, /el-image-viewer/, 'zoom check must reuse the Element Plus viewer overlay')
-requireMatch(editor, /defineExpose\(\{ markNoFigure, resetBoxes \}\)/, 'editor actions stay reachable for parents/tests')
-requireAbsent(
-  editor,
-  /el-image[^-]/,
-  'the editor stage must use a plain <img> so overlay boxes can wrap it'
-)
+requireMatch(editor, /onBoxPointerDown/, 'confirmed boxes remain movable')
+requireMatch(editor, /onHandlePointerDown/, 'confirmed boxes remain resizable')
+requireMatch(editor, /removeBox/, 'detected boxes remain deletable')
+requireMatch(editor, /markNoFigure/, 'all boxes can be cleared')
+requireMatch(editor, /resetBoxes/, 'original detections can be restored')
+requireMatch(editor, /findOverlappingFigureBboxes/, 'overlap conflicts must be highlighted')
+requireMatch(editor, /emit\('update:modelValue', sortFigureBboxesReadingOrder/, 'editor must emit the full ordered array')
+requireMatch(editor, /el-image-viewer/, 'zoom check remains available')
+requireAbsent(editor, /onStagePointerDown|mode:\s*'draw'|figure-draft/, 'upload confirmation must not draw new boxes')
+requireAbsent(editor, /primaryId|setPrimary|主图|设为主图|pickPrimaryBox/, 'primary-figure semantics must be removed')
 requireAbsent(editor, /\$\.(get|post|patch)\(/, 'the editor must not call APIs directly')
 
-// Coordinate math stays in the pure util (importable by Node tests).
-requireMatch(util, /export const isValidFigureBbox/, 'bbox validation lives in the shared util')
-requireMatch(util, /export const pointerRectToBbox/, 'pointer math lives in the shared util')
-requireMatch(util, /export const pickPrimaryBox/, 'primary-box selection lives in the shared util')
+requireMatch(util, /export const sortFigureBboxesReadingOrder/, 'reading-order sorting belongs in the pure util')
+requireMatch(util, /export const findOverlappingFigureBboxes/, 'overlap detection belongs in the pure util')
+requireAbsent(util, /pickPrimaryBox|pointerRectToBbox/, 'obsolete primary and draw helpers must be removed')
 
 if (failures.length > 0) {
   console.error('Draft figure overlay contract failed:')
-  for (const failure of failures) {
-    console.error(`- ${failure}`)
-  }
+  failures.forEach((failure) => console.error(`- ${failure}`))
   process.exit(1)
 }
-
 console.log('Draft figure overlay contract passed.')

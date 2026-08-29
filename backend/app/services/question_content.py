@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 import math
-from typing import Any, Mapping, Optional
+from typing import Any, Mapping, Optional, Sequence
 from uuid import UUID, NAMESPACE_URL, uuid5
 
 SCHEMA_VERSION = 2
@@ -79,6 +79,76 @@ def _image_area(
 
 def legacy_figure_stable_id(question_id: int) -> str:
     return _stable_uuid("question", question_id, "legacy_figure")
+
+
+def draft_figure_stable_id(question_id: int, index: int, total: int) -> str:
+    if total == 1:
+        return legacy_figure_stable_id(question_id)
+    return _stable_uuid("question", question_id, "draft_figure", index)
+
+
+def build_draft_v2_snapshot(
+    *,
+    content: Any,
+    seed: str,
+    figures: Sequence[Mapping[str, Any]],
+    canvas_width: int,
+) -> dict[str, Any]:
+    """Build the initial natural-size figure layout for a saved Draft."""
+
+    if canvas_width <= 0:
+        raise ContentSnapshotError("canvas_width must be positive")
+
+    placements_px: list[dict[str, Any]] = []
+    left = 0
+    top = 0
+    row_height = 0
+    for index, figure in enumerate(figures):
+        width = int(figure.get("width") or 0)
+        height = int(figure.get("height") or 0)
+        if width <= 0 or height <= 0 or width > canvas_width:
+            raise ContentSnapshotError("figure dimensions must fit the Draft canvas")
+        if left > 0 and left + width > canvas_width:
+            top += row_height
+            left = 0
+            row_height = 0
+        placements_px.append(
+            {
+                "figure_id": _canonical_uuid(figure.get("figure_id"), f"figures[{index}].figure_id"),
+                "left": left,
+                "top": top,
+                "width": width,
+                "height": height,
+            }
+        )
+        left += width
+        row_height = max(row_height, height)
+
+    canvas_height = top + row_height if placements_px else 0
+    snapshot = build_legacy_v2_snapshot(content=content, seed=seed)
+    if not placements_px:
+        return snapshot
+
+    placements = [
+        {
+            "figure_id": item["figure_id"],
+            "x": item["left"] / canvas_width,
+            "y": item["top"] / canvas_height,
+            "width": item["width"] / canvas_width,
+            "height": item["height"] / canvas_height,
+        }
+        for item in placements_px
+    ]
+    snapshot["sections"]["stem"]["blocks"].append(
+        {
+            "id": _stable_uuid(seed, "stem", "image_area", 0),
+            "kind": "image_area",
+            "height_ratio": canvas_height / canvas_width,
+            "placements": placements,
+        }
+    )
+    snapshot.pop("compatibility_state", None)
+    return normalize_v2_snapshot(snapshot)
 
 
 def adapt_section_snapshot(

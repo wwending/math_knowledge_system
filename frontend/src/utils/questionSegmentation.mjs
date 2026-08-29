@@ -55,7 +55,9 @@ export const createQuestionJobs = (boxes, previousJobs = []) => {
       qualityWarnings: unchanged ? previous.qualityWarnings || [] : [],
       recognitionDebug: unchanged ? previous.recognitionDebug : null,
       detectedFigures: unchanged ? previous.detectedFigures || [] : [],
-      confirmedFigureBbox: unchanged ? previous.confirmedFigureBbox : null,
+      confirmedFigureBboxes: unchanged && Array.isArray(previous.confirmedFigureBboxes)
+        ? previous.confirmedFigureBboxes.map((bbox) => [...bbox])
+        : [],
       saving: false,
       editing: false,
       saveResult: preservedSaved ? previous.saveResult || null : null,

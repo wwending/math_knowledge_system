@@ -17,13 +17,16 @@
             <div v-loading="imageState(job).loading" class="batch-image-wrap">
               <figure-overlay-editor
                 v-if="job.detectedFigures?.length > 0 && imageState(job).url"
-                :model-value="job.confirmedFigureBbox"
+                :model-value="job.confirmedFigureBboxes"
                 :image-url="imageState(job).url"
                 :initial-boxes="job.detectedFigures"
                 @update:model-value="$emit('update-figure', job, $event)"
               />
               <el-image v-else-if="imageState(job).url" :src="imageState(job).url" :preview-src-list="[imageState(job).url]" fit="scale-down" class="batch-reference-image" />
               <div v-else-if="imageState(job).error" class="image-error">原图加载失败，仍可编辑或重试。</div>
+              <p v-if="imageState(job).url && !job.detectedFigures?.length" class="figure-detection-empty">
+                未检测到配图或检测服务暂不可用，可按纯文字题正常保存。
+              </p>
             </div>
           </aside>
           <div class="batch-content">
@@ -31,12 +34,13 @@
             <div v-else class="markdown-body" v-html="renderMarkdown(job.content)"></div>
           </div>
         </div>
+        <el-alert v-if="figureError(job)" :title="figureError(job)" type="error" :closable="false" show-icon />
         <div class="batch-actions">
           <template v-if="job.status === 'draft_ready'">
             <el-button v-if="!job.editing" :disabled="job.saving" @click="$emit('edit', job)">编辑</el-button>
             <el-button v-else :disabled="job.saving" @click="$emit('cancel-edit', job)">取消修改</el-button>
             <el-button v-if="job.editing" type="primary" :loading="job.saving" @click="$emit('save-edit', job)">保存修改</el-button>
-            <el-button v-else type="success" :loading="job.saving" @click="$emit('save-bank', job)">保存入题库</el-button>
+            <el-button v-else type="success" :loading="job.saving" :disabled="Boolean(figureError(job))" @click="$emit('save-bank', job)">保存入题库</el-button>
           </template>
           <span v-else>已保存至题库<span v-if="job.saveResult?.question_id">（编号 {{ job.saveResult.question_id }}）</span></span>
         </div>
@@ -52,9 +56,21 @@ import axios from 'axios'
 import { renderMarkdown } from '@/utils/renderMarkdown'
 import { buildDraftImageUrl } from '../config/api'
 import FigureOverlayEditor from './FigureOverlayEditor.vue'
+import {
+  MAX_CONFIRMED_FIGURES,
+  findOverlappingFigureBboxes,
+  isValidFigureBbox,
+} from '../utils/figureOverlay.mjs'
 
 const props = defineProps({ jobs: { type: Array, required: true } })
 defineEmits(['back', 'retry', 'edit', 'cancel-edit', 'update-content', 'update-figure', 'save-edit', 'save-bank'])
+const figureError = (job) => {
+  const bboxes = job.confirmedFigureBboxes || []
+  if (bboxes.some((bbox) => !isValidFigureBbox(bbox))) return '配图框坐标无效，请重置后重试。'
+  if (bboxes.length > MAX_CONFIRMED_FIGURES) return `最多保存 ${MAX_CONFIRMED_FIGURES} 张配图。`
+  if (findOverlappingFigureBboxes(bboxes).length > 0) return '配图框存在重叠，请调整或删除冲突框。'
+  return ''
+}
 const images = reactive(new Map())
 let imageRequestGeneration = 0
 const emptyImageState = { url: '', loading: false, error: false }
