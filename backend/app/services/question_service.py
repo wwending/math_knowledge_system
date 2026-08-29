@@ -4,9 +4,17 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from app.models.question import Question
+from app.models.question_figure import QuestionRevisionFigure
 from app.models.question_revision import QuestionRevision
 from app.models.user import User
 from app.schemas.question import QuestionUpdate
+from app.services.question_content import (
+    adapt_section_snapshot,
+    build_legacy_v2_snapshot,
+    legacy_figure_stable_id,
+    project_legacy_text,
+    replace_legacy_text,
+)
 
 NOT_FOUND = "资源不存在"
 QUESTION_TYPES = {"single_choice", "multiple_choice", "fill_blank", "solution", "judge", "unknown"}
@@ -35,7 +43,16 @@ def owned(db,user,qid, *, include_trash=False):
 
 def normalize_revision(q, rev):
     c=rev.content if rev and isinstance(rev.content,dict) else {}
-    return {"text":c.get("text",q.content),"answer":c.get("answer",q.answer),"analysis":c.get("analysis",q.analysis),"knowledge_tags":_tags(c.get("knowledge_tags",q.knowledge_tags)),"question_type":c.get("question_type",q.question_type),"difficulty_level":c.get("difficulty_level",q.difficulty_level),"difficulty_label":c.get("difficulty_label",q.difficulty_label)}
+    snapshot = adapt_section_snapshot(
+        section_snapshot=rev.section_snapshot if rev else q.section_snapshot,
+        content=c.get("text", c.get("content", q.content)),
+        answer=c.get("answer", q.answer),
+        analysis=c.get("analysis", q.analysis),
+        seed=f"revision:{rev.id}" if rev else f"question:{q.id}",
+        legacy_figure_id=legacy_figure_stable_id(q.id) if rev and rev.figure_asset_id else None,
+    )
+    projected = project_legacy_text(snapshot)
+    return {"text":projected["content"],"answer":projected["answer"],"analysis":projected["analysis"],"knowledge_tags":_tags(c.get("knowledge_tags",q.knowledge_tags)),"question_type":c.get("question_type",q.question_type),"difficulty_level":c.get("difficulty_level",q.difficulty_level),"difficulty_label":c.get("difficulty_label",q.difficulty_label)}
 
 def update(db,user,qid,payload:QuestionUpdate):
     q=owned(db,user,qid); rev=latest(db,qid)
@@ -56,8 +73,36 @@ def update(db,user,qid,payload:QuestionUpdate):
     if values==cur: return q,False,rev
     q.content=values["text"]; q.answer=values["answer"]; q.analysis=values["analysis"]; q.knowledge_tags=values["knowledge_tags"]; q.question_type=values["question_type"]; q.difficulty_level=values["difficulty_level"]; q.difficulty_label=values["difficulty_label"]; q.metadata_generation=(q.metadata_generation or 0)+1
     n=(rev.rev_no if rev else 0)+1
-    new=QuestionRevision(question=q,rev_no=n,content=values,source_asset_id=rev.source_asset_id if rev else None,figure_asset_id=rev.figure_asset_id if rev else None,crop_bbox=rev.crop_bbox if rev else None,change_reason="manual_edit")
+    figure_links = list(rev.figure_links) if rev else []
+    figure_id = figure_links[0].figure.stable_id if len(figure_links) == 1 else None
+    figure_asset = figure_links[0].figure.figure_asset if len(figure_links) == 1 else None
+    aspect_ratio = None
+    if figure_asset and figure_asset.width and figure_asset.height:
+        aspect_ratio = figure_asset.height / figure_asset.width
+    existing_snapshot = rev.section_snapshot if rev and isinstance(rev.section_snapshot, dict) else q.section_snapshot
+    if isinstance(existing_snapshot, dict):
+        snapshot = replace_legacy_text(
+            existing_snapshot,
+            content=values["text"],
+            answer=values["answer"],
+            analysis=values["analysis"],
+            seed=f"question:{q.id}",
+        )
+    else:
+        snapshot = build_legacy_v2_snapshot(
+            content=values["text"],
+            answer=values["answer"],
+            analysis=values["analysis"],
+            seed=f"question:{q.id}",
+            figure_id=figure_id,
+            figure_aspect_ratio=aspect_ratio,
+        )
+    q.section_snapshot = snapshot
+    new=QuestionRevision(question=q,rev_no=n,content=values,section_snapshot=snapshot,source_asset_id=rev.source_asset_id if rev else None,figure_asset_id=rev.figure_asset_id if rev else None,crop_bbox=rev.crop_bbox if rev else None,change_reason="manual_edit")
     db.add(new)
+    db.flush()
+    for link in figure_links:
+        db.add(QuestionRevisionFigure(question_id=q.id, question_revision_id=new.id, question_figure_id=link.question_figure_id))
     try:
         db.commit()
     except IntegrityError as exc:

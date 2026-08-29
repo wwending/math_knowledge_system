@@ -1,5 +1,12 @@
 # STATUS
 
+## 2026-08-29 题目区段与多图版本数据基础（#127）
+
+- 新增 schema v2 三区段快照合同：题干、答案、解析均可包含有序文字块和图片区，block/图片区/配图使用稳定 UUID，来源裁剪坐标与图片区布局坐标保持分离；旧扁平文本继续作为兼容投影。
+- 新增 QuestionFigure、revision 配图关联和 PaperItem 配图快照数据结构；组合外键阻止 revision 跨题引用配图。PaperItem v2 字段仅提供 nullable 基础，不提前启用后续 API、编辑器或渲染行为。
+- Alembic `20260829_0010` 只回填当前 Question 和每题最新 revision，不批量改写旧 revision 或历史 PaperItem；downgrade 保留旧字段可读，但不承诺把 v2-only 多图布局无损反投影到单图结构。
+- 领域术语见根级 `CONTEXT.md`，持久化决策见 `docs/adr/0001-question-sections-and-figure-persistence.md`。后端 compileall、聚焦模型/迁移测试和全量 pytest 已通过；尚未执行 Staging 迁移。
+
 ## 2026-08-29 题库详情编辑布局精简（#123）
 
 - 详情页复用左侧大型题目区域图作为唯一图片参考；编辑器只保留字段和保存操作，不再重复显示小图、内部预览或“原图 / 编辑 / 预览”页签。

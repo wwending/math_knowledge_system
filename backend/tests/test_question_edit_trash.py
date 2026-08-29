@@ -77,6 +77,9 @@ class QuestionEditTrashTests(unittest.TestCase):
         self.assertEqual(rev.content["answer"], "答案")
         self.assertEqual(rev.content["knowledge_tags"][0]["label"], "圆")
         self.assertEqual(rev.content["difficulty_level"], 4)
+        self.assertEqual(rev.section_snapshot["schema_version"], 2)
+        self.assertEqual(rev.section_snapshot["sections"]["stem"]["blocks"][0]["markdown"], "题干")
+        self.assertEqual(self.q.section_snapshot, rev.section_snapshot)
 
     def test_trash_restore_restarts_retention_and_permanent_is_logical(self):
         q = trash(self.db, self.user, self.q.id)

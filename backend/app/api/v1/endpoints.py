@@ -37,6 +37,7 @@ from app.models.llm_run import LLMRun
 from app.models.ocr_run import OCRRun
 from app.models.paper import Paper
 from app.models.question import Question
+from app.models.question_figure import QuestionFigure, QuestionRevisionFigure
 from app.models.question_revision import QuestionRevision
 from app.models.source_asset import SourceAsset
 from app.models.user import User
@@ -74,6 +75,7 @@ from app.services.paper_html_renderer import (
     render_paper_html,
 )
 from app.services.pdf_generation_service import GotenbergPdfGenerationService, PdfGenerationError, PdfGenerationOptions
+from app.services.question_content import build_legacy_v2_snapshot, legacy_figure_stable_id
 from app.services.question_metadata import evaluate_question_metadata_task
 from app.services.recognition_quality import detect_quality_warnings
 
@@ -1127,6 +1129,8 @@ def _attach_question_figure(
     if page_bbox is None:
         logger.warning("[FigureCrop] ignored uncomposable figure_bbox draft_id={} bbox={}", draft_id, figure_bbox)
         return
+    out_path = None
+    savepoint = db.begin_nested()
     try:
         source_path = _asset_file_path(asset)
         with Image.open(source_path) as img:
@@ -1168,6 +1172,35 @@ def _attach_question_figure(
         question.figure_image = figure_asset.normalized_path or figure_asset.original_path
         question.figure_crop_bbox = page_bbox
         revision.figure_asset_id = figure_asset.id
+        stable_id = legacy_figure_stable_id(question.id)
+        question_figure = QuestionFigure(
+            stable_id=stable_id,
+            question_id=question.id,
+            source_asset_id=asset.id,
+            figure_asset_id=figure_asset.id,
+            source_crop_bbox=page_bbox,
+        )
+        db.add(question_figure)
+        db.flush()
+        db.add(
+            QuestionRevisionFigure(
+                question_id=question.id,
+                question_revision_id=revision.id,
+                question_figure_id=question_figure.id,
+            )
+        )
+        aspect_ratio = crop.height / crop.width if crop.width else 1.0
+        snapshot = build_legacy_v2_snapshot(
+            content=question.content,
+            answer=question.answer,
+            analysis=question.analysis,
+            seed=f"question:{question.id}",
+            figure_id=stable_id,
+            figure_aspect_ratio=aspect_ratio,
+        )
+        question.section_snapshot = snapshot
+        revision.section_snapshot = snapshot
+        savepoint.commit()
         logger.info(
             "[FigureCrop] attached figure asset_id={} question_id={} bbox={}",
             figure_asset.id,
@@ -1175,6 +1208,9 @@ def _attach_question_figure(
             page_bbox,
         )
     except Exception:
+        savepoint.rollback()
+        if out_path is not None:
+            out_path.unlink(missing_ok=True)
         logger.exception("Figure crop failed; saving question without figure question_id={}", question.id)
 
 
@@ -1220,6 +1256,14 @@ def save_draft_to_bank(
     )
     db.add(revision)
     db.flush()
+    initial_snapshot = build_legacy_v2_snapshot(
+        content=content_text,
+        answer=None,
+        analysis=None,
+        seed=f"question:{question.id}",
+    )
+    question.section_snapshot = initial_snapshot
+    revision.section_snapshot = initial_snapshot
 
     figure_bbox = payload.figure_bbox if payload else None
     if figure_bbox is not None and draft.source_asset is not None:

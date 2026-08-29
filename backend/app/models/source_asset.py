@@ -26,3 +26,18 @@ class SourceAsset(Base):
         back_populates="source_asset",
         foreign_keys="QuestionRevision.source_asset_id",
     )
+    source_question_figures = relationship(
+        "QuestionFigure",
+        back_populates="source_asset",
+        foreign_keys="QuestionFigure.source_asset_id",
+    )
+    materialized_question_figures = relationship(
+        "QuestionFigure",
+        back_populates="figure_asset",
+        foreign_keys="QuestionFigure.figure_asset_id",
+    )
+    paper_figure_snapshots = relationship(
+        "PaperItemFigureSnapshot",
+        back_populates="figure_asset",
+        foreign_keys="PaperItemFigureSnapshot.figure_asset_id",
+    )

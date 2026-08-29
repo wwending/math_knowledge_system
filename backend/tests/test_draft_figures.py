@@ -24,6 +24,7 @@ from app.db.base import Base
 from app.main import app
 from app.models.draft import Draft
 from app.models.question import Question
+from app.models.question_figure import QuestionFigure, QuestionRevisionFigure
 from app.models.question_revision import QuestionRevision
 from app.models.source_asset import SourceAsset
 from app.models.user import User, UserStatus
@@ -283,6 +284,19 @@ class DraftFigureTests(unittest.TestCase):
             ).one()
             self.assertEqual(figure_asset.kind, "figure")
             self.assertEqual((figure_asset.width, figure_asset.height), (100, 50))
+            question_figure = db.query(QuestionFigure).filter_by(question_id=question_id).one()
+            revision_link = db.query(QuestionRevisionFigure).filter_by(
+                question_revision_id=revision.id,
+                question_figure_id=question_figure.id,
+            ).one()
+            self.assertEqual(revision_link.question_id, question_id)
+            self.assertEqual(question_figure.source_asset_id, revision.source_asset_id)
+            self.assertEqual(question_figure.figure_asset_id, figure_asset.id)
+            self.assertEqual(question_figure.source_crop_bbox, [0.1, 0.2, 0.5, 0.5])
+            self.assertEqual(question.section_snapshot, revision.section_snapshot)
+            self.assertEqual(question.section_snapshot["schema_version"], 2)
+            placement = question.section_snapshot["sections"]["stem"]["blocks"][1]["placements"][0]
+            self.assertEqual(placement["figure_id"], question_figure.stable_id)
             figure_file = self.upload_dir / (figure_asset.normalized_path or figure_asset.original_path)
             self.assertTrue(figure_file.is_file())
 
@@ -385,6 +399,37 @@ class DraftFigureTests(unittest.TestCase):
             f"/api/v1/questions/{question_id}/figure", headers=self.auth_headers
         )
         self.assertEqual(missing_figure.status_code, 404)
+
+    def test_figure_relational_failure_rolls_back_partial_figure_state(self):
+        draft_id, _ = self._ready_draft_with_content()
+        original_builder = endpoints.build_legacy_v2_snapshot
+        calls = {"count": 0}
+
+        def fail_second_snapshot(**kwargs):
+            calls["count"] += 1
+            if calls["count"] == 2:
+                raise RuntimeError("snapshot failure")
+            return original_builder(**kwargs)
+
+        with patch.object(endpoints, "build_legacy_v2_snapshot", side_effect=fail_second_snapshot):
+            response = self.client.post(
+                f"/api/v1/drafts/{draft_id}/save-to-bank",
+                headers=self.auth_headers,
+                json={"figure_bbox": [0.1, 0.2, 0.5, 0.5]},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        with self.SessionLocal() as db:
+            question = db.query(Question).filter_by(id=response.json()["question_id"]).one()
+            revision = db.query(QuestionRevision).filter_by(question_id=question.id).one()
+            self.assertIsNone(question.figure_image)
+            self.assertIsNone(question.figure_crop_bbox)
+            self.assertIsNone(revision.figure_asset_id)
+            self.assertEqual(db.query(QuestionFigure).filter_by(question_id=question.id).count(), 0)
+            self.assertEqual(
+                db.query(QuestionRevisionFigure).filter_by(question_revision_id=revision.id).count(),
+                0,
+            )
 
     def test_save_to_bank_without_body_keeps_pre58_behavior(self):
         draft_id, _ = self._ready_draft_with_content()
