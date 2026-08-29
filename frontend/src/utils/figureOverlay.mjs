@@ -1,8 +1,9 @@
-// Pure coordinate math for the #58 figure-region overlay editor.
-// Bboxes are [x, y, w, h] normalized to [0, 1], mirroring the backend
-// FigureDetection schema. Kept dependency-free so Node can import it directly.
+// Pure coordinate math for the detected-figure confirmation editor.
+// Bboxes are [x, y, w, h] normalized to [0, 1], mirroring the backend.
 
 export const FIGURE_BBOX_MIN_AREA = 0.005
+export const FIGURE_READING_ROW_TOLERANCE = 0.015
+export const MAX_CONFIRMED_FIGURES = 10
 
 export const clamp01 = (value) => {
   const numeric = Number(value)
@@ -26,24 +27,6 @@ export const isValidFigureBbox = (bbox, minArea = FIGURE_BBOX_MIN_AREA) => {
   return w * h >= minArea
 }
 
-// Convert a drag rectangle captured in display pixels into a normalized bbox.
-export const pointerRectToBbox = (startX, startY, endX, endY, displayWidth, displayHeight) => {
-  if (!Number.isFinite(displayWidth) || !Number.isFinite(displayHeight) || displayWidth <= 0 || displayHeight <= 0) {
-    return null
-  }
-  const left = Math.min(startX, endX)
-  const top = Math.min(startY, endY)
-  const width = Math.abs(endX - startX)
-  const height = Math.abs(endY - startY)
-  const bbox = [
-    clamp01(left / displayWidth),
-    clamp01(top / displayHeight),
-    clamp01(width / displayWidth),
-    clamp01(height / displayHeight),
-  ]
-  return isValidFigureBbox(bbox) ? bbox : null
-}
-
 // Convert a normalized bbox to absolute px offsets for overlay positioning.
 export const bboxToStylePx = (bbox, displayWidth, displayHeight) => {
   if (!isValidFigureBbox(bbox) || displayWidth <= 0 || displayHeight <= 0) {
@@ -58,24 +41,39 @@ export const bboxToStylePx = (bbox, displayWidth, displayHeight) => {
   }
 }
 
-// Pick the primary figure from backend detections: highest score wins,
-// ties broken by reading order (top-to-bottom, left-to-right).
-export const pickPrimaryBox = (detections) => {
-  if (!Array.isArray(detections) || detections.length === 0) {
-    return null
-  }
-  const valid = detections.filter((item) => isValidFigureBbox(item?.bbox))
-  if (valid.length === 0) {
-    return null
-  }
-  return valid.reduce((best, current) => {
-    const bestScore = Number(best.score ?? 0)
-    const currentScore = Number(current.score ?? 0)
-    if (currentScore !== bestScore) {
-      return currentScore > bestScore ? current : best
+const bboxFrom = (item) => Array.isArray(item) ? item : item?.bbox
+
+export const sortFigureBboxesReadingOrder = (items) => (Array.isArray(items) ? items : [])
+  .map((item, index) => ({ bbox: bboxFrom(item), index }))
+  .filter(({ bbox }) => isValidFigureBbox(bbox))
+  .sort((left, right) => {
+    const vertical = left.bbox[1] - right.bbox[1]
+    if (Math.abs(vertical) > FIGURE_READING_ROW_TOLERANCE) {
+      return vertical
     }
-    const [bx, by] = best.bbox
-    const [cx, cy] = current.bbox
-    return cy < by || (cy === by && cx < bx) ? current : best
+    return left.bbox[0] - right.bbox[0] || left.index - right.index
   })
+  .map(({ bbox }) => bbox.map(Number))
+
+export const figureBboxesOverlap = (left, right, epsilon = 1e-9) => {
+  if (!isValidFigureBbox(left) || !isValidFigureBbox(right)) {
+    return false
+  }
+  const [lx, ly, lw, lh] = left.map(Number)
+  const [rx, ry, rw, rh] = right.map(Number)
+  return Math.min(lx + lw, rx + rw) - Math.max(lx, rx) > epsilon
+    && Math.min(ly + lh, ry + rh) - Math.max(ly, ry) > epsilon
+}
+
+export const findOverlappingFigureBboxes = (bboxes) => {
+  const values = Array.isArray(bboxes) ? bboxes : []
+  const conflicts = []
+  for (let left = 0; left < values.length; left += 1) {
+    for (let right = left + 1; right < values.length; right += 1) {
+      if (figureBboxesOverlap(values[left], values[right])) {
+        conflicts.push([left, right])
+      }
+    }
+  }
+  return conflicts
 }

@@ -4,6 +4,7 @@ import pytest
 
 from app.services.question_content import (
     ContentSnapshotError,
+    build_draft_v2_snapshot,
     build_legacy_v2_snapshot,
     normalize_v2_snapshot,
     project_legacy_text,
@@ -33,6 +34,58 @@ def test_legacy_projection_is_deterministic_and_preserves_flat_text():
         "answer": "答案",
         "analysis": "解析",
     }
+
+
+def test_draft_snapshot_packs_natural_sizes_and_wraps_deterministically():
+    figures = [
+        {"figure_id": str(uuid4()), "width": 60, "height": 20},
+        {"figure_id": str(uuid4()), "width": 40, "height": 30},
+        {"figure_id": str(uuid4()), "width": 70, "height": 35},
+    ]
+    snapshot = build_draft_v2_snapshot(
+        content="题干",
+        seed="question:129",
+        figures=figures,
+        canvas_width=100,
+    )
+    repeated = build_draft_v2_snapshot(
+        content="题干",
+        seed="question:129",
+        figures=figures,
+        canvas_width=100,
+    )
+
+    assert snapshot == repeated
+    blocks = snapshot["sections"]["stem"]["blocks"]
+    assert [block["kind"] for block in blocks] == ["text", "image_area"]
+    area = blocks[1]
+    assert area["height_ratio"] == pytest.approx(0.65)
+    assert [placement["figure_id"] for placement in area["placements"]] == [
+        figure["figure_id"] for figure in figures
+    ]
+    assert area["placements"] == [
+        {
+            "figure_id": figures[0]["figure_id"],
+            "x": 0.0,
+            "y": 0.0,
+            "width": 0.6,
+            "height": pytest.approx(20 / 65),
+        },
+        {
+            "figure_id": figures[1]["figure_id"],
+            "x": 0.6,
+            "y": 0.0,
+            "width": 0.4,
+            "height": pytest.approx(30 / 65),
+        },
+        {
+            "figure_id": figures[2]["figure_id"],
+            "x": 0.0,
+            "y": pytest.approx(30 / 65),
+            "width": 0.7,
+            "height": pytest.approx(35 / 65),
+        },
+    ]
 
 
 def test_pure_image_stem_and_empty_optional_sections_are_valid():
