@@ -40,6 +40,7 @@ class PaperItem(Base):
     content_snapshot = Column(Text, nullable=False)
     answer_snapshot = Column(Text, nullable=True)
     analysis_snapshot = Column(Text, nullable=True)
+    section_snapshot = Column(JSON, nullable=True)
     knowledge_tags_snapshot = Column(JSON, nullable=True)
     question_type_snapshot = Column(String, nullable=True)
     difficulty_level_snapshot = Column(Integer, nullable=True)
@@ -55,3 +56,8 @@ class PaperItem(Base):
     paper = relationship("Paper", back_populates="items")
     question = relationship("Question")
     question_revision = relationship("QuestionRevision")
+    figure_snapshots = relationship(
+        "PaperItemFigureSnapshot",
+        back_populates="paper_item",
+        cascade="all, delete-orphan",
+    )

@@ -9,12 +9,14 @@ class QuestionRevision(Base):
     __tablename__ = "question_revisions"
     __table_args__ = (
         UniqueConstraint("question_id", "rev_no", name="uq_question_revisions_question_id_rev_no"),
+        UniqueConstraint("question_id", "id", name="uq_question_revisions_question_id_id"),
     )
 
     id = Column(Integer, primary_key=True, index=True)
     question_id = Column(Integer, ForeignKey("questions.id"), nullable=False)
     rev_no = Column(Integer, nullable=False)
     content = Column(JSON, nullable=False)
+    section_snapshot = Column(JSON, nullable=True)
     crop_bbox = Column(JSON, nullable=True)
     source_asset_id = Column(Integer, ForeignKey("source_assets.id"), nullable=True)
     # Figure crop carried by this revision (#58); mirrors source_asset_id.
@@ -25,6 +27,12 @@ class QuestionRevision(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     question = relationship("Question", back_populates="revisions")
+    figure_links = relationship(
+        "QuestionRevisionFigure",
+        back_populates="revision",
+        cascade="all, delete-orphan",
+        overlaps="revision_links,figure",
+    )
     source_asset = relationship(
         "SourceAsset",
         back_populates="question_revisions",
