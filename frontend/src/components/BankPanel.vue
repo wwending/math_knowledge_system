@@ -160,16 +160,10 @@
 
         <div class="detail-right">
           <div class="detail-actions">
-            <el-button v-if="activeBankTab === 'active'" type="primary" @click="editing = true">编辑题目</el-button>
+            <el-button v-if="activeBankTab === 'active'" type="primary" @click="editQuestion(currentItem)">编辑题目</el-button>
             <el-button v-if="activeBankTab === 'trash'" type="success" @click="restoreQuestion(currentItem)">恢复题目</el-button>
             <el-button v-if="activeBankTab === 'trash'" type="danger" @click="permanentlyDeleteQuestion(currentItem)">永久删除</el-button>
           </div>
-          <QuestionEditWorkbench
-            v-if="editing"
-            :question="currentItem"
-            @saved="handleQuestionSaved"
-            @draft-change="handleDraftChange"
-          />
           <div class="detail-meta">
             <el-tag size="small" type="info">ID: {{ currentItem.id }}</el-tag>
             <el-tag size="small" type="warning" effect="plain">
@@ -253,11 +247,6 @@ import { readStringQuery, replaceQueryValues } from '../utils/urlQueryState'
 import { renderMarkdown } from '@/utils/renderMarkdown'
 import { useRoute, useRouter } from 'vue-router'
 import { formatDateTime } from '../utils/formatDateTime'
-import QuestionEditWorkbench from './QuestionEditWorkbench.vue'
-import {
-  applyDraftToQuestion,
-  mergeSavedQuestionResponse
-} from '../utils/questionEditState.mjs'
 
 const API_BASE = API_V1_BASE_URL
 const emit = defineEmits(['paper-created', 'go-upload'])
@@ -276,12 +265,7 @@ const router = useRouter()
 const keyword = ref(readStringQuery(route, 'bank_q'))
 const dialogVisible = ref(false)
 const currentItem = ref(null)
-const detailDraft = ref(null)
-const displayItem = computed(() => {
-  if (!currentItem.value || !detailDraft.value) return currentItem.value
-  return applyDraftToQuestion(currentItem.value, detailDraft.value)
-})
-const editing = ref(false)
+const displayItem = computed(() => currentItem.value)
 const selectedQuestionIds = ref([])
 const createPaperDialogVisible = ref(false)
 const creatingPaper = ref(false)
@@ -311,13 +295,24 @@ const canSubmitPaper = computed(() => {
 })
 
 const listRequestToken = ref(0)
+const consumePendingQuestionDetail = async () => {
+  if (activeBankTab.value !== 'active') return
+  const id = Number(readStringQuery(route, 'bank_question_id'))
+  if (!Number.isInteger(id) || id <= 0) return
+  await replaceQueryValues(router, route, { bank_question_id: null })
+  const item = list.value.find((question) => question.id === id)
+  if (item) await openDetail(item)
+}
 const fetchQuestions = async () => {
   const token = ++listRequestToken.value
   loading.value = true
   try {
     const endpoint = activeBankTab.value === 'trash' ? `${API_BASE}/questions/trash?limit=${questionListLimit}` : `${API_BASE}/questions?limit=${questionListLimit}`
     const res = await axios.get(endpoint)
-    if (token === listRequestToken.value) list.value = res.data || []
+    if (token === listRequestToken.value) {
+      list.value = res.data || []
+      await consumePendingQuestionDetail()
+    }
   } catch (error) {
     console.error(error)
     ElMessage.error('获取题目列表失败')
@@ -327,12 +322,17 @@ const fetchQuestions = async () => {
 }
 
 
+const editQuestion = (item) => router.push({
+  name: 'question-editor',
+  params: { id: item.id },
+  query: { tab: 'bank', bank_q: keyword.value || undefined, bank_question_id: item.id }
+})
+
 const openDetail = async (item) => {
   const token = ++detailRequestToken.value
   dialogVisible.value = true
   detailLoading.value = true
   currentItem.value = item
-  detailDraft.value = null
   try {
     const endpoint = activeBankTab.value === 'trash' ? `${API_BASE}/questions/trash/${item.id}` : `${API_BASE}/questions/${item.id}`
     const res = await axios.get(endpoint)
@@ -345,22 +345,16 @@ const openDetail = async (item) => {
   }
 }
 
-const handleQuestionSaved = (saved) => {
-  currentItem.value = mergeSavedQuestionResponse(currentItem.value, saved)
-  detailDraft.value = null
-  editing.value = false
-  fetchQuestions()
-}
-
-const handleDraftChange = (draft) => {
-  detailDraft.value = draft
-}
+watch(
+  () => route.query.bank_question_id,
+  () => {
+    if (!loading.value && list.value.length > 0) consumePendingQuestionDetail()
+  }
+)
 
 const handleBankTabChange = () => {
   selectedQuestionIds.value = []
   currentItem.value = null
-  detailDraft.value = null
-  editing.value = false
   dialogVisible.value = false
   fetchQuestions()
 }
@@ -370,9 +364,7 @@ const cleanupQuestion = (id) => {
   imageLoaderRemove?.(id)
   if (currentItem.value?.id === id) {
     currentItem.value = null
-    detailDraft.value = null
-    editing.value = false
-    dialogVisible.value = false
+        dialogVisible.value = false
   }
 }
 

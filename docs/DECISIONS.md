@@ -2,6 +2,18 @@
 
 说明：本文件按时间倒序记录决策。较早决策中的“当前主链路”等表述保留为当时历史事实；如与顶部较新决策冲突，以较新决策和 `docs/STATUS.md` 当前 checkpoint 为准。
 
+## 决策 45：schema-v2 文字编辑采用纯状态内核与保守段落边界（#130）
+
+结论：独立题目编辑路由不再通过扁平 `content/answer/analysis` 投影反向重建文档，而是把 document API 返回的三区段、全部块、配图 manifest 和元数据深复制为 baseline/draft，由无 Vue 依赖的纯状态内核执行校验和不可变操作。保存始终提交完整 schema-v2 文档和 `expected_revision_no`；existing figure 只缩减为 `{id, kind: "existing"}` 声明，图片区及摆放数据原样保留。
+
+文字块拆分和段落跨区段移动只允许使用原始 Markdown 中已验证的空行边界。扫描器在 fenced code、inline code、转义分隔符、`$…$` 和 `$$…$$` 公式内部不暴露边界；遇到未闭合或歧义分隔符时宁可把全文视为单段，不从渲染 HTML 反向生成 Markdown，也不猜测数学语义。
+
+原因：schema-v2 的稳定 UUID、有序图片区和多图布局不能安全地经过旧扁平字段往返；把编辑规则收敛到纯模块可独立验证完整文档保存、冲突草稿保留和 Markdown/LaTeX 原文不被静默改写。保守边界牺牲少量自动拆分便利，以满足 OCR/LLM 数学语义保真不变量。
+
+边界：本期仅编辑文字块和题目元数据；图片区展示为只读，不提供新增、删除、裁剪、缩放或布局移动。状态只保存在当前浏览器页面内，不新增跨刷新草稿持久化、后端 API、数据库迁移或依赖。
+
+日期：2026-08-30
+
 ## 决策 44：题库采用当前投影加不可变 revision 与逻辑回收（#116）
 
 结论：Question 保留可查询的当前投影，所有实际编辑追加连续递增的 `QuestionRevision`；无变化保存不创建 revision，并用 `expected_revision_no` 防止旧草稿覆盖新版本。删除只设置 `deleted_at`/`purge_at`，30 天到期在查询时判定；用户永久删除设置 `purged_at`，不物理删除历史 revision、PaperItem、共享 SourceAsset 或上传文件。新试卷只允许 active 题目，历史试卷始终读取冻结快照。

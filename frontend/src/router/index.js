@@ -4,6 +4,7 @@ import { ElMessage } from 'element-plus'
 import Login from '../views/Login.vue'
 import Register from '../views/Register.vue'
 import Dashboard from '../views/Dashboard.vue'
+import QuestionEditor from '../views/QuestionEditor.vue'
 import ChangePassword from '../views/ChangePassword.vue'
 import {
   ensureAuthenticated,
@@ -34,6 +35,12 @@ const routes = [
   {
     path: '/',
     component: Dashboard,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/questions/:id/edit',
+    name: 'question-editor',
+    component: QuestionEditor,
     meta: { requiresAuth: true }
   }
 ]

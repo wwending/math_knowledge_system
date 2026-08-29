@@ -46,8 +46,11 @@ requireMatch(
   'urlQueryState must document that the tab key is reserved for the #73 dashboard deep link'
 )
 
+requireMatch(bankSource, /name: 'question-editor'/, 'BankPanel may push only for the dedicated editor route')
+requireMatch(bankSource, /bank_question_id/, 'BankPanel must use a namespaced one-shot detail return key')
+requireAbsent(bankSource, /router\.replace\(/, 'BankPanel query updates must still use replaceQueryValues')
+
 for (const [name, source] of [
-  ['BankPanel', bankSource],
   ['UserManagementPanel', usersSource],
   ['PaperPanel', paperSource],
   ['FeedbackInboxPanel', feedbackSource]
