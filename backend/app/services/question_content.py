@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import math
 from typing import Any, Mapping, Optional
 from uuid import UUID, NAMESPACE_URL, uuid5
 
@@ -30,6 +31,8 @@ def _coordinate(value: Any, field: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ContentSnapshotError(f"{field} must be a number")
     number = float(value)
+    if not math.isfinite(number):
+        raise ContentSnapshotError(f"{field} must be finite")
     if number < 0 or number > 1:
         raise ContentSnapshotError(f"{field} must be between 0 and 1")
     return number
@@ -196,6 +199,8 @@ def normalize_v2_snapshot(
             if isinstance(height_ratio, bool) or not isinstance(height_ratio, (int, float)):
                 raise ContentSnapshotError("height_ratio must be a number")
             height_ratio = float(height_ratio)
+            if not math.isfinite(height_ratio):
+                raise ContentSnapshotError("height_ratio must be finite")
             if height_ratio <= 0:
                 raise ContentSnapshotError("height_ratio must be positive")
             placements = block.get("placements")

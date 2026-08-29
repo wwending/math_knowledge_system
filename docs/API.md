@@ -14,6 +14,64 @@
 
 回收、恢复、编辑不会改变已有 `PaperItem` 快照；新建试卷只能读取 active 题目的最新 revision。`/history`、`/tags`、题图和配图旁路同样排除到期/永久删除资源。
 
+## 题目完整文档与配图（schema v2，#128）
+
+完整文档接口用于原子读写题干、答案、解析三个区段，以及区段中的有序文本块和图片区块：
+
+- `GET /api/v1/questions/{question_id}/document`：读取最新 revision 的 schema-v2 文档、配图清单、兼容文本投影和当前 revision 号。
+- `PUT /api/v1/questions/{question_id}/document`：提交完整文档；必须携带 `schema_version=2` 和 `expected_revision_no`。有变化时只创建一个新 revision，完全相同的提交返回 `revision_created=false`。
+- `GET /api/v1/questions/{question_id}/figures/{figure_id}`：按题目所有权鉴权后返回配图文件，响应使用 `private, no-store`。
+
+三个固定区段为 `stem`、`answer`、`analysis`。每个区段的 `blocks` 按数组顺序渲染，支持：
+
+- `kind=text`：包含稳定 UUID `id` 和 `markdown`。
+- `kind=image_area`：包含稳定 UUID `id`、`height_ratio` 和 `placements`；每个 placement 引用配图 UUID，并用归一化 `x`、`y`、`width`、`height` 描述摆放区域。
+
+`figures` 清单必须与文档中引用的 UUID 完全一致。`kind=crop` 使用题目区域内的归一化 `crop_bbox=[x,y,w,h]` 从原始 SourceAsset 裁图；`kind=existing` 复用当前题目已经拥有的配图。服务端从原始页面图裁剪，不从题图展示旁路的低分辨率结果二次裁剪。
+
+请求示意：
+
+```json
+{
+  "schema_version": 2,
+  "expected_revision_no": 3,
+  "sections": {
+    "stem": {
+      "blocks": [
+        {"id": "<uuid>", "kind": "text", "markdown": "题干"},
+        {
+          "id": "<uuid>",
+          "kind": "image_area",
+          "height_ratio": 1.5,
+          "placements": [
+            {"figure_id": "<uuid>", "x": 0, "y": 0, "width": 0.5, "height": 1}
+          ]
+        }
+      ]
+    },
+    "answer": {"blocks": []},
+    "analysis": {"blocks": []}
+  },
+  "figures": [
+    {"id": "<uuid>", "kind": "crop", "crop_bbox": [0, 0, 0.5, 1]}
+  ],
+  "metadata": {
+    "knowledge_tags": [{"label": "函数", "score": 1.0}],
+    "question_type": "solution",
+    "difficulty_level": 3
+  }
+}
+```
+
+兼容行为与限制：
+
+- 保存时同步投影最新 `content`、`answer`、`analysis`，旧客户端和组卷快照仍可读取纯文本字段；稀疏 `PUT /questions/{id}` 保持可用。
+- 列表和详情返回 `schema_version`、`has_question_image`、`has_figure`；无题图时不返回可用的 `image_url`。
+- 每区段最多 50 个块，每题最多 20 张配图，每个图片区最多 10 个 placement；同一区域 placement 不得重叠，同一来源上的裁剪框不得重叠。
+- 单张裁剪配图最大 4 MiB；每题配图累计体积受服务端 `QUESTION_MAX_TOTAL_FIGURE_BYTES` 配置限制；摆放比例必须与源图比例一致。
+- 未认证返回 `401`；题目不存在或不属于当前用户返回 `404`；`expected_revision_no` 过期返回 `409`。
+- 通过请求模型解析后发现的文档语义错误返回 `422`，`detail.code=question_document_invalid`，并在 `detail.errors` 中给出错误码及可用的 section、block、figure、field 定位信息。请求体本身不符合 Pydantic 结构时沿用 FastAPI 标准 `422` 数组格式。
+
 ## 当前 Dashboard 主路径
 
 当前 `Dashboard.vue` 上传主路径已接入 Draft 流水线：

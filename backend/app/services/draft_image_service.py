@@ -12,7 +12,7 @@ from app.core.config import settings
 MIN_DRAFT_CROP_AREA_RATIO = 0.0025
 
 
-def _normalize_unit_bbox(value: Any) -> list[float] | dict[str, Any]:
+def normalize_unit_bbox(value: Any) -> list[float] | dict[str, Any]:
     if value is None or value == {}:
         return {}
     if not isinstance(value, (list, tuple)) or len(value) != 4:
@@ -30,7 +30,7 @@ def _normalize_unit_bbox(value: Any) -> list[float] | dict[str, Any]:
 
 def normalize_draft_bbox(value: Any) -> list[float] | dict[str, Any]:
     """Normalize a Draft crop bbox, preserving the legacy {} full-image marker."""
-    normalized = _normalize_unit_bbox(value)
+    normalized = normalize_unit_bbox(value)
     if normalized != {} and normalized[2] * normalized[3] < MIN_DRAFT_CROP_AREA_RATIO:
         raise ValueError(
             f"crop_bbox area must be at least {MIN_DRAFT_CROP_AREA_RATIO:.4f} of the image"
@@ -42,7 +42,7 @@ def is_full_image_bbox(value: Any) -> bool:
     return value is None or value == {}
 
 
-def _pixel_crop_box(image: Image.Image, crop_bbox: Any) -> tuple[int, int, int, int]:
+def pixel_crop_box(image: Image.Image, crop_bbox: Any) -> tuple[int, int, int, int]:
     normalized = normalize_draft_bbox(crop_bbox)
     if normalized == {}:
         return (0, 0, image.width, image.height)
@@ -59,7 +59,7 @@ def create_cropped_temp_image(source_path: str | Path, crop_bbox: Any) -> Path |
     if is_full_image_bbox(crop_bbox):
         return None
     with Image.open(source_path) as image:
-        cropped = image.convert("RGB").crop(_pixel_crop_box(image, crop_bbox))
+        cropped = image.convert("RGB").crop(pixel_crop_box(image, crop_bbox))
         cropped.load()
     output = settings.UPLOAD_DIR_PATH / f"tmp_draft_crop_{uuid.uuid4().hex}.jpg"
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -77,7 +77,7 @@ def render_draft_image(source_path: str | Path, crop_bbox: Any) -> tuple[bytes, 
         if is_full_image_bbox(crop_bbox):
             rendered = image.copy()
         else:
-            rendered = image.crop(_pixel_crop_box(image, crop_bbox))
+            rendered = image.crop(pixel_crop_box(image, crop_bbox))
         rendered.load()
         if rendered.mode not in ("RGB", "L"):
             rendered = rendered.convert("RGB")
@@ -92,7 +92,7 @@ def render_draft_image(source_path: str | Path, crop_bbox: Any) -> tuple[bytes, 
 def compose_bbox_to_page(crop_bbox: Any, relative_bbox: Any) -> list[float] | None:
     """Compose a crop-relative normalized bbox into original-page coordinates."""
     try:
-        relative = _normalize_unit_bbox(relative_bbox)
+        relative = normalize_unit_bbox(relative_bbox)
         crop = normalize_draft_bbox(crop_bbox)
     except ValueError:
         return None
