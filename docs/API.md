@@ -27,7 +27,7 @@
 - `kind=text`：包含稳定 UUID `id` 和 `markdown`。
 - `kind=image_area`：包含稳定 UUID `id`、`height_ratio` 和 `placements`；每个 placement 引用配图 UUID，并用归一化 `x`、`y`、`width`、`height` 描述摆放区域。
 
-`figures` 清单必须与文档中引用的 UUID 完全一致。`kind=crop` 使用题目区域内的归一化 `crop_bbox=[x,y,w,h]` 从原始 SourceAsset 裁图；`kind=existing` 复用当前题目已经拥有的配图。服务端从原始页面图裁剪，不从题图展示旁路的低分辨率结果二次裁剪。
+`figures` 清单必须与文档中引用的 UUID 完全一致，且同一 figure 在整题 revision 中只能 placement 一次。`kind=crop` 使用题目区域图内的归一化 `crop_bbox=[x,y,w,h]`，面积至少为题目区域图的 1%；`kind=existing` 复用当前题目已经拥有的配图且不得携带 `crop_bbox`。编辑期间 crop 只存在于浏览器本地预览；服务端仅在完整 PUT 通过语义校验和 revision 冲突检查后，才把题目区域坐标组合到原始 SourceAsset 并正式高分辨率裁图，不从题图展示旁路的低分辨率结果二次裁剪。
 
 请求示意：
 
@@ -67,10 +67,10 @@
 
 - 保存时同步投影最新 `content`、`answer`、`analysis`，旧客户端和组卷快照仍可读取纯文本字段；稀疏 `PUT /questions/{id}` 保持可用。
 - 列表和详情返回 `schema_version`、`has_question_image`、`has_figure`；无题图时不返回可用的 `image_url`。
-- 每区段最多 50 个块，每题最多 20 张配图，每个图片区最多 10 个 placement；同一区域 placement 不得重叠，同一来源上的裁剪框不得重叠。
+- 每区段最多 50 个块，每题最多 20 张配图，每个图片区最多 10 个 placement；同一区域 placement 不得重叠，同一 figure 不得跨图片区或区段重复 placement，同一来源上的裁剪框不得重叠。
 - 单张裁剪配图最大 4 MiB；每题配图累计体积受服务端 `QUESTION_MAX_TOTAL_FIGURE_BYTES` 配置限制；摆放比例必须与源图比例一致。
 - 未认证返回 `401`；题目不存在或不属于当前用户返回 `404`；`expected_revision_no` 过期返回 `409`。
-- 通过请求模型解析后发现的文档语义错误返回 `422`，`detail.code=question_document_invalid`，并在 `detail.errors` 中给出错误码及可用的 section、block、figure、field 定位信息。请求体本身不符合 Pydantic 结构时沿用 FastAPI 标准 `422` 数组格式。
+- 通过请求模型解析后发现的文档语义错误返回 `422`，`detail.code=question_document_invalid`，并在 `detail.errors` 中给出错误码及可用的 `section`、`block_id`/`block_index`、`figure_id`/`figure_index`、`placement_index`、`field` 定位信息。请求体本身不符合 Pydantic 结构时沿用 FastAPI 标准 `422` 数组格式。
 
 ## 当前 Dashboard 主路径
 

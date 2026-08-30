@@ -8,13 +8,14 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import HTTPException
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import settings
 from app.core.constants import (
     QUESTION_MAX_BLOCKS_PER_SECTION,
+    QUESTION_DOCUMENT_MIN_CROP_AREA_RATIO,
     QUESTION_MAX_FIGURE_BYTES,
     QUESTION_MAX_FIGURES,
     QUESTION_MAX_FIGURES_PER_IMAGE_AREA,
@@ -31,7 +32,11 @@ from app.schemas.question import (
     QuestionDocumentUpdateResponse,
     QuestionFigureDetail,
 )
-from app.services.draft_image_service import compose_bbox_to_page, normalize_unit_bbox, pixel_crop_box
+from app.services.draft_image_service import (
+    compose_bbox_to_page,
+    normalize_unit_bbox,
+    normalized_bbox_pixel_box,
+)
 from app.services.question_content import (
     ContentSnapshotError,
     adapt_section_snapshot,
@@ -39,6 +44,7 @@ from app.services.question_content import (
     project_legacy_text,
     snapshot_figure_ids,
 )
+from app.services.question_identifiers import canonical_uuid
 from app.services.question_service import QUESTION_TYPES, _tags, owned
 
 
@@ -51,6 +57,7 @@ class DocumentIssue:
     block_index: int | None = None
     figure_id: str | None = None
     figure_index: int | None = None
+    placement_index: int | None = None
     field: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
@@ -104,7 +111,16 @@ def _validate_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
     try:
         normalized = normalize_v2_snapshot(snapshot)
     except ContentSnapshotError as exc:
-        raise _issue("invalid_document", str(exc), field="sections") from exc
+        raise _issue(
+            exc.code,
+            str(exc),
+            section=exc.section,
+            block_id=exc.block_id,
+            block_index=exc.block_index,
+            figure_id=exc.figure_id,
+            placement_index=exc.placement_index,
+            field=exc.field or "sections",
+        ) from exc
 
     for section_name, section in normalized["sections"].items():
         blocks = section["blocks"]
@@ -139,6 +155,8 @@ def _validate_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
                             block_id=block["id"],
                             block_index=block_index,
                             figure_id=placement["figure_id"],
+                            placement_index=index,
+                            field="placements",
                         )
     return normalized
 
@@ -220,9 +238,9 @@ def get_document(db: Session, user: User, question_id: int) -> QuestionDocumentD
     return _build_detail(question, _latest_with_figures(db, question_id))
 
 
-def _canonical_uuid(value: str, *, figure_index: int) -> str:
+def _canonical_figure_uuid(value: str, *, figure_index: int) -> str:
     try:
-        return str(uuid.UUID(value))
+        return canonical_uuid(value)
     except (ValueError, TypeError, AttributeError) as exc:
         raise _issue(
             "invalid_figure_id",
@@ -245,7 +263,7 @@ def _resolve_figures(
 
     declarations: dict[str, Any] = {}
     for index, declaration in enumerate(payload.figures):
-        stable_id = _canonical_uuid(declaration.id, figure_index=index)
+        stable_id = _canonical_figure_uuid(declaration.id, figure_index=index)
         if stable_id in declarations:
             raise _issue(
                 "duplicate_figure_declaration",
@@ -295,6 +313,15 @@ def _resolve_figures(
                     figure_id=stable_id,
                     figure_index=index,
                 )
+            asset = existing[stable_id].figure_asset
+            asset_path = resolve_upload_file_path(asset.normalized_path or asset.original_path) if asset else None
+            if not asset or not asset.width or not asset.height or asset.width <= 0 or asset.height <= 0 or not asset_path:
+                raise _issue(
+                    "invalid_existing_figure",
+                    "已有配图文件不存在或尺寸无效",
+                    figure_id=stable_id,
+                    figure_index=index,
+                )
         else:
             if stable_id in globally_existing_ids:
                 raise _issue(
@@ -312,6 +339,14 @@ def _resolve_figures(
                     figure_id=stable_id,
                     figure_index=index,
                 ) from exc
+            if relative_bbox == {} or relative_bbox[2] * relative_bbox[3] < QUESTION_DOCUMENT_MIN_CROP_AREA_RATIO:
+                raise _issue(
+                    "crop_too_small",
+                    f"裁剪框面积不能小于题目区域图的 {QUESTION_DOCUMENT_MIN_CROP_AREA_RATIO:.0%}",
+                    figure_id=stable_id,
+                    figure_index=index,
+                    field="crop_bbox",
+                )
             page_bbox = compose_bbox_to_page(revision.crop_bbox if revision else None, relative_bbox)
             if page_bbox is None:
                 raise _issue("invalid_crop_bbox", "裁剪框无效", figure_id=stable_id)
@@ -349,7 +384,7 @@ def _prepare_crops(source_asset: SourceAsset, crops: list[tuple[str, list[float]
             image.load()
             rgb_image = image.convert("RGB")
             for stable_id, bbox in crops:
-                cropped = rgb_image.crop(pixel_crop_box(image, bbox))
+                cropped = rgb_image.crop(normalized_bbox_pixel_box(image, bbox))
                 cropped.load()
                 temp_path = settings.UPLOAD_DIR_PATH / f".tmp_question_figure_{uuid.uuid4().hex}.jpg"
                 temp_paths.append(temp_path)
@@ -374,6 +409,14 @@ def _prepare_crops(source_asset: SourceAsset, crops: list[tuple[str, list[float]
                         height=cropped.height,
                     )
                 )
+    except QuestionDocumentInvalid:
+        for path in temp_paths:
+            path.unlink(missing_ok=True)
+        raise
+    except (UnidentifiedImageError, OSError, ValueError) as exc:
+        for path in temp_paths:
+            path.unlink(missing_ok=True)
+        raise _issue("invalid_question_source", "题目原始图片无法读取或裁剪") from exc
     except Exception:
         for path in temp_paths:
             path.unlink(missing_ok=True)
