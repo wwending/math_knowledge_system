@@ -47,13 +47,17 @@
             <span>{{ item.display_number }}.</span>
             <span v-if="item.score !== null && item.score !== undefined">（{{ item.score }} 分）</span>
           </div>
-          <div class="markdown-body question-content" v-html="renderContent(item.content)"></div>
+          <PaperSectionSnapshot v-if="item.section_snapshot" :paper-id="renderModel.paper.id" :item="item" section-name="stem" class="question-content" />
+          <div v-else class="markdown-body question-content" v-html="renderContent(item.content)"></div>
           <img
             v-if="figureUrlFor(item)"
             class="question-figure"
             :src="figureUrlFor(item)"
             :alt="`第${item.display_number}题配图`"
           >
+
+          <section v-if="renderModel.layout.show_answers && sectionHasContent(item, 'answer')" class="answer-section"><h3>答案</h3><PaperSectionSnapshot v-if="item.section_snapshot" :paper-id="renderModel.paper.id" :item="item" section-name="answer"/><div v-else v-html="renderContent(item.answer)"></div></section>
+          <section v-if="renderModel.layout.show_analysis && sectionHasContent(item, 'analysis')" class="analysis-section"><h3>解析</h3><PaperSectionSnapshot v-if="item.section_snapshot" :paper-id="renderModel.paper.id" :item="item" section-name="analysis"/><div v-else v-html="renderContent(item.analysis)"></div></section>
 
           <div
             v-if="item.knowledge_tags.length > 0 || item.answer_area"
@@ -91,6 +95,7 @@ import { Printer } from '@element-plus/icons-vue'
 import { renderMarkdown } from '@/utils/renderMarkdown'
 import { createPaperFigureImageLoader } from '@/utils/paperFigureImageLoader'
 import { API_V1_BASE_URL } from '../config/api'
+import PaperSectionSnapshot from './PaperSectionSnapshot.vue'
 
 const props = defineProps({
   renderModel: {
@@ -119,6 +124,9 @@ const templateTypeLabels = { homework: '作业' }
 const formatTemplateType = (templateType) => templateTypeLabels[templateType] || templateType
 
 const renderContent = (content) => content ? renderMarkdown(content) : '<span style="color:#767676">暂无内容</span>'
+const sectionHasContent = (item, name) => item.section_snapshot
+  ? (item.section_snapshot.sections?.[name]?.blocks?.length || 0) > 0
+  : Boolean(item[name])
 
 const downloadFilename = (contentDisposition) => {
   const encoded = contentDisposition?.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
@@ -203,7 +211,7 @@ const handleExportPdf = async () => {
   width: min(100%, 794px);
   min-height: 1123px;
   margin: 0 auto;
-  padding: 48px 56px;
+  padding: 18mm 16mm;
   background: #fff;
   border: 1px solid #d9e2df;
   box-shadow: 0 8px 24px rgba(31, 52, 66, 0.08);
@@ -266,6 +274,8 @@ const handleExportPdf = async () => {
   font-size: 15px;
   line-height: 1.85;
 }
+.answer-section, .analysis-section { margin-top: 12px; }
+.answer-section h3, .analysis-section h3 { margin: 0 0 6px; font-size: 15px; }
 
 .question-content > :last-child {
   break-after: avoid;

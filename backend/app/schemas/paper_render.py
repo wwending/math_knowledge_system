@@ -29,6 +29,9 @@ class PaperRenderItem(BaseModel):
     display_number: int
     score: Optional[float] = None
     content: str
+    answer: Optional[str] = None
+    analysis: Optional[str] = None
+    section_snapshot: Optional[dict[str, Any]] = None
     question_type: str
     question_type_label: str
     knowledge_tags: list[PaperRenderKnowledgeTag]
@@ -38,6 +41,7 @@ class PaperRenderItem(BaseModel):
     # embeds the bytes as a data URI at render time only — figure file paths
     # and base64 never appear in this JSON response.
     figure_image_url: Optional[str] = None
+    figure_urls: dict[str, str] = {}
 
 
 class PaperRenderSection(BaseModel):
@@ -56,8 +60,8 @@ class PaperRenderPaperMeta(BaseModel):
 
 
 class PaperRenderLayout(BaseModel):
-    show_answers: Literal[False] = False
-    show_analysis: Literal[False] = False
+    show_answers: bool = False
+    show_analysis: bool = False
 
 
 class PaperRenderModel(BaseModel):

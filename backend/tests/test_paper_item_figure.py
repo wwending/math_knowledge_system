@@ -1,6 +1,7 @@
 import hashlib
 import tempfile
 import unittest
+from uuid import uuid4
 from pathlib import Path
 from unittest.mock import patch
 
@@ -15,6 +16,7 @@ from app.db.base import Base
 from app.main import app
 from app.models.question import Question
 from app.models.question_revision import QuestionRevision
+from app.models.question_figure import QuestionFigure, QuestionRevisionFigure
 from app.models.source_asset import SourceAsset
 from app.models.user import User, UserStatus
 
@@ -199,6 +201,46 @@ class PaperItemFigureTests(unittest.TestCase):
 
     # --- snapshot creation semantics -------------------------------------
 
+    def test_schema_v2_freezes_all_figures_and_serves_each_through_paper_auth(self):
+        question_id = self._seed_question(content="multi figure", revision_asset=("seed.jpg", b"seed"))
+        figure_ids = [str(uuid4()), str(uuid4())]
+        with self.SessionLocal() as db:
+            revision = db.query(QuestionRevision).filter(QuestionRevision.question_id == question_id).one()
+            revision.figure_asset_id = None
+            revision.section_snapshot = {
+                "schema_version": 2,
+                "sections": {
+                    "stem": {"blocks": [
+                        {"id": str(uuid4()), "kind": "text", "markdown": "multi figure"},
+                        {"id": str(uuid4()), "kind": "image_area", "height_ratio": 0.5, "placements": [
+                            {"figure_id": figure_ids[0], "x": 0, "y": 0, "width": 0.5, "height": 1},
+                            {"figure_id": figure_ids[1], "x": 0.5, "y": 0, "width": 0.5, "height": 1},
+                        ]},
+                    ]},
+                    "answer": {"blocks": [{"id": str(uuid4()), "kind": "text", "markdown": "A"}]},
+                    "analysis": {"blocks": [{"id": str(uuid4()), "kind": "text", "markdown": "B"}]},
+                },
+            }
+            for index, stable_id in enumerate(figure_ids):
+                data = f"figure-{index}".encode()
+                name = f"multi-{index}.jpg"
+                (self.upload_dir / name).write_bytes(data)
+                asset = SourceAsset(user_id=self.user_id, kind="figure", original_path=name, mime="image/jpeg", size_bytes=len(data), sha256=hashlib.sha256(data).hexdigest())
+                db.add(asset); db.flush()
+                figure = QuestionFigure(stable_id=stable_id, question_id=question_id, source_asset_id=asset.id, figure_asset_id=asset.id, source_crop_bbox=[0, 0, 1, 1])
+                db.add(figure); db.flush()
+                db.add(QuestionRevisionFigure(question_id=question_id, question_revision_id=revision.id, question_figure_id=figure.id))
+            db.commit()
+
+        paper_id = self._create_paper([question_id])
+        item = self._items_by_question(paper_id)[question_id]
+        self.assertEqual(set(item["figure_ids"]), set(figure_ids))
+        for index, figure_id in enumerate(figure_ids):
+            response = self.client.get(f"/api/v1/papers/{paper_id}/items/{item['id']}/figures/{figure_id}", headers=self.auth_headers)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.content, f"figure-{index}".encode())
+            self.assertEqual(self.client.get(f"/api/v1/papers/{paper_id}/items/{item['id']}/figures/{figure_id}", headers=self.other_auth_headers).status_code, 404)
+
     def test_create_paper_freezes_figure_snapshot_from_revision_and_fallback(self):
         revision_question = self._seed_question(
             content="with revision asset",
@@ -366,9 +408,9 @@ class PaperItemFigureTests(unittest.TestCase):
         plain_html = generate_pdf.call_args_list[1].args[0]
 
         self.assertIn("data:image/jpeg;base64,", figured_html)
-        self.assertIn('class="question-figure"', figured_html)
+        self.assertIn('class="image-area"', figured_html)
         self.assertIn("img-src data:", figured_html)
-        self.assertIn(".question-figure { max-width: 100%", figured_html)
+        self.assertIn(".image-placement img", figured_html)
 
         self.assertNotIn("<img", plain_html.lower())
         self.assertNotIn(".question-figure", plain_html)
