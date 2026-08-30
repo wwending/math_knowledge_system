@@ -5,6 +5,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.models.paper import Paper, PaperItem
+from app.models.question_figure import PaperItemFigureSnapshot
 from app.models.question import Question
 from app.models.question_revision import QuestionRevision
 from app.models.user import User
@@ -98,18 +99,48 @@ def _snapshot_from_question(db: Session, question: Question) -> dict[str, Any]:
     analysis_snapshot = _text_value(projected["analysis"])
 
     metadata_ready = question.metadata_status == "ready" and question.difficulty_level is not None
+    figure_snapshots = [
+        {
+            "figure_stable_id": link.figure.stable_id,
+            "figure_asset_id": link.figure.figure_asset_id,
+            "source_asset_id": link.figure.source_asset_id,
+            "source_crop_bbox": link.figure.source_crop_bbox,
+        }
+        for link in (revision.figure_links if revision else [])
+    ]
+    if not figure_snapshots and revision and revision.figure_asset_id:
+        figure_snapshots.append(
+            {
+                "figure_stable_id": legacy_figure_stable_id(question.id),
+                "figure_asset_id": revision.figure_asset_id,
+                "source_asset_id": revision.source_asset_id,
+                "source_crop_bbox": revision.crop_bbox,
+            }
+        )
 
     return {
         "question_revision_id": revision.id if revision else None,
         "content_snapshot": content_snapshot or "",
         "answer_snapshot": answer_snapshot,
         "analysis_snapshot": analysis_snapshot,
+        "section_snapshot": section_snapshot,
         "knowledge_tags_snapshot": knowledge_tags_snapshot or [],
         "question_type_snapshot": question.question_type if metadata_ready else None,
         "difficulty_level_snapshot": question.difficulty_level if metadata_ready else None,
         "difficulty_label_snapshot": question.difficulty_label if metadata_ready else None,
         "figure_image_snapshot": _figure_snapshot(question, revision),
+        "_figure_snapshots": figure_snapshots,
     }
+
+
+def _add_item_with_snapshots(db: Session, **values: Any) -> PaperItem:
+    figure_values = values.pop("_figure_snapshots", [])
+    item = PaperItem(**values)
+    db.add(item)
+    db.flush()
+    for figure_value in figure_values:
+        db.add(PaperItemFigureSnapshot(paper_item_id=item.id, **figure_value))
+    return item
 
 
 def _total_score(items: list[PaperItem]) -> float:
@@ -123,6 +154,8 @@ def _build_paper_read(paper: Paper) -> PaperRead:
         title=paper.title,
         description=paper.description,
         status=paper.status,
+        show_answer=paper.show_answer,
+        show_analysis=paper.show_analysis,
         item_count=len(items),
         total_score=_total_score(items),
         items=[
@@ -134,11 +167,13 @@ def _build_paper_read(paper: Paper) -> PaperRead:
                 content_snapshot=item.content_snapshot,
                 answer_snapshot=item.answer_snapshot,
                 analysis_snapshot=item.analysis_snapshot,
+                section_snapshot=item.section_snapshot,
                 knowledge_tags_snapshot=item.knowledge_tags_snapshot,
                 question_type_snapshot=item.question_type_snapshot,
                 difficulty_level_snapshot=item.difficulty_level_snapshot,
                 difficulty_label_snapshot=item.difficulty_label_snapshot,
                 figure_image_snapshot=item.figure_image_snapshot,
+                figure_ids=[snapshot.figure_stable_id for snapshot in item.figure_snapshots],
             )
             for item in items
         ],
@@ -176,14 +211,13 @@ def create_paper(db: Session, current_user: User, payload: PaperCreate) -> Paper
     for index, item_payload in enumerate(payload.items, start=1):
         question = questions_by_id[item_payload.question_id]
         snapshot = _snapshot_from_question(db, question)
-        db.add(
-            PaperItem(
+        _add_item_with_snapshots(
+            db,
                 paper_id=paper.id,
                 question_id=question.id,
                 position=index,
                 score=item_payload.score if item_payload.score is not None else 0,
                 **snapshot,
-            )
         )
 
     db.commit()
@@ -240,9 +274,6 @@ def update_paper(db: Session, current_user: User, paper_id: int, payload: PaperU
         if isinstance(item_payload, PaperExistingItemUpdate):
             continue
         snapshot = _snapshot_from_question(db, questions_by_id[item_payload.question_id])
-        for field_name in ("content_snapshot", "answer_snapshot", "analysis_snapshot"):
-            if field_name in item_payload.model_fields_set:
-                snapshot[field_name] = getattr(item_payload, field_name)
         if not snapshot["content_snapshot"] or not snapshot["content_snapshot"].strip():
             raise HTTPException(status_code=400, detail=PAPER_EMPTY_CONTENT_MESSAGE)
         new_snapshots[item_payload.question_id] = snapshot
@@ -250,6 +281,10 @@ def update_paper(db: Session, current_user: User, paper_id: int, payload: PaperU
     try:
         paper.title = payload.title
         paper.description = payload.description
+        if payload.show_answer is not None:
+            paper.show_answer = payload.show_answer
+        if payload.show_analysis is not None:
+            paper.show_analysis = payload.show_analysis
 
         removed_items = [item for item in current_items if item.id not in retained_item_ids]
         for item in removed_items:
@@ -270,9 +305,6 @@ def update_paper(db: Session, current_user: User, paper_id: int, payload: PaperU
                 item = current_items_by_id[item_payload.id]
                 item.position = position
                 item.score = item_payload.score
-                item.content_snapshot = item_payload.content_snapshot
-                item.answer_snapshot = item_payload.answer_snapshot
-                item.analysis_snapshot = item_payload.analysis_snapshot
                 continue
 
             new_items.append((position, item_payload))
@@ -281,14 +313,13 @@ def update_paper(db: Session, current_user: User, paper_id: int, payload: PaperU
 
         for position, item_payload in new_items:
             question = questions_by_id[item_payload.question_id]
-            db.add(
-                PaperItem(
+            _add_item_with_snapshots(
+                db,
                     paper_id=paper.id,
                     question_id=question.id,
                     position=position,
                     score=item_payload.score,
                     **new_snapshots[item_payload.question_id],
-                )
             )
 
         paper.updated_at = datetime.now(timezone.utc)

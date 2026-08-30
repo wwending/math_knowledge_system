@@ -1,5 +1,12 @@
 # STATUS
 
+## 2026-08-30 试卷三区段/多图不可变快照（#133）
+
+- PaperItem schema-v2 正式启用：新建/重新添加冻结题干、答案、解析的 ordered blocks、图片布局和全部配图资产；正常 PATCH 不再允许修改冻结内容，源题后续变化不影响既有试卷。
+- Paper 持久化 `show_answer` / `show_analysis`（默认关闭）；浏览器与 HTML/PDF 统一逐题内联区段，显示答案或解析时隐藏作答区。
+- 新增 Paper owner 鉴权的逐图 Blob；声明图片缺失、格式不支持或图片区超过可打印高度时明确失败。旧单图 PaperItem 继续使用兼容通道。
+- PaperPanel 内容/布局只读，保留标题、说明、题序、分值和增删题编辑，并提供源题入口及不同步提示。
+
 ## 2026-08-30 题库详情只读化与 schema-v2 区段多图展示（#132）
 
 - Active 题目详情改为消费 owner-scoped document API，以题干、答案、解析三个只读 tab 按 schema-v2 ordered blocks 原序展示文字与图片区；文字继续使用安全 Markdown/KaTeX renderer，图片区复用 normalized placement canvas，支持单图、多图布局和纯图片题目。

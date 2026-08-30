@@ -23,7 +23,7 @@ MAX_BLOCK_MATH_LINES = 200
 MAX_FIGURE_EMBED_BYTES = 4 * 1024 * 1024
 MAX_TOTAL_FIGURE_EMBED_BYTES = 24 * 1024 * 1024
 ALLOWED_FIGURE_MIME_TYPES = {"image/jpeg", "image/png"}
-FigureLoader = Callable[[PaperRenderItem], Optional[tuple[bytes, Optional[str]]]]
+FigureLoader = Callable[[PaperRenderItem, Optional[str]], Optional[tuple[bytes, Optional[str]]]]
 DANGEROUS_LATEX_COMMAND = re.compile(
     r"\\(?:href|url|includegraphics|htmlClass|htmlId|htmlStyle|htmlData|require|def|newcommand|input|include)\b",
     re.IGNORECASE,
@@ -209,7 +209,7 @@ def render_paper_html(
 ) -> str:
     items = [item for section in model.sections for item in section.items]
     source_characters = len(model.paper.title) + len(model.paper.description or "") + sum(
-        len(item.content) for item in items
+        len(item.content) + len(item.answer or "") + len(item.analysis or "") for item in items
     )
     if len(items) > MAX_PAPER_ITEMS or source_characters > MAX_SOURCE_CHARACTERS:
         raise PaperHtmlRenderError("Paper is too large to render")
@@ -217,6 +217,65 @@ def render_paper_html(
     sections_html: list[str] = []
     embedded_any_figure = False
     embedded_figure_bytes = 0
+
+    def embed_figure(item: PaperRenderItem, figure_id: Optional[str], alt_text: str) -> str:
+        nonlocal embedded_any_figure, embedded_figure_bytes
+        if figure_loader is None:
+            raise PaperHtmlRenderError(f"第 {item.display_number} 题快照图片不可读")
+        try:
+            source = figure_loader(item, figure_id)
+        except TypeError:
+            # Compatibility for callers of the legacy single-image renderer.
+            source = figure_loader(item)  # type: ignore[call-arg]
+        if source is None:
+            raise PaperHtmlRenderError(f"第 {item.display_number} 题快照图片 {figure_id or 'legacy'} 不可读")
+        figure_bytes, figure_mime = source
+        if figure_mime not in ALLOWED_FIGURE_MIME_TYPES:
+            raise PaperHtmlRenderError(f"第 {item.display_number} 题快照图片格式不受支持")
+        if len(figure_bytes) > MAX_FIGURE_EMBED_BYTES:
+            raise PaperFigureTooLargeError(f"第 {item.display_number} 题配图过大，无法嵌入试卷")
+        embedded_figure_bytes += len(figure_bytes)
+        if embedded_figure_bytes > MAX_TOTAL_FIGURE_EMBED_BYTES:
+            raise PaperFigureTooLargeError(
+                f"试卷配图总体积超出嵌入上限（累计到第 {item.display_number} 题时超限）"
+            )
+        embedded_any_figure = True
+        encoded = base64.b64encode(figure_bytes).decode("ascii")
+        return f'<img src="data:{figure_mime};base64,{encoded}" alt="{html.escape(alt_text)}">'
+
+    def render_document_section(item: PaperRenderItem, section_name: str) -> str:
+        snapshot = item.section_snapshot or {}
+        blocks = snapshot.get("sections", {}).get(section_name, {}).get("blocks", [])
+        if not blocks:
+            legacy = {"stem": item.content, "answer": item.answer, "analysis": item.analysis}[section_name]
+            return _render_markdown(legacy or "")
+        rendered: list[str] = []
+        content_width = options.page_width_mm - options.margin_left_mm - options.margin_right_mm
+        content_height = options.page_height_mm - options.margin_top_mm - options.margin_bottom_mm
+        for block in blocks:
+            if block.get("kind") == "text":
+                rendered.append(f'<div class="document-text">{_render_markdown(block.get("markdown") or "")}</div>')
+                continue
+            ratio = float(block.get("height_ratio") or 0)
+            if ratio * content_width > content_height:
+                raise PaperHtmlRenderError(f"第 {item.display_number} 题图片区超过可打印内容高度")
+            placements: list[str] = []
+            for index, placement in enumerate(block.get("placements") or []):
+                figure_id = str(placement.get("figure_id"))
+                image = embed_figure(item, figure_id, f"第{item.display_number}题配图{index + 1}")
+                style = ";".join(
+                    f"{name}:{float(placement[key]) * 100:g}%"
+                    for name, key in (("left", "x"), ("top", "y"), ("width", "width"), ("height", "height"))
+                )
+                placements.append(f'<span class="image-placement" style="{style}">{image}</span>')
+            rendered.append(
+                f'<div class="image-area" style="aspect-ratio:1/{ratio:g}">{"".join(placements)}</div>'
+            )
+        return "".join(rendered)
+
+    def section_has_content(item: PaperRenderItem, section_name: str) -> bool:
+        blocks = (item.section_snapshot or {}).get("sections", {}).get(section_name, {}).get("blocks", [])
+        return bool(blocks) if item.section_snapshot else bool({"answer": item.answer, "analysis": item.analysis}.get(section_name))
     for section in model.sections:
         item_html: list[str] = []
         for item in section.items:
@@ -232,35 +291,22 @@ def render_paper_html(
                 )
                 question_tail = f'<div class="question-tail">{tags}{answer_area}</div>'
             figure_html = ""
-            if figure_loader is not None and item.figure_image_url:
-                source = figure_loader(item)
-                # Unreadable files and mime types outside the whitelist degrade to
-                # "no image" (the loader side logs them); oversized figures fail
-                # the whole render loudly so no image is ever silently lost (#59).
-                if source is not None:
-                    figure_bytes, figure_mime = source
-                    if figure_mime in ALLOWED_FIGURE_MIME_TYPES:
-                        if len(figure_bytes) > MAX_FIGURE_EMBED_BYTES:
-                            raise PaperFigureTooLargeError(
-                                f"第 {item.display_number} 题配图过大，无法嵌入试卷"
-                            )
-                        embedded_figure_bytes += len(figure_bytes)
-                        if embedded_figure_bytes > MAX_TOTAL_FIGURE_EMBED_BYTES:
-                            raise PaperFigureTooLargeError(
-                                f"试卷配图总体积超出嵌入上限（累计到第 {item.display_number} 题时超限）"
-                            )
-                        encoded = base64.b64encode(figure_bytes).decode("ascii")
-                        alt_text = f"第{item.display_number}题配图"
-                        figure_html = (
-                            f'<img class="question-figure" '
-                            f'src="data:{figure_mime};base64,{encoded}" alt="{alt_text}">'
-                        )
-                        embedded_any_figure = True
+            if not item.section_snapshot and item.figure_image_url:
+                figure_html = f'<div class="question-figure">{embed_figure(item, None, f"第{item.display_number}题配图")}</div>'
+            answer_html = (
+                f'<section class="answer-section"><h3>答案</h3>{render_document_section(item, "answer")}</section>'
+                if model.layout.show_answers and section_has_content(item, "answer") else ""
+            )
+            analysis_html = (
+                f'<section class="analysis-section"><h3>解析</h3>{render_document_section(item, "analysis")}</section>'
+                if model.layout.show_analysis and section_has_content(item, "analysis") else ""
+            )
             item_html.append(
                 '<article class="question">'
                 f'<div class="question-heading"><span>{item.display_number}.</span>{score}</div>'
-                f'<div class="question-content">{_render_markdown(item.content)}</div>'
+                f'<div class="question-content">{render_document_section(item, "stem")}</div>'
                 f"{figure_html}"
+                f"{answer_html}{analysis_html}"
                 f"{question_tail or tags}</article>"
             )
         sections_html.append(
@@ -281,7 +327,7 @@ def render_paper_html(
     # data: relaxation and the figure CSS only appear when a figure was embedded.
     img_src_directive = "data:" if embedded_any_figure else "&#x27;none&#x27;"
     figure_css = (
-        "\n.question-figure { max-width: 100%; height: auto; margin-top: 2mm; break-inside: avoid; page-break-inside: avoid; }"
+        "\n.question-figure { margin-top: 2mm; break-inside: avoid; page-break-inside: avoid; }\n.question-figure img { display:block; max-width:100%; height:auto; }\n.image-area { position:relative; width:100%; overflow:hidden; break-inside:avoid; page-break-inside:avoid; }\n.image-placement { position:absolute; display:block; }\n.image-placement img { display:block; width:100%; height:100%; object-fit:fill; }"
         if embedded_any_figure
         else ""
     )
@@ -309,6 +355,8 @@ h1 {{ margin: 0 0 2.5mm; font-size: 20pt; line-height: 1.3; }}
 .question-content h1, .question-content h2, .question-content h3 {{ font-size: 11.5pt; margin: 2mm 0; break-after: avoid; }}
 .question-content pre {{ white-space: pre-wrap; border: 0.2mm solid #d1d5db; padding: 2mm; }}
 .question-content math {{ font-size: 1.05em; }}
+.answer-section, .analysis-section {{ margin-top: 3mm; }}
+.answer-section h3, .analysis-section h3 {{ margin: 0 0 1.5mm; font-size: 11pt; }}
 .math-block {{ margin: 3mm 0; overflow-wrap: anywhere; }}
 .math-fallback {{ white-space: pre-wrap; overflow-wrap: anywhere; }}
 .score {{ font-weight: 400; }}

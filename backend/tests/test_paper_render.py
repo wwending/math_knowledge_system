@@ -253,8 +253,10 @@ class PaperRenderModelTests(unittest.TestCase):
         item = response.json()["sections"][0]["items"][0]
         self.assertNotIn("answer_snapshot", item)
         self.assertNotIn("analysis_snapshot", item)
-        self.assertNotIn("answer", item)
-        self.assertNotIn("analysis", item)
+        self.assertIsNone(item["answer"])
+        self.assertIsNone(item["analysis"])
+        self.assertEqual(item["section_snapshot"]["sections"]["answer"]["blocks"], [])
+        self.assertEqual(item["section_snapshot"]["sections"]["analysis"]["blocks"], [])
 
     def test_missing_or_cross_user_paper_returns_404(self):
         own_question_id = self._create_question(content="own")

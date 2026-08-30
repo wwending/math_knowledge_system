@@ -1,5 +1,11 @@
 # DECISIONS
 
+## 决策 48：PaperItem schema-v2 是不可变三区段/多图快照（#133）
+
+建卷或重新添加题目时，服务端从最新 QuestionRevision 冻结完整 `section_snapshot`，并把该 revision 的全部配图资产引用复制到 PaperItemFigureSnapshot；显示开关不影响冻结范围。正常 Paper 写入只允许卷级标题、说明、显示开关，以及条目顺序、分值和增删题，PaperItem 内容、图片和布局不提供编辑或“同步最新”入口。
+
+浏览器预览与 HTML/PDF 消费同一 section/block/placement 模型。图片区保持归一化布局和比例并整体不可拆分；超过单页可打印内容高度时失败，不自动缩小。任一声明图片不可读时预览/PDF fail closed。多图 Blob 按 Paper owner 鉴权，旧单图快照保留兼容通道。`show_answer` / `show_analysis` 默认关闭，开启任一项即隐藏逐题作答区。
+
 ## 决策 47：题库只读详情按生命周期分流并仅加载可见区段配图（#132）
 
 结论：Active 题目详情以 owner-scoped document API 的 canonical schema-v2 文档为唯一展示源，题干、答案、解析通过共享只读 ordered block renderer 按原序渲染；图片区沿用 normalized placement canvas。题目区域图继续由 question image loader 独立加载，用于列表缩略图和详情左栏，不得以某张 figure 替代。

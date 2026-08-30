@@ -148,8 +148,9 @@ LLM 目标输出结构：
 - `PATCH /api/v1/papers/{paper_id}`
   - 原子保存 owner 的草稿试卷标题、描述及完整有序 items；非 `draft` 状态返回冲突错误。
   - `items` 不能为空且 `question_id` 不得重复；后端忽略客户端 position，严格按数组顺序重建连续 `1..N`。
-  - 已有条目使用 `kind=existing`，提交当前 paper item 的 `id`、`question_id`、`score` 和可编辑文本快照。
-  - 从题库新增使用 `kind=question` 和 `question_id`；服务端从当前用户题库的最新 QuestionRevision 建立基础快照。可选文本字段只覆盖当前新 PaperItem，不能提交或修改题型、难度、知识点及 revision id。
+  - 已有条目使用 `kind=existing`，只提交当前 paper item 的 `id`、`question_id` 和 `score`；任何内容快照字段都会返回 `422`。
+  - 从题库新增使用 `kind=question` 和 `question_id`；服务端从当前用户题库的最新 QuestionRevision 冻结题干、答案、解析三区段、有序内容块、布局与全部配图。客户端不能提交或修改内容快照、题型、难度、知识点及 revision id。
+  - `show_answer`、`show_analysis` 随试卷持久化且默认关闭；任一开启时逐题内联渲染相应区段，并自动隐藏学生作答区。
   - 删除通过省略已有 item 表达；保存失败时整个事务回滚。试卷编辑不修改 Question 或 QuestionRevision。
 
 ```json
@@ -161,10 +162,7 @@ LLM 目标输出结构：
       "kind": "existing",
       "id": 11,
       "question_id": 21,
-      "score": 10,
-      "content_snapshot": "试卷专用题干",
-      "answer_snapshot": "答案",
-      "analysis_snapshot": "解析"
+      "score": 10
     },
     {
       "kind": "question",

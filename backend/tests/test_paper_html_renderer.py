@@ -159,7 +159,7 @@ class PaperFigureEmbeddingTests(unittest.TestCase):
         self.assertIn('alt="第1题配图"', html)
         self.assertIn("img-src data:", html)
         self.assertNotIn("img-src &#x27;none&#x27;", html)
-        self.assertIn(".question-figure { max-width: 100%", html)
+        self.assertIn(".question-figure img { display:block; max-width:100%", html)
 
     def test_figure_lands_between_content_and_tail(self):
         html = render_paper_html(
@@ -183,29 +183,25 @@ class PaperFigureEmbeddingTests(unittest.TestCase):
         # Deterministic double render (existing contract) plus explicit
         # absence of every #59 marker above is the byte-identity evidence.
 
-    def test_loader_none_or_url_missing_never_emits_img(self):
+    def test_declared_figure_without_readable_bytes_fails(self):
         options = PdfGenerationOptions.a4_portrait()
 
-        no_loader = render_paper_html(self._figured_model(), options)
-        loader_returns_none = render_paper_html(
-            self._figured_model(), options, figure_loader=self._loader(None)
-        )
+        with self.assertRaises(paper_html_renderer.PaperHtmlRenderError):
+            render_paper_html(self._figured_model(), options)
+        with self.assertRaises(paper_html_renderer.PaperHtmlRenderError):
+            render_paper_html(self._figured_model(), options, figure_loader=self._loader(None))
         plain = render_paper_html(_render_model("无图"), options, figure_loader=self._loader(b"x"))
 
-        for html in (no_loader, loader_returns_none, plain):
-            self.assertNotIn("<img", html.lower())
-            self.assertIn("img-src &#x27;none&#x27;", html)
-            self.assertNotIn(".question-figure { max-width", html)
+        self.assertNotIn("<img", plain.lower())
+        self.assertIn("img-src &#x27;none&#x27;", plain)
 
-    def test_non_whitelisted_mime_degrades_to_no_image_without_failing(self):
-        html = render_paper_html(
-            self._figured_model(),
-            PdfGenerationOptions.a4_portrait(),
-            figure_loader=self._loader(self.JPEG_FIGURE, mime="image/svg+xml"),
-        )
-
-        self.assertNotIn("<img", html.lower())
-        self.assertIn("img-src &#x27;none&#x27;", html)
+    def test_non_whitelisted_mime_fails(self):
+        with self.assertRaises(paper_html_renderer.PaperHtmlRenderError):
+            render_paper_html(
+                self._figured_model(),
+                PdfGenerationOptions.a4_portrait(),
+                figure_loader=self._loader(self.JPEG_FIGURE, mime="image/svg+xml"),
+            )
 
     def test_oversized_single_figure_raises_with_display_number(self):
         with patch.object(paper_html_renderer, "MAX_FIGURE_EMBED_BYTES", 8):

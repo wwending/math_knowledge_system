@@ -1529,8 +1529,8 @@ def generate_paper_pdf_endpoint(
 
     figure_files = resolve_paper_figure_files(db, current_user, paper_id)
 
-    def figure_loader(item: PaperRenderItem) -> Optional[tuple[bytes, Optional[str]]]:
-        path = figure_files.get(item.paper_item_id)
+    def figure_loader(item: PaperRenderItem, figure_id: Optional[str] = None) -> Optional[tuple[bytes, Optional[str]]]:
+        path = figure_files.get((item.paper_item_id, figure_id))
         if not path:
             return None
         try:
@@ -1551,7 +1551,7 @@ def generate_paper_pdf_endpoint(
         # The renderer's message names the offending question; pass it through (#59).
         raise HTTPException(status_code=413, detail=str(exc)) from exc
     except PaperHtmlRenderError as exc:
-        raise HTTPException(status_code=413, detail=PDF_PAPER_TOO_LARGE_MESSAGE) from exc
+        raise HTTPException(status_code=413, detail=str(exc) or PDF_PAPER_TOO_LARGE_MESSAGE) from exc
     except PdfGenerationError as exc:
         logger.exception(
             "Paper PDF generation failed paper_id={} user_id={}",
@@ -1595,6 +1595,33 @@ def get_paper_item_figure(
     if not file_path:
         raise HTTPException(status_code=404, detail=NOT_FOUND_MESSAGE)
 
+    return FileResponse(file_path)
+
+
+@router.get("/papers/{paper_id}/items/{paper_item_id}/figures/{figure_id}")
+def get_paper_item_snapshot_figure(
+    paper_id: int,
+    paper_item_id: int,
+    figure_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_active_user),
+):
+    paper = db.query(Paper).filter(Paper.id == paper_id, Paper.user_id == current_user.id).first()
+    if not paper:
+        raise HTTPException(status_code=404, detail=NOT_FOUND_MESSAGE)
+    paper_item = next((item for item in (paper.items or []) if item.id == paper_item_id), None)
+    if paper_item is None:
+        raise HTTPException(status_code=404, detail=NOT_FOUND_MESSAGE)
+    snapshot = next(
+        (value for value in paper_item.figure_snapshots if value.figure_stable_id == figure_id),
+        None,
+    )
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail=NOT_FOUND_MESSAGE)
+    path_value = snapshot.figure_asset.normalized_path or snapshot.figure_asset.original_path
+    file_path = resolve_upload_file_path(path_value)
+    if not file_path:
+        raise HTTPException(status_code=404, detail=NOT_FOUND_MESSAGE)
     return FileResponse(file_path)
 
 

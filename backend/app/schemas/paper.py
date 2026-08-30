@@ -22,34 +22,18 @@ def _validate_non_empty_snapshot(value: Optional[str]) -> Optional[str]:
 
 
 class PaperExistingItemUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     kind: Literal["existing"]
     id: int
     question_id: int
     score: float = Field(default=0, ge=0, allow_inf_nan=False)
-    content_snapshot: str
-    answer_snapshot: Optional[str] = None
-    analysis_snapshot: Optional[str] = None
-
-    @field_validator("content_snapshot")
-    @classmethod
-    def validate_content_snapshot(cls, value: str) -> str:
-        return _validate_non_empty_snapshot(value) or value
 
 
 class PaperQuestionItemUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     kind: Literal["question"]
     question_id: int
     score: float = Field(default=0, ge=0, allow_inf_nan=False)
-    content_snapshot: Optional[str] = None
-    answer_snapshot: Optional[str] = None
-    analysis_snapshot: Optional[str] = None
-
-    @field_validator("content_snapshot")
-    @classmethod
-    def validate_content_snapshot(cls, value: Optional[str]) -> Optional[str]:
-        if value is None:
-            return None
-        return _validate_non_empty_snapshot(value)
 
 
 PaperItemUpdate = Annotated[
@@ -61,6 +45,8 @@ PaperItemUpdate = Annotated[
 class PaperUpdate(BaseModel):
     title: str = Field(max_length=80)
     description: Optional[str] = Field(default=None, max_length=300)
+    show_answer: Optional[bool] = None
+    show_analysis: Optional[bool] = None
     items: list[PaperItemUpdate] = Field(min_length=1)
 
     @field_validator("title")
@@ -90,11 +76,13 @@ class PaperItemRead(BaseModel):
     content_snapshot: str
     answer_snapshot: Optional[str] = None
     analysis_snapshot: Optional[str] = None
+    section_snapshot: Optional[dict[str, Any]] = None
     knowledge_tags_snapshot: Optional[list[Any]] = None
     question_type_snapshot: Optional[str] = None
     difficulty_level_snapshot: Optional[int] = None
     difficulty_label_snapshot: Optional[str] = None
     figure_image_snapshot: Optional[str] = None
+    figure_ids: list[str] = Field(default_factory=list)
 
 
 class PaperRead(BaseModel):
@@ -104,6 +92,8 @@ class PaperRead(BaseModel):
     title: str
     description: Optional[str] = None
     status: str
+    show_answer: bool
+    show_analysis: bool
     item_count: int
     total_score: float
     items: list[PaperItemRead]
