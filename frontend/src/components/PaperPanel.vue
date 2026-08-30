@@ -42,7 +42,7 @@
           </div>
 
           <div v-if="!editMode" class="preview-controls">
-            <div class="preview-config"><span>模板：HOMEWORK</span><span>版本：学生版</span><el-radio-group v-model="answerAreaMode" size="small"><el-radio-button label="none">无答题区</el-radio-button><el-radio-button label="after_each_question">每题后留白</el-radio-button></el-radio-group></div>
+            <div class="preview-config"><span>模板：HOMEWORK</span><span>版本：学生版</span><el-radio-group v-model="answerAreaMode" size="small"><el-radio-button label="none">无答题区</el-radio-button><el-radio-button label="after_each_question">每题后留白</el-radio-button></el-radio-group><el-switch v-model="currentPaper.show_answer" active-text="显示答案" @change="saveDisplayOptions"/><el-switch v-model="currentPaper.show_analysis" active-text="显示解析" @change="saveDisplayOptions"/></div>
             <el-button type="primary" :loading="previewLoading" @click="fetchPaperRenderModel">预览作业</el-button>
           </div>
           <el-alert v-if="previewErrorMessage" :title="previewErrorMessage" type="error" show-icon class="state-alert" />
@@ -57,12 +57,8 @@
               </div>
               <el-form label-position="top" class="item-edit-form" @submit.prevent>
                 <el-form-item label="分值"><el-input-number v-model="item.score" :min="0" :precision="1" controls-position="right" /></el-form-item>
-                <el-form-item label="题干"><el-input v-model="item.content_snapshot" type="textarea" :rows="5" @input="markSnapshotOverride(item, 'content_snapshot')" /></el-form-item>
+                <el-alert title="题目内容为不可变快照；如需新版，请移除后从题库重新添加。" type="info" :closable="false" />
                 <div class="snapshot-preview markdown-body" v-html="renderSnapshot(item.content_snapshot)"></div>
-                <el-form-item label="答案"><el-input v-model="item.answer_snapshot" type="textarea" :rows="3" @input="markSnapshotOverride(item, 'answer_snapshot')" /></el-form-item>
-                <div v-if="item.answer_snapshot" class="snapshot-preview markdown-body" v-html="renderSnapshot(item.answer_snapshot)"></div>
-                <el-form-item label="解析"><el-input v-model="item.analysis_snapshot" type="textarea" :rows="3" @input="markSnapshotOverride(item, 'analysis_snapshot')" /></el-form-item>
-                <div v-if="item.analysis_snapshot" class="snapshot-preview markdown-body" v-html="renderSnapshot(item.analysis_snapshot)"></div>
               </el-form>
             </el-card>
           </div>
@@ -70,9 +66,10 @@
           <div v-else class="paper-items">
             <el-card v-for="item in currentPaper.items" :key="item.id" class="paper-item" shadow="never">
               <div class="item-heading"><span>第 {{ item.position }} 题</span><el-tag size="small" effect="plain">分值：{{ item.score ?? 0 }}</el-tag><el-tag size="small" type="info" effect="plain">题目 ID：{{ item.question_id }}</el-tag><el-tag size="small" type="warning" effect="plain">{{ formatQuestionType(item.question_type_snapshot) }}</el-tag><span class="difficulty-text">难度：{{ formatDifficultyStars(item.difficulty_level_snapshot) }}</span></div>
-              <el-divider content-position="left">题目内容</el-divider><div class="markdown-body item-content" v-html="renderSnapshot(item.content_snapshot)"></div>
-              <template v-if="item.answer_snapshot"><el-divider content-position="left">答案</el-divider><div class="markdown-body item-content" v-html="renderSnapshot(item.answer_snapshot)"></div></template>
-              <template v-if="item.analysis_snapshot"><el-divider content-position="left">解析</el-divider><div class="markdown-body item-content" v-html="renderSnapshot(item.analysis_snapshot)"></div></template>
+              <el-button link type="primary" @click="openSourceQuestion(item.question_id)">在题库中查看源题</el-button><span class="source-note">修改源题不会同步当前试卷</span>
+              <el-divider content-position="left">题目内容</el-divider><PaperSectionSnapshot v-if="item.section_snapshot" :paper-id="currentPaper.id" :item="item" section-name="stem"/><div v-else class="markdown-body item-content" v-html="renderSnapshot(item.content_snapshot)"></div>
+              <template v-if="paperItemSectionHasContent(item, 'answer')"><el-divider content-position="left">答案</el-divider><PaperSectionSnapshot v-if="item.section_snapshot" :paper-id="currentPaper.id" :item="item" section-name="answer"/><div v-else class="markdown-body item-content" v-html="renderSnapshot(item.answer_snapshot)"></div></template>
+              <template v-if="paperItemSectionHasContent(item, 'analysis')"><el-divider content-position="left">解析</el-divider><PaperSectionSnapshot v-if="item.section_snapshot" :paper-id="currentPaper.id" :item="item" section-name="analysis"/><div v-else class="markdown-body item-content" v-html="renderSnapshot(item.analysis_snapshot)"></div></template>
               <template v-if="getTags(item).length > 0"><el-divider content-position="left">知识点</el-divider><div class="knowledge-tags"><el-tag v-for="(tag, index) in getTags(item)" :key="index" size="small" type="success" effect="plain">{{ tag.label }}</el-tag></div></template>
             </el-card>
           </div>
@@ -106,6 +103,7 @@ import { readStringQuery, replaceQueryValues } from '../utils/urlQueryState'
 import { renderMarkdown } from '@/utils/renderMarkdown'
 import { formatDateTime } from '../utils/formatDateTime'
 import PaperPreview from './PaperPreview.vue'
+import PaperSectionSnapshot from './PaperSectionSnapshot.vue'
 
 const API_BASE = API_V1_BASE_URL
 const route = useRoute()
@@ -266,28 +264,22 @@ const addSelectedQuestions = () => {
   for (const questionId of questionSelection.value) {
     if (draftQuestionIds.value.has(questionId)) continue
     const question = questions.value.find((item) => item.id === questionId)
-    editDraft.value.items.push({ kind: 'question', localKey: `question-${questionId}`, question_id: questionId, score: 0, content_snapshot: question?.content || '', answer_snapshot: '', analysis_snapshot: '', snapshotOverrides: {} })
+    editDraft.value.items.push({ kind: 'question', localKey: `question-${questionId}`, question_id: questionId, score: 0, content_snapshot: question?.content || '' })
   }
   questionDialogVisible.value = false
   questionSelection.value = []
 }
-const markSnapshotOverride = (item, field) => {
-  if (item.kind === 'question') item.snapshotOverrides = { ...(item.snapshotOverrides || {}), [field]: true }
-}
 const buildUpdateItem = (item) => {
-  if (item.kind === 'existing') return { kind: 'existing', id: item.id, question_id: item.question_id, score: Number(item.score) || 0, content_snapshot: item.content_snapshot, answer_snapshot: item.answer_snapshot || null, analysis_snapshot: item.analysis_snapshot || null }
-  const payload = { kind: 'question', question_id: item.question_id, score: Number(item.score) || 0 }
-  for (const field of ['content_snapshot', 'answer_snapshot', 'analysis_snapshot']) if (item.snapshotOverrides?.[field]) payload[field] = item[field] || null
-  return payload
+  if (item.kind === 'existing' || item.id) return { kind: 'existing', id: item.id, question_id: item.question_id, score: Number(item.score) || 0 }
+  return { kind: 'question', question_id: item.question_id, score: Number(item.score) || 0 }
 }
 const savePaper = async () => {
   const title = editDraft.value.title.trim()
   if (!title) return ElMessage.warning('试卷标题不能为空。')
   if (editDraft.value.items.length === 0) return ElMessage.warning('试卷至少需要保留一道题。')
-  if (editDraft.value.items.some((item) => !item.content_snapshot?.trim())) return ElMessage.warning('题干不能为空。')
   saveLoading.value = true
   try {
-    const response = await axios.patch(`${API_BASE}/papers/${currentPaper.value.id}`, { title, description: editDraft.value.description.trim() || null, items: editDraft.value.items.map(buildUpdateItem) })
+    const response = await axios.patch(`${API_BASE}/papers/${currentPaper.value.id}`, { title, description: editDraft.value.description.trim() || null, show_answer: currentPaper.value.show_answer, show_analysis: currentPaper.value.show_analysis, items: editDraft.value.items.map(buildUpdateItem) })
     currentPaper.value = response.data
     papers.value = papers.value.map((paper) => paper.id === response.data.id ? { ...paper, title: response.data.title, status: response.data.status, item_count: response.data.item_count, total_score: response.data.total_score, updated_at: response.data.updated_at } : paper)
     paperRenderModel.value = null
@@ -300,9 +292,32 @@ const savePaper = async () => {
     ElMessage.error(getErrorMessage(error, '保存试卷修改失败。'))
   } finally { saveLoading.value = false }
 }
+const saveDisplayOptions = async () => {
+  if (!currentPaper.value || editMode.value) return
+  const payload = {
+    title: currentPaper.value.title,
+    description: currentPaper.value.description,
+    show_answer: currentPaper.value.show_answer,
+    show_analysis: currentPaper.value.show_analysis,
+    items: currentPaper.value.items.map(buildUpdateItem)
+  }
+  try {
+    const response = await axios.patch(`${API_BASE}/papers/${currentPaper.value.id}`, payload)
+    currentPaper.value = response.data
+    paperRenderModel.value = null
+  } catch (error) {
+    ElMessage.error(getErrorMessage(error, '保存显示设置失败。'))
+    const response = await axios.get(`${API_BASE}/papers/${currentPaper.value.id}`)
+    currentPaper.value = response.data
+  }
+}
+const openSourceQuestion = (questionId) => replaceQueryValues(router, route, { tab: 'bank', bank_question_id: questionId })
 
 const handlePaperCreated = async () => fetchPapers()
 const renderSnapshot = (content) => content ? renderMarkdown(content) : '<span style="color:#767676">暂无内容</span>'
+const paperItemSectionHasContent = (item, name) => item.section_snapshot
+  ? (item.section_snapshot.sections?.[name]?.blocks?.length || 0) > 0
+  : Boolean(item[`${name}_snapshot`])
 const getTags = (item) => (item?.knowledge_tags_snapshot || []).map((tag) => typeof tag === 'string' ? { label: tag } : tag && typeof tag === 'object' ? { label: tag.label || tag.name || String(tag) } : { label: String(tag) })
 const questionTypeLabels = { single_choice: '单选题', multiple_choice: '多选题', fill_blank: '填空题', solution: '解答题', judge: '判断题', unknown: '未知' }
 const formatQuestionType = (questionType) => questionTypeLabels[questionType] || '未知'
@@ -353,6 +368,7 @@ onBeforeUnmount(() => window.removeEventListener('paper-created', handlePaperCre
 .item-heading { color: #243846; font-weight: 600; }
 .difficulty-text { color: #8a6d1f; font-size: 13px; white-space: nowrap; }
 .item-content { font-size: 15px; line-height: 1.8; }
+.source-note { margin-left: 8px; color: #7a8790; font-size: 12px; }
 .edit-paper-meta { padding: 16px; margin-bottom: 16px; border: 1px solid #d9ecff; border-radius: 8px; background: #f5faff; }
 .edit-actions { margin-top: 8px; }
 .edit-items { gap: 16px; }

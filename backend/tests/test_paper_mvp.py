@@ -164,9 +164,6 @@ class PaperMvpTests(unittest.TestCase):
             "id": item["id"],
             "question_id": item["question_id"],
             "score": item["score"] or 0,
-            "content_snapshot": item["content_snapshot"],
-            "answer_snapshot": item["answer_snapshot"],
-            "analysis_snapshot": item["analysis_snapshot"],
         }
         payload.update(changes)
         return payload
@@ -321,7 +318,7 @@ class PaperMvpTests(unittest.TestCase):
         with self.SessionLocal() as db:
             self.assertEqual(db.query(Paper).count(), 0)
 
-    def test_owner_updates_metadata_score_and_snapshots_without_changing_question_bank(self):
+    def test_owner_updates_metadata_and_score_without_changing_frozen_snapshots(self):
         question_id = self._create_question(
             content="question table original",
             revision_content={
@@ -342,9 +339,6 @@ class PaperMvpTests(unittest.TestCase):
                     self._existing_item(
                         created["items"][0],
                         score=12.5,
-                        content_snapshot="试卷专用修改后的题干",
-                        answer_snapshot="paper-only answer",
-                        analysis_snapshot="paper-only analysis",
                     )
                 ],
             },
@@ -356,9 +350,9 @@ class PaperMvpTests(unittest.TestCase):
         self.assertEqual(payload["description"], "edited description")
         self.assertEqual(payload["total_score"], 12.5)
         self.assertNotEqual(payload["updated_at"], original_updated_at)
-        self.assertEqual(payload["items"][0]["content_snapshot"], "试卷专用修改后的题干")
-        self.assertEqual(payload["items"][0]["answer_snapshot"], "paper-only answer")
-        self.assertEqual(payload["items"][0]["analysis_snapshot"], "paper-only analysis")
+        self.assertEqual(payload["items"][0]["content_snapshot"], "revision original")
+        self.assertEqual(payload["items"][0]["answer_snapshot"], "answer original")
+        self.assertEqual(payload["items"][0]["analysis_snapshot"], "analysis original")
 
         detail = self.client.get(f"/api/v1/papers/{created['id']}", headers=self.auth_headers).json()
         listing = self.client.get("/api/v1/papers", headers=self.auth_headers).json()
@@ -487,7 +481,7 @@ class PaperMvpTests(unittest.TestCase):
             self.assertEqual(item.question_revision_id, latest_revision_id)
             self.assertIsNone(db.query(PaperItem).filter(PaperItem.question_id == removed_id).first())
 
-    def test_new_question_allows_explicit_text_overrides_but_keeps_server_metadata_snapshot(self):
+    def test_new_question_rejects_explicit_snapshot_overrides(self):
         existing_id = self._create_question(content="existing")
         added_id = self._create_question(
             content="bank content",
@@ -518,13 +512,7 @@ class PaperMvpTests(unittest.TestCase):
             },
         )
 
-        self.assertEqual(response.status_code, 200)
-        added = response.json()["items"][1]
-        self.assertEqual(added["content_snapshot"], "new item paper-only content")
-        self.assertIsNone(added["answer_snapshot"])
-        self.assertEqual(added["analysis_snapshot"], "new item paper-only analysis")
-        self.assertEqual(added["question_type_snapshot"], "single_choice")
-        self.assertEqual(added["difficulty_level_snapshot"], 2)
+        self.assertEqual(response.status_code, 422)
 
     def test_update_rejects_empty_items_duplicate_questions_and_invalid_text(self):
         question_id = self._create_question(content="valid")
@@ -633,11 +621,7 @@ class PaperMvpTests(unittest.TestCase):
                 "title": "render edited",
                 "description": "render description",
                 "items": [
-                    self._existing_item(
-                        created["items"][1],
-                        score=8,
-                        content_snapshot="moved paper snapshot",
-                    ),
+                    self._existing_item(created["items"][1], score=8),
                     {"kind": "question", "question_id": added_id, "score": 2},
                 ],
             },
@@ -659,10 +643,27 @@ class PaperMvpTests(unittest.TestCase):
         self.assertEqual(
             [(item["question_id"], item["position"], item["score"], item["content"]) for item in rendered_items],
             [
-                (moved_id, 1, 8, "moved paper snapshot"),
+                (moved_id, 1, 8, "moved"),
                 (added_id, 2, 2, "added latest"),
             ],
         )
+
+    def test_display_options_persist_and_hide_answer_area(self):
+        question_id = self._create_question(content="stem", revision_content={"text": "stem", "answer": "answer", "analysis": "analysis"})
+        created = self._create_paper([question_id]).json()
+        response = self._update_paper(created["id"], {
+            "title": created["title"], "description": created["description"],
+            "show_answer": True, "show_analysis": True,
+            "items": [self._existing_item(created["items"][0])],
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["show_answer"])
+        detail = self.client.get(f"/api/v1/papers/{created['id']}", headers=self.auth_headers).json()
+        self.assertTrue(detail["show_analysis"])
+        rendered = self.client.post(f"/api/v1/papers/{created['id']}/render-model", headers=self.auth_headers, json={"answer_area_mode": "after_each_question"}).json()
+        item = rendered["sections"][0]["items"][0]
+        self.assertEqual((item["answer"], item["analysis"]), ("answer", "analysis"))
+        self.assertIsNone(item["answer_area"])
 
     def test_update_rejects_question_moved_to_trash(self):
         existing_id = self._create_question(content="existing")

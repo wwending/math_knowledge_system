@@ -65,3 +65,5 @@ export const buildDraftImageUrl = (draftId) => `${API_V1_BASE_URL}/drafts/${draf
 // fetched as an authenticated blob, then rendered via an object URL.
 export const buildPaperItemImageUrl = (paperId, paperItemId) =>
   `${API_V1_BASE_URL}/papers/${paperId}/items/${paperItemId}/image`
+export const buildPaperItemFigureUrl = (paperId, paperItemId, figureId) =>
+  `${API_V1_BASE_URL}/papers/${paperId}/items/${paperItemId}/figures/${encodeURIComponent(figureId)}`
