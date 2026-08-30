@@ -55,7 +55,7 @@ requireMatch(
 )
 requireMatch(
   bankSource,
-  /questions\?limit=\$\{questionListLimit\}/,
+  /URLSearchParams\(\{ limit: String\(questionListLimit\) \}\)/,
   'BankPanel must fetch questions with the questionListLimit constant'
 )
 requireMatch(

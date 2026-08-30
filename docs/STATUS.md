@@ -1,5 +1,12 @@
 # STATUS
 
+## 2026-08-30 题库详情只读化与 schema-v2 区段多图展示（#132）
+
+- Active 题目详情改为消费 owner-scoped document API，以题干、答案、解析三个只读 tab 按 schema-v2 ordered blocks 原序展示文字与图片区；文字继续使用安全 Markdown/KaTeX renderer，图片区复用 normalized placement canvas，支持单图、多图布局和纯图片题目。
+- 详情只加载当前可见区段 placement 实际引用的 figure Blob；切换区段、关闭弹窗、切换题目及迟到响应均按 generation/reachable set 释放 Object URL。空区段和纯文字区段不请求 figure。左侧和列表缩略图仍展示题目区域图，不与题目配图混用。
+- 回收站详情继续使用 flat lifecycle endpoint，仅只读展示 `content/answer/analysis`，不开放已删除题目的 document/figure 访问面。题库搜索扩展为题干、答案、解析和知识点，并标示命中位置；编辑路由返回后继续恢复题库 tab、搜索词和原题详情。
+- 本期未新增数据库迁移、API endpoint、依赖或认证授权变化，也未修改 Paper/HTML/PDF 渲染。
+
 ## 2026-08-30 schema-v2 题目多图裁取与图片区布局编辑器（#131）
 
 - 独立 `/questions/:id/edit` 工作区已开放 schema-v2 图片区编辑：可在任意块间创建图片区、从鉴权题目区域图一次绘制多个裁剪框、向已有区域追加配图，并保持图片区作为普通有序块跨题干/答案/解析移动。裁图会话要求单框面积至少 1%，框间实质重叠会阻止确认，边缘接触允许。

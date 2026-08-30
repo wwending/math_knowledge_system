@@ -8,7 +8,7 @@ from fastapi import HTTPException
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.api.v1.endpoints import router as question_router
+from app.api.v1.endpoints import list_question_trash, list_questions, router as question_router
 from app.db.base import Base
 from app.models.question import Question
 from app.models.question_revision import QuestionRevision
@@ -92,6 +92,43 @@ class QuestionEditTrashTests(unittest.TestCase):
         permanent(self.db, self.user, q.id)
         self.assertIsNotNone(q.purged_at)
         self.assertIsNotNone(self.db.get(QuestionRevision, 1)) if self.db.query(QuestionRevision).count() else None
+
+    def test_question_list_search_covers_all_fields_owner_scope_and_limit(self):
+        questions = []
+        for index in range(105):
+            questions.append(Question(
+                user_id=self.user.id,
+                content=f"题干 {index}",
+                answer="needle-answer" if index == 0 else "",
+                analysis="needle-analysis" if index == 1 else "",
+                knowledge_tags=[{"label": "needle-tag"}] if index == 2 else [],
+            ))
+        questions.append(Question(user_id=self.other.id, content="needle-owner", answer="needle-answer"))
+        self.db.add_all(questions)
+        self.db.commit()
+
+        answer_matches = list_questions(skip=0, limit=100, q="needle-answer", db=self.db, current_user=self.user)
+        analysis_matches = list_questions(skip=0, limit=100, q="needle-analysis", db=self.db, current_user=self.user)
+        tag_matches = list_questions(skip=0, limit=100, q="needle-tag", db=self.db, current_user=self.user)
+        content_matches = list_questions(skip=0, limit=100, q="题干 104", db=self.db, current_user=self.user)
+        limited = list_questions(skip=0, limit=100, q=None, db=self.db, current_user=self.user)
+
+        self.assertEqual(len(answer_matches), 1)
+        self.assertEqual(len(analysis_matches), 1)
+        self.assertEqual(len(tag_matches), 1)
+        self.assertEqual(len(content_matches), 1)
+        self.assertEqual(len(limited), 100)
+        self.assertTrue(all(item.id != questions[-1].id for item in answer_matches))
+
+    def test_trash_list_search_is_bounded_and_owner_scoped(self):
+        trashed = Question(user_id=self.user.id, content="trash-content", answer="trash-answer", knowledge_tags=[])
+        foreign = Question(user_id=self.other.id, content="trash-content", answer="trash-answer", knowledge_tags=[])
+        self.db.add_all([trashed, foreign]); self.db.commit()
+        trash(self.db, self.user, trashed.id)
+        trash(self.db, self.other, foreign.id)
+
+        result = list_question_trash(limit=1, q="trash-answer", db=self.db, current_user=self.user)
+        self.assertEqual([item.id for item in result], [trashed.id])
 
     def test_question_routes_are_unique_and_static_trash_precedes_dynamic(self):
         routes = [

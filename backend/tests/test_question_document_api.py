@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 import uuid
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -168,6 +169,34 @@ class QuestionDocumentApiTests(unittest.TestCase):
                 "difficulty_level": 3,
             },
         }
+
+    def test_trash_list_and_detail_normalize_null_tags_and_project_revision_image(self):
+        now = datetime.now(timezone.utc)
+        with self.SessionLocal() as db:
+            question = db.get(Question, self.question_id)
+            question.knowledge_tags = None
+            question.origin_image = None
+            question.deleted_at = now
+            question.purge_at = now + timedelta(days=30)
+            db.commit()
+
+        listing = self.client.get("/api/v1/questions/trash?limit=100", headers=self.headers)
+        self.assertEqual(listing.status_code, 200)
+        listed = next(item for item in listing.json() if item["id"] == self.question_id)
+        self.assertEqual(listed["knowledge_tags"], [])
+        self.assertEqual(listed["current_revision_no"], 1)
+        self.assertTrue(listed["has_question_image"])
+        self.assertIsNotNone(listed["image_url"])
+
+        detail = self.client.get(f"/api/v1/questions/trash/{self.question_id}", headers=self.headers)
+        self.assertEqual(detail.status_code, 200)
+        self.assertEqual(detail.json()["knowledge_tags"], [])
+        self.assertEqual(detail.json()["current_revision_no"], 1)
+        self.assertTrue(detail.json()["has_question_image"])
+        self.assertIsNotNone(detail.json()["image_url"])
+
+        image = self.client.get(f"/api/v1/questions/{self.question_id}/image", headers=self.headers)
+        self.assertEqual(image.status_code, 200)
 
     def test_atomic_document_save_creates_one_revision_and_high_resolution_crop(self):
         figure_id = str(uuid.uuid4())
