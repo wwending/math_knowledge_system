@@ -3,7 +3,9 @@ from __future__ import annotations
 from copy import deepcopy
 import math
 from typing import Any, Mapping, Optional, Sequence
-from uuid import UUID, NAMESPACE_URL, uuid5
+from uuid import NAMESPACE_URL, uuid5
+
+from app.services.question_identifiers import canonical_uuid
 
 SCHEMA_VERSION = 2
 SECTION_NAMES = ("stem", "answer", "analysis")
@@ -11,7 +13,26 @@ BLOCK_KINDS = {"text", "image_area"}
 
 
 class ContentSnapshotError(ValueError):
-    pass
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str = "invalid_document",
+        section: str | None = None,
+        block_id: str | None = None,
+        block_index: int | None = None,
+        figure_id: str | None = None,
+        placement_index: int | None = None,
+        field: str | None = None,
+    ):
+        super().__init__(message)
+        self.code = code
+        self.section = section
+        self.block_id = block_id
+        self.block_index = block_index
+        self.figure_id = figure_id
+        self.placement_index = placement_index
+        self.field = field
 
 
 def _stable_uuid(seed: str, *parts: object) -> str:
@@ -40,7 +61,7 @@ def _coordinate(value: Any, field: str) -> float:
 
 def _canonical_uuid(value: Any, field: str) -> str:
     try:
-        return str(UUID(str(value)))
+        return canonical_uuid(value)
     except (TypeError, ValueError, AttributeError) as exc:
         raise ContentSnapshotError(f"{field} must be a UUID") from exc
 
@@ -231,6 +252,7 @@ def normalize_v2_snapshot(
         raise ContentSnapshotError("sections must contain stem, answer, and analysis")
 
     seen_block_ids: set[str] = set()
+    placed_figures: set[str] = set()
     normalized_sections: dict[str, Any] = {}
     for section_name in SECTION_NAMES:
         section = sections[section_name]
@@ -291,9 +313,19 @@ def normalize_v2_snapshot(
                         f"placements[{placement_index}] has invalid fields"
                     )
                 figure_id = _canonical_uuid(placement.get("figure_id"), "figure_id")
-                if figure_id in seen_figures:
-                    raise ContentSnapshotError("a figure can appear only once in an image area")
+                if figure_id in seen_figures or figure_id in placed_figures:
+                    raise ContentSnapshotError(
+                        "a figure can appear only once in a question document",
+                        code="duplicate_figure_placement",
+                        section=section_name,
+                        block_id=block_id,
+                        block_index=block_index,
+                        figure_id=figure_id,
+                        placement_index=placement_index,
+                        field="figure_id",
+                    )
                 seen_figures.add(figure_id)
+                placed_figures.add(figure_id)
                 x = _coordinate(placement.get("x"), "x")
                 y = _coordinate(placement.get("y"), "y")
                 width = _coordinate(placement.get("width"), "width")

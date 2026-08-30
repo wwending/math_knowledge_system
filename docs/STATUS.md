@@ -1,5 +1,14 @@
 # STATUS
 
+## 2026-08-30 schema-v2 题目多图裁取与图片区布局编辑器（#131）
+
+- 独立 `/questions/:id/edit` 工作区已开放 schema-v2 图片区编辑：可在任意块间创建图片区、从鉴权题目区域图一次绘制多个裁剪框、向已有区域追加配图，并保持图片区作为普通有序块跨题干/答案/解析移动。裁图会话要求单框面积至少 1%，框间实质重叠会阻止确认，边缘接触允许。
+- 新图以题目区域图自然宽度为逻辑画布，按自然像素尺寸左上排列、固定间距、宽度不足换行并自动增高；placement 继续使用相对图片区的归一化坐标。编辑器支持配图移动、等比例缩放、恢复自然尺寸、删除和区域高度调整，越界、重叠或高度不足会被拒绝。
+- 编辑状态改为纯 JSON `baseline/past/present/future` 会话历史；文字输入按焦点手势合并，裁图会话与指针布局操作各形成一个撤销节点。existing 配图经鉴权 Blob 通道加载，新 crop 仅在浏览器本地 Canvas 生成临时预览；资源注册表按撤销/重做可达集合释放 object URL，并以代际号拒绝迟到响应。
+- 页面新增题干、题干+答案、题干+解析、题干+答案+解析四种未保存草稿预览，以及可按 section/block/figure/placement 定位的结构化错误导航。保存仍以单次 document PUT 原子创建 revision；成功后以服务端 canonical 文档重置 baseline/history，`409` 和其他失败保留草稿、历史与本地预览。
+- 后端补充整题范围的 figure 单次 placement 约束、`placement_index` 错误位置、document 专用 1% crop 下限、无 Draft 面积策略的通用像素转换，以及 existing/source 文件异常的结构化校验。未新增迁移、endpoint、运行时依赖，也未修改 PaperItem、HTML/PDF schema-v2 渲染。
+- 本地验证：后端 compileall、聚焦 document/content 测试和全量 pytest 通过；前端 Stage 3 contract 全链与生产构建通过（仍有既有 chunk size warning）。真实浏览器的裁图、指针布局、冲突保留和 Blob 释放人工 smoke 尚未执行。
+
 ## 2026-08-30 独立 schema-v2 题目文字块编辑器（#130）
 
 - 题库详情的编辑入口改为独立鉴权路由 `/questions/:id/edit`；桌面端并排显示题目区域图和编辑区，窄屏在“编辑内容 / 查看来源图”之间切换。题干、答案、解析按 schema-v2 有序块编辑，题干页同时编辑知识点、题型和难度；图片区按原顺序只读保留，本期不提供配图布局修改。

@@ -1,0 +1,6 @@
+<template><div class="image-area-canvas" :style="{aspectRatio:`1 / ${area.height_ratio}`}"><div v-for="(placement,index) in area.placements" :key="placement.figure_id" class="placement" :class="{selected:placement.figure_id===selectedFigureId}" :data-figure-id="placement.figure_id" :data-placement-index="index" :style="styleFor(placement)"><img v-if="urlFor(placement.figure_id)" :src="urlFor(placement.figure_id)" alt="题目配图" draggable="false"/><span v-else class="placeholder">配图加载中</span><slot name="overlay" :placement="placement" :index="index" /></div></div></template>
+<script setup>
+defineProps({area:{type:Object,required:true},urlFor:{type:Function,required:true},selectedFigureId:{type:String,default:''}})
+const styleFor=(placement)=>({left:`${placement.x*100}%`,top:`${placement.y*100}%`,width:`${placement.width*100}%`,height:`${placement.height*100}%`})
+</script>
+<style scoped>.image-area-canvas{position:relative;width:100%;min-height:80px;background:#f5f7fa;border:1px dashed #a8abb2;overflow:hidden}.placement{position:absolute;box-sizing:border-box}.placement.selected{outline:2px solid #409eff}.placement img{display:block;width:100%;height:100%;object-fit:fill}.placeholder{display:grid;width:100%;height:100%;place-items:center;background:#ebeef5;color:#909399;font-size:12px}</style>
