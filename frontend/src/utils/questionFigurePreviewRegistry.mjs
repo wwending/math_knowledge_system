@@ -3,6 +3,8 @@ export function createQuestionFigurePreviewRegistryCore({ http, urlApi, buildFig
   const errors = state.errors || (state.errors = {})
   const generations = new Map()
   const fingerprints = new Map()
+  const pending = new Set()
+  let epoch = 0
   let wanted = new Set()
 
   const revoke = (id) => {
@@ -10,8 +12,8 @@ export function createQuestionFigurePreviewRegistryCore({ http, urlApi, buildFig
     if (urls[id]) urlApi.revokeObjectURL(urls[id])
     delete urls[id]; delete errors[id]; fingerprints.delete(id)
   }
-  const store = (id, generation, fingerprint, blob) => {
-    if (!wanted.has(id) || generations.get(id) !== generation || fingerprints.get(id) !== fingerprint) {
+  const store = (id, requestEpoch, generation, fingerprint, blob) => {
+    if (epoch !== requestEpoch || !wanted.has(id) || generations.get(id) !== generation || fingerprints.get(id) !== fingerprint) {
       const stale = urlApi.createObjectURL(blob); urlApi.revokeObjectURL(stale); return
     }
     if (urls[id]) urlApi.revokeObjectURL(urls[id])
@@ -20,14 +22,19 @@ export function createQuestionFigurePreviewRegistryCore({ http, urlApi, buildFig
   const load = (questionId, figure, source) => {
     const id = figure.id
     const fingerprint = figure.kind === 'crop' ? `crop:${figure.crop_bbox.join(',')}:${source?.generation || 0}` : `existing:${questionId}`
-    if (fingerprints.get(id) === fingerprint && (urls[id] !== undefined || errors[id])) return
+    if (fingerprints.get(id) === fingerprint && (urls[id] !== undefined || pending.has(id))) return
     revoke(id); fingerprints.set(id, fingerprint)
-    const generation = (generations.get(id) || 0) + 1; generations.set(id, generation)
+    pending.add(id)
+    const generation = (generations.get(id) || 0) + 1
+    const requestEpoch = epoch
+    generations.set(id, generation)
     const task = figure.kind === 'crop'
       ? createCropBlob(source, figure.crop_bbox)
       : http.get(buildFigureUrl(questionId, id), { responseType: 'blob' }).then((response) => response.data)
-    Promise.resolve(task).then((blob) => store(id, generation, fingerprint, blob)).catch(() => {
-      if (wanted.has(id) && generations.get(id) === generation) errors[id] = '配图预览加载失败'
+    Promise.resolve(task).then((blob) => store(id, requestEpoch, generation, fingerprint, blob)).catch(() => {
+      if (epoch === requestEpoch && wanted.has(id) && generations.get(id) === generation) errors[id] = '配图预览加载失败'
+    }).finally(() => {
+      if (epoch === requestEpoch && generations.get(id) === generation) pending.delete(id)
     })
   }
   const reconcile = ({ questionId, figures = [], reachableIds, source }) => {
@@ -36,7 +43,12 @@ export function createQuestionFigurePreviewRegistryCore({ http, urlApi, buildFig
     Object.keys(errors).forEach((id) => { if (!wanted.has(id)) revoke(id) })
     figures.filter((figure) => wanted.has(figure.id)).forEach((figure) => load(questionId, figure, source))
   }
-  const dispose = () => { wanted = new Set(); [...new Set([...Object.keys(urls), ...fingerprints.keys()])].forEach(revoke); generations.clear() }
+  const dispose = () => {
+    epoch += 1
+    wanted = new Set()
+    ;[...new Set([...Object.keys(urls), ...fingerprints.keys()])].forEach(revoke)
+    pending.clear()
+  }
   return { urls, errors, reconcile, urlFor: (id) => urls[id] || '', errorFor: (id) => errors[id] || '', revoke, dispose }
 }
 

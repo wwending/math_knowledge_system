@@ -92,4 +92,8 @@ assert.equal(session.future.length, 0)
 
 const emptyAfterRemoval = removeFigurePlacement(withCrops, ids.area, ids.crop1).document
 assert.equal(emptyAfterRemoval.figures.length, 1)
+
+const canvasSource = await import('node:fs').then((fs) => fs.readFileSync(new URL('../src/components/QuestionImageAreaCanvas.vue', import.meta.url), 'utf8'))
+assert.equal(canvasSource.includes('min-height:80px'), false, 'height_ratio=.05 must not be stretched by a minimum canvas height')
+assert.ok(canvasSource.includes('aspectRatio:`1 / ${area.height_ratio}`'))
 console.log('Question image area editor state passed.')

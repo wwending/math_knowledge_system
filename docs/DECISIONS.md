@@ -1,5 +1,17 @@
 # DECISIONS
 
+## 决策 47：题库只读详情按生命周期分流并仅加载可见区段配图（#132）
+
+结论：Active 题目详情以 owner-scoped document API 的 canonical schema-v2 文档为唯一展示源，题干、答案、解析通过共享只读 ordered block renderer 按原序渲染；图片区沿用 normalized placement canvas。题目区域图继续由 question image loader 独立加载，用于列表缩略图和详情左栏，不得以某张 figure 替代。
+
+figure Blob 注册表只把当前可见区段 placement 引用的 figure ID 视为 reachable：空区段、纯文字区段和未激活 tab 不发请求；切换区段或题目、关闭详情及组件卸载时撤销不可达 Object URL，迟到 Blob 立即创建后撤销，避免污染当前题目。回收站继续消费既有 flat lifecycle endpoint，并适配为 text-only sections；不为展示一致性放宽 document/figure 的 active-only ownership 与生命周期边界。
+
+原因：schema-v2 的有序文字/图片区和多图 placement 无法由 flat 投影忠实恢复，而题目区域图与题内配图属于不同语义和资源生命周期。按可见区段惰性加载既保留正式布局，又避免空区段、隐藏 tab 和已关闭详情产生无用鉴权请求或 Blob 泄漏；回收站保持 flat 投影可避免扩大已删除资源访问面。
+
+边界：共享 renderer 供后续页面复用，但本期不接入 Paper/HTML/PDF；不新增 endpoint、数据库迁移、依赖，也不改变认证、授权和 owner isolation 语义。
+
+日期：2026-08-30
+
 ## 决策 46：schema-v2 图片区编辑采用纯文档历史与外置 Blob 注册表（#131）
 
 结论：题目编辑器唯一可保存事实源是纯 JSON schema-v2 draft，完整页面撤销/重做只记录 `baseline/past/present/future` 文档快照；Blob、object URL、Canvas、指针临时状态和选择状态均留在历史之外。existing 配图通过 owner-scoped figure endpoint 加载，未保存 crop 从已鉴权题目区域图本地生成预览，注册表按历史可达 figure ID、crop fingerprint 和请求代际管理资源。成功保存以服务端 canonical response 重建会话并释放 crop URL；`409` 或其他失败不改变草稿、历史或预览。
