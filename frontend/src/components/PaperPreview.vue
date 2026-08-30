@@ -11,12 +11,13 @@
           type="primary"
           size="small"
           :loading="downloadLoading"
-          :disabled="downloadLoading"
+          :disabled="downloadLoading || hasUnsavedChanges"
           @click="handleExportPdf"
         >
           <el-icon><Printer /></el-icon>
           <span>打印/导出 PDF</span>
         </el-button>
+        <span v-if="hasUnsavedChanges" class="unsaved-export-hint">请先保存修改后再导出 PDF</span>
       </div>
     </div>
 
@@ -101,7 +102,8 @@ const props = defineProps({
   renderModel: {
     type: Object,
     required: true
-  }
+  },
+  hasUnsavedChanges: { type: Boolean, default: false }
 })
 
 // Figures frozen in the paper items arrive via authenticated blob prefetch (#59);
@@ -141,6 +143,7 @@ const downloadFilename = (contentDisposition) => {
 }
 
 const handleExportPdf = async () => {
+  if (props.hasUnsavedChanges) return ElMessage.warning('请先保存修改后再导出 PDF')
   if (downloadLoading.value) return
   downloadLoading.value = true
   let objectUrl = ''
@@ -206,6 +209,7 @@ const handleExportPdf = async () => {
   align-items: center;
   gap: 8px;
 }
+.unsaved-export-hint { color: #b45309; }
 
 .a4-page {
   width: min(100%, 794px);
@@ -306,7 +310,6 @@ const handleExportPdf = async () => {
 }
 
 .answer-area {
-  height: 50mm;
   margin-top: 4mm;
   break-inside: avoid;
   page-break-inside: avoid;

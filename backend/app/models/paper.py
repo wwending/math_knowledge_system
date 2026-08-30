@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, Float, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -31,6 +31,7 @@ class PaperItem(Base):
     __table_args__ = (
         UniqueConstraint("paper_id", "question_id", name="uq_paper_items_paper_id_question_id"),
         UniqueConstraint("paper_id", "position", name="uq_paper_items_paper_id_position"),
+        CheckConstraint("response_line_count >= 0 AND response_line_count <= 24", name="ck_paper_items_response_line_count"),
     )
 
     id = Column(Integer, primary_key=True, index=True)
@@ -39,6 +40,7 @@ class PaperItem(Base):
     question_revision_id = Column(Integer, ForeignKey("question_revisions.id"), nullable=True)
     position = Column(Integer, nullable=False)
     score = Column(Float, nullable=True, default=0)
+    response_line_count = Column(Integer, nullable=False, default=6, server_default="6")
     content_snapshot = Column(Text, nullable=False)
     answer_snapshot = Column(Text, nullable=True)
     analysis_snapshot = Column(Text, nullable=True)

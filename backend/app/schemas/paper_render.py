@@ -19,7 +19,8 @@ class PaperRenderKnowledgeTag(BaseModel):
 
 class PaperRenderAnswerArea(BaseModel):
     mode: Literal["after_each_question"]
-    height_mm: Literal[50] = 50
+    response_line_count: int
+    height_mm: int
 
 
 class PaperRenderItem(BaseModel):

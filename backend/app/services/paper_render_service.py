@@ -68,12 +68,18 @@ def _question_type_key(item: PaperItem) -> str:
     return question_type if question_type else "unknown"
 
 
-def _answer_area(payload: PaperRenderRequest, paper: Paper) -> PaperRenderAnswerArea | None:
+def _answer_area(payload: PaperRenderRequest, paper: Paper, item: PaperItem) -> PaperRenderAnswerArea | None:
     if paper.show_answer or paper.show_analysis:
         return None
     if payload.answer_area_mode != "after_each_question":
         return None
-    return PaperRenderAnswerArea(mode="after_each_question", height_mm=50)
+    if item.response_line_count <= 0:
+        return None
+    return PaperRenderAnswerArea(
+        mode="after_each_question",
+        response_line_count=item.response_line_count,
+        height_mm=item.response_line_count * 8,
+    )
 
 
 def _figure_image_url(paper_id: int, item: PaperItem) -> str | None:
@@ -174,7 +180,7 @@ def build_paper_render_model(db: Session, current_user: User, paper_id: int, pay
                 question_type=question_type,
                 question_type_label=QUESTION_TYPE_LABELS.get(question_type, question_type),
                 knowledge_tags=_normalize_knowledge_tags(item.knowledge_tags_snapshot),
-                answer_area=_answer_area(payload, paper),
+                answer_area=_answer_area(payload, paper, item),
                 figure_image_url=_figure_image_url(paper.id, item),
                 figure_urls=_figure_urls(paper.id, item),
             )
