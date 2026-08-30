@@ -159,8 +159,8 @@ if (!existsSync(paperPreviewPath)) {
     failures.push('PaperPreview does not render the model-driven answer-space height')
   }
 
-  if (!paperPreviewSource.includes('height: 50mm;')) {
-    failures.push('PaperPreview is missing the 50mm answer-space CSS contract')
+  if (paperPreviewSource.includes('height: 50mm;')) {
+    failures.push('PaperPreview still hard-codes the legacy 50mm answer-space height')
   }
 
   if (paperPreviewSource.includes('answer-line') || paperPreviewSource.includes('answer-lines')) {
@@ -196,7 +196,7 @@ if (!existsSync(paperPreviewPath)) {
     failures.push('PaperPreview does not show an explicit PDF export error')
   }
 
-  if (!paperPreviewSource.includes(':loading="downloadLoading"') || !paperPreviewSource.includes(':disabled="downloadLoading"')) {
+  if (!paperPreviewSource.includes(':loading="downloadLoading"') || !paperPreviewSource.includes(':disabled="downloadLoading || hasUnsavedChanges"')) {
     failures.push('PaperPreview does not prevent duplicate PDF export clicks')
   }
 }
