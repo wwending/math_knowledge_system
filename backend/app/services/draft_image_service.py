@@ -42,8 +42,11 @@ def is_full_image_bbox(value: Any) -> bool:
     return value is None or value == {}
 
 
-def pixel_crop_box(image: Image.Image, crop_bbox: Any) -> tuple[int, int, int, int]:
-    normalized = normalize_draft_bbox(crop_bbox)
+def normalized_bbox_pixel_box(
+    image: Image.Image, crop_bbox: Any
+) -> tuple[int, int, int, int]:
+    """Convert a normalized bbox to pixels without applying workflow policies."""
+    normalized = normalize_unit_bbox(crop_bbox)
     if normalized == {}:
         return (0, 0, image.width, image.height)
     x, y, width, height = normalized
@@ -52,6 +55,11 @@ def pixel_crop_box(image: Image.Image, crop_bbox: Any) -> tuple[int, int, int, i
     right = min(max(round((x + width) * image.width), left + 1), image.width)
     bottom = min(max(round((y + height) * image.height), top + 1), image.height)
     return left, top, right, bottom
+
+
+def pixel_crop_box(image: Image.Image, crop_bbox: Any) -> tuple[int, int, int, int]:
+    normalized = normalize_draft_bbox(crop_bbox)
+    return normalized_bbox_pixel_box(image, normalized)
 
 
 def create_cropped_temp_image(source_path: str | Path, crop_bbox: Any) -> Path | None:

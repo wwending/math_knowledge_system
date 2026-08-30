@@ -78,7 +78,7 @@ const reordered = reorderBlock(split, 'stem', ids.image, 0).document
 assert.equal(reordered.sections.stem.blocks[0].id, ids.image)
 const movedBlock = moveBlockToSection(state.baseline, 'answer', ids.answer, 'analysis').document
 assert.equal(movedBlock.sections.analysis.blocks[0].id, ids.answer)
-assert.equal(moveBlockToSection(state.baseline, 'stem', ids.stem, 'analysis').error, '题干必须保留至少一个非空文字块')
+assert.equal(moveBlockToSection(state.baseline, 'stem', ids.stem, 'analysis').error, null)
 
 const movedParagraph = moveParagraphToSection(
   state.baseline,

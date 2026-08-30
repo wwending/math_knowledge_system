@@ -1,7 +1,7 @@
 // Pure coordinate math for the detected-figure confirmation editor.
 // Bboxes are [x, y, w, h] normalized to [0, 1], mirroring the backend.
 
-export const FIGURE_BBOX_MIN_AREA = 0.005
+export const FIGURE_BBOX_MIN_AREA = 0.01
 export const FIGURE_READING_ROW_TOLERANCE = 0.015
 export const MAX_CONFIRMED_FIGURES = 10
 

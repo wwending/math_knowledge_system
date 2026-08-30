@@ -1,5 +1,15 @@
 # DECISIONS
 
+## 决策 46：schema-v2 图片区编辑采用纯文档历史与外置 Blob 注册表（#131）
+
+结论：题目编辑器唯一可保存事实源是纯 JSON schema-v2 draft，完整页面撤销/重做只记录 `baseline/past/present/future` 文档快照；Blob、object URL、Canvas、指针临时状态和选择状态均留在历史之外。existing 配图通过 owner-scoped figure endpoint 加载，未保存 crop 从已鉴权题目区域图本地生成预览，注册表按历史可达 figure ID、crop fingerprint 和请求代际管理资源。成功保存以服务端 canonical response 重建会话并释放 crop URL；`409` 或其他失败不改变草稿、历史或预览。
+
+图片区使用题目区域图自然宽度作为编辑期逻辑像素画布，`height_ratio` 给出逻辑高度；新图不自动放大、不拉伸，按自然尺寸加固定间距左上排列并换行。移动和等比例缩放先在逻辑像素空间验证越界/重叠，再写回相对图片区的归一化 placement；区域增高时重新归一化纵向坐标以保持配图像素位置和尺寸。空图片区可作为 UI 瞬时状态，但不能保存；同一 figure 在整题 revision 中只能 placement 一次，跨区段移动整个图片区保留全部稳定身份。
+
+来源裁剪坐标与图文排版坐标继续严格分离：新 crop bbox 相对题目区域图，最终 PUT 成功时后端才组合到原始 SourceAsset 并正式高分辨率裁图；placement 相对图片区，移动布局不会重新裁图。document crop 最小面积为题目区域图的 1%，不改变 #129 Draft 检测框的独立阈值和“上传确认页禁止手工新增框”边界。四种整题预览直接消费当前未保存 draft，不读取 PaperItem；Paper/PDF schema-v2 渲染仍由后续 Issue 处理。
+
+原因：把二进制资源放入历史会导致快照不可序列化、URL 泄漏和迟到异步响应污染当前题目；把布局编辑直接作用于归一化坐标则难以稳定表达自然尺寸、固定间距与区域增高。纯文档历史配合外置资源注册表，使原子保存、冲突保留、资源释放和几何校验可以分别测试，同时不引入数据库字段、endpoint 或运行时服务。
+
 说明：本文件按时间倒序记录决策。较早决策中的“当前主链路”等表述保留为当时历史事实；如与顶部较新决策冲突，以较新决策和 `docs/STATUS.md` 当前 checkpoint 为准。
 
 ## 决策 45：schema-v2 文字编辑采用纯状态内核与保守段落边界（#130）

@@ -19,6 +19,7 @@ from app.models.question_figure import QuestionFigure, QuestionRevisionFigure
 from app.models.question_revision import QuestionRevision
 from app.models.source_asset import SourceAsset
 from app.models.user import User, UserStatus
+from app.services import question_document_service
 from app.services.question_content import build_legacy_v2_snapshot
 
 
@@ -345,6 +346,80 @@ class QuestionDocumentApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 422)
         self.assertEqual(response.json()["detail"]["errors"][0]["code"], "crop_overlap")
         self.assertEqual(list(self.upload_dir.glob("*figure*")), [])
+
+    def test_document_crop_minimum_area_is_relative_to_question_region(self):
+        too_small = str(uuid.uuid4())
+        response = self.client.put(
+            f"/api/v1/questions/{self.question_id}/document",
+            headers=self.headers,
+            json=self._payload(figure_id=too_small, crop_bbox=[0.0, 0.0, 0.099, 0.1]),
+        )
+        self.assertEqual(response.status_code, 422)
+        error = response.json()["detail"]["errors"][0]
+        self.assertEqual(error["code"], "crop_too_small")
+        self.assertEqual(error["field"], "crop_bbox")
+        self.assertEqual(list(self.upload_dir.glob("*figure*")), [])
+
+        boundary = str(uuid.uuid4())
+        boundary_payload = self._payload(figure_id=boundary, crop_bbox=[0.0, 0.0, 0.1, 0.1])
+        boundary_payload["sections"]["stem"]["blocks"][1]["height_ratio"] = 1.0
+        response = self.client.put(
+            f"/api/v1/questions/{self.question_id}/document",
+            headers=self.headers,
+            json=boundary_payload,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+    def test_figure_declaration_uuid_uses_shared_canonical_form(self):
+        figure_id = str(uuid.uuid4())
+        payload = self._payload(figure_id=figure_id.upper(), crop_bbox=[0.0, 0.0, 0.5, 1.0])
+        payload["sections"]["stem"]["blocks"][1]["placements"][0]["figure_id"] = figure_id.upper()
+
+        response = self.client.put(
+            f"/api/v1/questions/{self.question_id}/document",
+            headers=self.headers,
+            json=payload,
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["question"]["figures"][0]["id"], figure_id)
+
+    def test_single_crop_size_limit_preserves_figure_error_and_location(self):
+        figure_id = str(uuid.uuid4())
+        with patch.object(question_document_service, "QUESTION_MAX_FIGURE_BYTES", 1):
+            response = self.client.put(
+                f"/api/v1/questions/{self.question_id}/document",
+                headers=self.headers,
+                json=self._payload(figure_id=figure_id, crop_bbox=[0.0, 0.0, 0.5, 1.0]),
+            )
+
+        self.assertEqual(response.status_code, 422)
+        error = response.json()["detail"]["errors"][0]
+        self.assertEqual(error["code"], "figure_too_large")
+        self.assertEqual(error["figure_id"], figure_id)
+        self.assertNotEqual(error["code"], "invalid_question_source")
+        self.assertEqual(list(self.upload_dir.glob("*figure*")), [])
+
+    def test_duplicate_placement_reports_precise_location(self):
+        figure_id = str(uuid.uuid4())
+        payload = self._payload(figure_id=figure_id, crop_bbox=[0.0, 0.0, 0.5, 1.0])
+        payload["sections"]["answer"]["blocks"] = [{
+            "id": str(uuid.uuid4()),
+            "kind": "image_area",
+            "height_ratio": 2.0,
+            "placements": [{"figure_id": figure_id, "x": 0, "y": 0, "width": 1, "height": 1}],
+        }]
+        response = self.client.put(
+            f"/api/v1/questions/{self.question_id}/document",
+            headers=self.headers,
+            json=payload,
+        )
+        self.assertEqual(response.status_code, 422)
+        error = response.json()["detail"]["errors"][0]
+        self.assertEqual(error["code"], "duplicate_figure_placement")
+        self.assertEqual(error["section"], "answer")
+        self.assertEqual(error["placement_index"], 0)
+        self.assertEqual(error["figure_id"], figure_id)
 
     def test_more_than_fifty_blocks_is_rejected_with_section_location(self):
         payload = self._payload()

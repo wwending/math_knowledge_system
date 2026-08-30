@@ -13,6 +13,19 @@ from app.services.question_content import (
 )
 
 
+def test_snapshot_uuid_values_use_shared_canonical_form():
+    figure_id = str(uuid4()).upper()
+    snapshot = build_legacy_v2_snapshot(
+        content=None,
+        answer=None,
+        analysis=None,
+        seed="canonical-uuid",
+        figure_id=figure_id,
+    )
+
+    assert snapshot["sections"]["stem"]["blocks"][0]["placements"][0]["figure_id"] == figure_id.lower()
+
+
 def test_legacy_projection_is_deterministic_and_preserves_flat_text():
     first = build_legacy_v2_snapshot(
         content="题干",
@@ -242,6 +255,30 @@ def test_unknown_versions_and_out_of_bounds_placements_are_rejected():
     }
     with pytest.raises(ContentSnapshotError, match="fit"):
         normalize_v2_snapshot(invalid)
+
+
+def test_figure_can_be_placed_only_once_across_the_whole_document():
+    figure_id = str(uuid4())
+    snapshot = {
+        "schema_version": 2,
+        "sections": {
+            "stem": {"blocks": [{
+                "id": str(uuid4()), "kind": "image_area", "height_ratio": 1,
+                "placements": [{"figure_id": figure_id, "x": 0, "y": 0, "width": 1, "height": 1}],
+            }]},
+            "answer": {"blocks": [{
+                "id": str(uuid4()), "kind": "image_area", "height_ratio": 1,
+                "placements": [{"figure_id": figure_id, "x": 0, "y": 0, "width": 1, "height": 1}],
+            }]},
+            "analysis": {"blocks": []},
+        },
+    }
+    with pytest.raises(ContentSnapshotError) as captured:
+        normalize_v2_snapshot(snapshot)
+    assert captured.value.code == "duplicate_figure_placement"
+    assert captured.value.section == "answer"
+    assert captured.value.placement_index == 0
+    assert captured.value.figure_id == figure_id
 
 
 def test_non_finite_layout_numbers_are_rejected():

@@ -23,8 +23,9 @@ assert.ok(!isValidFigureBbox([0, 0, 'x', 1]), 'non-numeric parts are invalid')
 assert.ok(!isValidFigureBbox([-0.1, 0, 0.5, 0.5]), 'negative origin is invalid')
 assert.ok(!isValidFigureBbox([0, 0, 0, 0.5]), 'zero width is invalid')
 assert.ok(!isValidFigureBbox([0.9, 0, 0.2, 0.5]), 'overflow beyond the right edge is invalid')
-assert.ok(!isValidFigureBbox([0, 0, 0.05, 0.05]), `regions under ${FIGURE_BBOX_MIN_AREA} area are invalid`)
-assert.ok(isValidFigureBbox([0, 0, 0.08, 0.08]), 'small-but-meaningful regions are valid')
+assert.equal(FIGURE_BBOX_MIN_AREA, 0.01, 'upload confirmation must match the save-to-bank endpoint threshold')
+assert.ok(!isValidFigureBbox([0, 0, 0.09, 0.09]), `regions under ${FIGURE_BBOX_MIN_AREA} area are invalid`)
+assert.ok(isValidFigureBbox([0, 0, 0.1, 0.1]), 'the exact backend boundary is valid')
 
 const style = bboxToStylePx([0.25, 0.5, 0.5, 0.25], 200, 100)
 assert.deepEqual(style, {
