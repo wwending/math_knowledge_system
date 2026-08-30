@@ -12,11 +12,12 @@ from typing import Any, List, Optional
 from urllib.parse import quote
 
 import fitz
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Response, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Response, UploadFile
 from fastapi.responses import FileResponse
 from loguru import logger
 from PIL import Image
 from pydantic import BaseModel
+from sqlalchemy import String, cast, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -1751,15 +1752,22 @@ def recognize_image(
 
 @router.get("/questions", response_model=List[QuestionListItem])
 def list_questions(
-    skip: int = 0,
-    limit: int = 50,
-    q: Optional[str] = None,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=100),
+    q: Optional[str] = Query(default=None, max_length=200),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_active_user),
 ):
     query = db.query(Question).filter(Question.user_id == current_user.id, Question.deleted_at.is_(None), Question.purged_at.is_(None))
-    if q:
-        query = query.filter(Question.content.contains(q))
+    search = q.strip() if q else ""
+    if search:
+        pattern = f"%{search}%"
+        query = query.filter(or_(
+            Question.content.ilike(pattern),
+            Question.answer.ilike(pattern),
+            Question.analysis.ilike(pattern),
+            cast(Question.knowledge_tags, String).ilike(pattern),
+        ))
 
     questions = (
         query.order_by(Question.created_at.desc(), Question.id.desc())
@@ -1804,10 +1812,55 @@ def list_questions(
     return result
 
 
+def _legacy_question_projection(
+    db: Session,
+    question: Question,
+    schema: type[QuestionListItem],
+) -> QuestionListItem:
+    revision, has_question_image, has_figure = _question_api_state(db, question)
+    data = {
+        field: getattr(question, field)
+        for field in schema.model_fields
+        if hasattr(question, field)
+    }
+    data.update({
+        "current_revision_no": revision.rev_no if revision else None,
+        "schema_version": 2,
+        "has_question_image": has_question_image,
+        "has_figure": has_figure,
+        "image_url": build_question_image_url(question.id) if has_question_image else None,
+        "knowledge_tags": normalize_tags(question.knowledge_tags),
+    })
+    return schema.model_validate(data)
+
+
 @router.get("/questions/trash", response_model=List[QuestionListItem])
-def list_question_trash(db: Session = Depends(get_db), current_user: User = Depends(require_active_user)):
+def list_question_trash(
+    limit: int = Query(default=50, ge=1, le=100),
+    q: Optional[str] = Query(default=None, max_length=200),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_active_user),
+):
     now = datetime.now(timezone.utc)
-    return [QuestionListItem.model_validate(q) for q in db.query(Question).filter(Question.user_id == current_user.id, Question.deleted_at.isnot(None), Question.purge_at > now, Question.purged_at.is_(None)).order_by(Question.deleted_at.desc()).all()]
+    query = db.query(Question).filter(
+        Question.user_id == current_user.id,
+        Question.deleted_at.isnot(None),
+        Question.purge_at > now,
+        Question.purged_at.is_(None),
+    )
+    search = q.strip() if q else ""
+    if search:
+        pattern = f"%{search}%"
+        query = query.filter(or_(
+            Question.content.ilike(pattern),
+            Question.answer.ilike(pattern),
+            Question.analysis.ilike(pattern),
+            cast(Question.knowledge_tags, String).ilike(pattern),
+        ))
+    return [
+        _legacy_question_projection(db, question, QuestionListItem)
+        for question in query.order_by(Question.deleted_at.desc()).limit(limit).all()
+    ]
 
 
 @router.get("/questions/trash/{question_id}", response_model=QuestionDetail)
@@ -1815,7 +1868,7 @@ def get_question_trash(question_id: int, db: Session = Depends(get_db), current_
     q = db.query(Question).filter(Question.id == question_id, Question.user_id == current_user.id, Question.deleted_at.isnot(None), Question.purge_at > datetime.now(timezone.utc), Question.purged_at.is_(None)).first()
     if not q:
         raise HTTPException(404, NOT_FOUND_MESSAGE)
-    return QuestionDetail.model_validate(q)
+    return _legacy_question_projection(db, q, QuestionDetail)
 
 
 @router.get("/questions/{question_id}", response_model=QuestionDetail)

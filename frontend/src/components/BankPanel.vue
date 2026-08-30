@@ -18,7 +18,7 @@
         </el-button>
         <el-input
           v-model="keyword"
-          placeholder="关键词搜索（内容/知识点）"
+          placeholder="关键词搜索（题干/答案/解析/知识点）"
           clearable
           :prefix-icon="Search"
           class="search-input"
@@ -100,7 +100,12 @@
               <span class="time">{{ activeBankTab === 'trash' ? `删除：${formatTime(item.deleted_at)}｜到期：${formatTime(item.purge_at)}` : formatTime(item.created_at) }}</span>
             </div>
             <div class="preview-text">
-              {{ getPreviewText(item.content) }}
+              {{ getPreviewText(getQuestionPreviewSource(item, keyword)) }}
+            </div>
+            <div v-if="keyword.trim()" class="search-hit-row" aria-label="搜索命中位置">
+              <el-tag v-for="location in searchMatchFor(item).locations" :key="location" size="small" type="primary" effect="plain">
+                命中{{ questionSearchLocationLabel(location) }}
+              </el-tag>
             </div>
             <div class="tags-row">
               <el-tag
@@ -184,12 +189,18 @@
             </el-tag>
             <span v-if="getTags(displayItem).length === 0" class="empty-text">暂无知识点</span>
           </div>
-          <el-divider content-position="left">题目内容</el-divider>
-          <div class="markdown-body detail-content" v-html="renderTex(displayItem.content)"></div>
-          <el-divider content-position="left">答案</el-divider>
-          <div class="markdown-body detail-content" v-html="renderTex(displayItem.answer)"></div>
-          <el-divider content-position="left">解析</el-divider>
-          <div class="markdown-body detail-content" v-html="renderTex(displayItem.analysis)"></div>
+          <el-alert v-if="detailError" :title="detailError" type="error" :closable="false" show-icon />
+          <el-tabs v-else v-model="activeDetailSection" class="detail-section-tabs">
+            <el-tab-pane v-for="section in detailSections" :key="section.value" :label="section.label" :name="section.value">
+              <QuestionDocumentSectionView
+                :section="detailSectionData(section.value)"
+                :section-name="section.value"
+                :empty-text="section.emptyText"
+                :url-for="figureUrlFor"
+                :error-for="figureErrorFor"
+              />
+            </el-tab-pane>
+          </el-tabs>
         </div>
       </div>
     </el-dialog>
@@ -243,8 +254,11 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh, Search, Picture as IconPicture } from '@element-plus/icons-vue'
 import { API_V1_BASE_URL } from '../config/api'
 import { createQuestionImageLoader } from '../utils/questionImageLoader'
+import { beginQuestionListRequest, acceptsQuestionListResponse } from '../utils/questionBankListLifecycle.mjs'
+import { createQuestionFigurePreviewRegistry } from '../utils/questionFigurePreviewRegistry.js'
 import { readStringQuery, replaceQueryValues } from '../utils/urlQueryState'
-import { renderMarkdown } from '@/utils/renderMarkdown'
+import { flatQuestionSections, getQuestionPreviewSource, getQuestionSearchMatch, normalizeQuestionTags, questionSearchLocationLabel, sectionFigureIds } from '../utils/questionBankSearch.mjs'
+import QuestionDocumentSectionView from './QuestionDocumentSectionView.vue'
 import { useRoute, useRouter } from 'vue-router'
 import { formatDateTime } from '../utils/formatDateTime'
 
@@ -265,7 +279,15 @@ const router = useRouter()
 const keyword = ref(readStringQuery(route, 'bank_q'))
 const dialogVisible = ref(false)
 const currentItem = ref(null)
-const displayItem = computed(() => currentItem.value)
+const currentDocument = ref(null)
+const detailError = ref('')
+const activeDetailSection = ref('stem')
+const detailSections = [
+  { value: 'stem', label: '题干', emptyText: '暂无题干内容' },
+  { value: 'answer', label: '答案', emptyText: '暂无答案' },
+  { value: 'analysis', label: '解析', emptyText: '暂无解析' }
+]
+const displayItem = computed(() => ({ ...(currentItem.value || {}), ...(currentDocument.value || {}) }))
 const selectedQuestionIds = ref([])
 const createPaperDialogVisible = ref(false)
 const creatingPaper = ref(false)
@@ -275,11 +297,17 @@ const paperForm = ref({
 })
 
 // 题目图片经鉴权接口以 blob 方式加载（#44），不再使用公开静态 URL。
-const { hasImageField, syncItems, imageUrlFor, remove: imageLoaderRemove, dispose: disposeImageLoader } = createQuestionImageLoader()
+const { hasImageField, ensure: ensureQuestionImage, syncItems, imageUrlFor, remove: imageLoaderRemove, dispose: disposeImageLoader } = createQuestionImageLoader()
+const figureRegistry = createQuestionFigurePreviewRegistry()
+const figureUrlFor = (figureId) => figureRegistry.urlFor(figureId)
+const figureErrorFor = (figureId) => figureRegistry.errorFor(figureId)
 
+let searchTimer = null
 watch(list, (items) => syncItems(items))
 watch(keyword, (value) => {
   replaceQueryValues(router, route, { bank_q: value })
+  if (searchTimer) clearTimeout(searchTimer)
+  searchTimer = setTimeout(fetchQuestions, 250)
 })
 
 const getImageUrl = (item) => imageUrlFor(item)
@@ -288,60 +316,135 @@ const previewSources = computed(() =>
   [imageUrlFor(currentItem.value)].filter(Boolean)
 )
 
-onBeforeUnmount(disposeImageLoader)
+const detailDocumentSections = computed(() => currentDocument.value?.sections || flatQuestionSections(currentItem.value))
+const detailSectionData = (section) => detailDocumentSections.value?.[section] || { blocks: [] }
+const syncVisibleFigures = () => {
+  if (activeBankTab.value !== 'active' || !currentDocument.value || !dialogVisible.value) {
+    figureRegistry.reconcile({ questionId: currentItem.value?.id, figures: [], reachableIds: new Set() })
+    return
+  }
+  figureRegistry.reconcile({
+    questionId: currentDocument.value.id,
+    figures: currentDocument.value.figures || [],
+    reachableIds: sectionFigureIds(detailSectionData(activeDetailSection.value))
+  })
+}
+const resetDetailState = () => {
+  detailRequestToken.value += 1
+  figureRegistry.dispose()
+  currentItem.value = null
+  currentDocument.value = null
+  detailLoading.value = false
+  detailError.value = ''
+  activeDetailSection.value = 'stem'
+}
+watch(activeDetailSection, syncVisibleFigures)
+watch(dialogVisible, (visible) => { if (!visible) resetDetailState() })
+
+onBeforeUnmount(() => {
+  if (searchTimer) clearTimeout(searchTimer)
+  detailRequestToken.value += 1
+  figureRegistry.dispose()
+  disposeImageLoader()
+})
 
 const canSubmitPaper = computed(() => {
   return selectedQuestionIds.value.length > 0 && paperForm.value.title.trim().length > 0 && !creatingPaper.value
 })
 
 const listRequestToken = ref(0)
-const consumePendingQuestionDetail = async () => {
+const consumePendingQuestionDetail = async (expectedToken = listRequestToken.value) => {
   if (activeBankTab.value !== 'active') return
   const id = Number(readStringQuery(route, 'bank_question_id'))
   if (!Number.isInteger(id) || id <= 0) return
-  await replaceQueryValues(router, route, { bank_question_id: null })
-  const item = list.value.find((question) => question.id === id)
-  if (item) await openDetail(item)
+
+  let item = list.value.find((question) => question.id === id)
+  if (!item) {
+    try {
+      const response = await axios.get(`${API_BASE}/questions/${id}`)
+      if (!acceptsQuestionListResponse(expectedToken, listRequestToken.value) || activeBankTab.value !== 'active') return
+      item = response.data
+    } catch (error) {
+      if (!acceptsQuestionListResponse(expectedToken, listRequestToken.value) || activeBankTab.value !== 'active') return
+      if (error.response?.status === 404) {
+        await replaceQueryValues(router, route, { bank_question_id: null })
+      }
+      return
+    }
+  }
+
+  const result = await openDetail(item)
+  if (result === 'opened' || result === 'not_found') {
+    await replaceQueryValues(router, route, { bank_question_id: null })
+  }
 }
 const fetchQuestions = async () => {
-  const token = ++listRequestToken.value
+  if (dialogVisible.value) {
+    dialogVisible.value = false
+    resetDetailState()
+  }
+  const request = beginQuestionListRequest(listRequestToken.value)
+  const token = request.generation
+  listRequestToken.value = token
+  list.value = request.items
   loading.value = true
   try {
-    const endpoint = activeBankTab.value === 'trash' ? `${API_BASE}/questions/trash?limit=${questionListLimit}` : `${API_BASE}/questions?limit=${questionListLimit}`
-    const res = await axios.get(endpoint)
-    if (token === listRequestToken.value) {
+    const params = new URLSearchParams({ limit: String(questionListLimit) })
+    if (keyword.value.trim()) params.set('q', keyword.value.trim())
+    const path = activeBankTab.value === 'trash' ? 'questions/trash' : 'questions'
+    const res = await axios.get(`${API_BASE}/${path}?${params}`)
+    if (acceptsQuestionListResponse(token, listRequestToken.value)) {
       list.value = res.data || []
-      await consumePendingQuestionDetail()
+      await consumePendingQuestionDetail(token)
     }
   } catch (error) {
-    console.error(error)
-    ElMessage.error('获取题目列表失败')
+    if (acceptsQuestionListResponse(token, listRequestToken.value)) {
+      console.error(error)
+      ElMessage.error('获取题目列表失败')
+    }
   } finally {
-    if (token === listRequestToken.value) loading.value = false
+    if (acceptsQuestionListResponse(token, listRequestToken.value)) loading.value = false
   }
 }
 
 
-const editQuestion = (item) => router.push({
-  name: 'question-editor',
-  params: { id: item.id },
-  query: { tab: 'bank', bank_q: keyword.value || undefined, bank_question_id: item.id }
-})
+const editQuestion = (item) => {
+  resetDetailState()
+  return router.push({
+    name: 'question-editor',
+    params: { id: item.id },
+    query: { tab: 'bank', bank_q: keyword.value || undefined, bank_question_id: item.id }
+  })
+}
 
 const openDetail = async (item) => {
+  resetDetailState()
   const token = ++detailRequestToken.value
+  const openingTab = activeBankTab.value
   dialogVisible.value = true
   detailLoading.value = true
   currentItem.value = item
+  ensureQuestionImage(item)
+  detailError.value = ''
+  activeDetailSection.value = getQuestionSearchMatch(item, keyword.value).primarySection
   try {
-    const endpoint = activeBankTab.value === 'trash' ? `${API_BASE}/questions/trash/${item.id}` : `${API_BASE}/questions/${item.id}`
+    const endpoint = openingTab === 'trash' ? `${API_BASE}/questions/trash/${item.id}` : `${API_BASE}/questions/${item.id}/document`
     const res = await axios.get(endpoint)
-    if (token === detailRequestToken.value) currentItem.value = res.data
+    if (token !== detailRequestToken.value || !dialogVisible.value || currentItem.value?.id !== item.id || activeBankTab.value !== openingTab) return 'stale'
+    if (openingTab === 'trash') currentItem.value = res.data
+    else currentDocument.value = res.data
+    syncVisibleFigures()
+    return 'opened'
   } catch (error) {
+    if (token !== detailRequestToken.value || !dialogVisible.value || currentItem.value?.id !== item.id || activeBankTab.value !== openingTab) return 'stale'
     console.error(error)
-    ElMessage.error('获取题目详情失败')
+    figureRegistry.dispose()
+    const notFound = error.response?.status === 404
+    detailError.value = notFound ? '题目不存在或无权访问' : '获取题目详情失败'
+    ElMessage.error(detailError.value)
+    return notFound ? 'not_found' : 'failed'
   } finally {
-    if (token === detailRequestToken.value) detailLoading.value = false
+    if (token === detailRequestToken.value && dialogVisible.value && currentItem.value?.id === item.id && activeBankTab.value === openingTab) detailLoading.value = false
   }
 }
 
@@ -356,6 +459,7 @@ const handleBankTabChange = () => {
   selectedQuestionIds.value = []
   currentItem.value = null
   dialogVisible.value = false
+  resetDetailState()
   fetchQuestions()
 }
 
@@ -364,7 +468,8 @@ const cleanupQuestion = (id) => {
   imageLoaderRemove?.(id)
   if (currentItem.value?.id === id) {
     currentItem.value = null
-        dialogVisible.value = false
+    dialogVisible.value = false
+    resetDetailState()
   }
 }
 
@@ -458,26 +563,9 @@ const createPaper = async () => {
   }
 }
 
-const filteredList = computed(() => {
-  const q = keyword.value.trim().toLowerCase()
-  if (!q) return list.value
-  return list.value.filter((item) => {
-    const contentText = (item.content || '').toLowerCase()
-    const tagText = getTags(item).map((t) => t.label).join(' ').toLowerCase()
-    return contentText.includes(q) || tagText.includes(q)
-  })
-})
-
-const getTags = (item) => {
-  const rawTags = (item && (item.knowledge_tags || item.knowledge)) ? (item.knowledge_tags || item.knowledge) : []
-  return rawTags.map((tag) => {
-    if (typeof tag === 'string') return { label: tag, score: 1.0 }
-    if (tag && typeof tag === 'object') {
-      return { label: tag.label || String(tag), score: tag.score ?? 1.0 }
-    }
-    return { label: String(tag), score: 1.0 }
-  })
-}
+const searchMatchFor = (item) => getQuestionSearchMatch(item, keyword.value)
+const filteredList = computed(() => list.value.filter((item) => searchMatchFor(item).matched))
+const getTags = (item) => normalizeQuestionTags(item)
 
 const questionTypeLabels = {
   single_choice: '单选题',
@@ -503,8 +591,6 @@ const formatDifficultyStatus = (item) => {
   if (status === 'ready' && item?.difficulty_level) return formatDifficultyStars(item.difficulty_level)
   return formatDifficultyStars(item?.difficulty_level)
 }
-
-const renderTex = (text) => text ? renderMarkdown(text) : '<span style="color:#767676">暂无内容</span>'
 
 const getPreviewText = (text) => {
   if (!text) return '暂无识别内容'
@@ -640,10 +726,15 @@ onMounted(() => {
   max-width: 520px;
 }
 
-.tags-row {
+.tags-row,
+.search-hit-row {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+.search-hit-row {
+  align-items: center;
 }
 
 .action-box {
@@ -720,6 +811,14 @@ onMounted(() => {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.detail-section-tabs {
+  min-width: 0;
+}
+
+.detail-section-tabs :deep(.el-tabs__content) {
+  overflow: visible;
 }
 
 .detail-content {
