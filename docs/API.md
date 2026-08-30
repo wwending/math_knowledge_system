@@ -121,7 +121,7 @@ LLM 目标输出结构：
 - `POST /api/v1/drafts/{draft_id}/recognize` 和 `GET /api/v1/drafts/{draft_id}` 仍保留可空的 `question_type`、`difficulty_level`、`difficulty_label`、`difficulty_confidence`、`difficulty_reason` 字段用于兼容。
 - `GET /api/v1/questions` 和 `GET /api/v1/questions/{question_id}` 返回题型、难度、置信度、理由、评估模型、评估时间，以及 `metadata_status`、`metadata_error`、`metadata_started_at`、`metadata_finished_at`。
 - `GET /api/v1/questions/{question_id}/image` 先按 Question 所有权鉴权，再读取最新 `QuestionRevision` 的 `source_asset_id` 与页面归一化 `crop_bbox`；有合法 bbox 时返回该题区域裁图，多题可共享同一 SourceAsset 但各自区域不同。无 revision 或无 bbox 的历史题回退 `origin_image` 整图；bbox 非法、文件缺失或无法解析时 fail-closed 返回 404。
-- `GET /api/v1/papers/{paper_id}` 的 `items` 返回可选快照字段 `question_type_snapshot`、`difficulty_level_snapshot`、`difficulty_label_snapshot`；如果创建试卷时题目元数据尚未 ready，快照字段为空。
+- `GET /api/v1/papers/{paper_id}` 的 `items` 返回 `response_line_count`（整数 `0..24`，默认/历史迁移为 6）及可选快照字段 `question_type_snapshot`、`difficulty_level_snapshot`、`difficulty_label_snapshot`；如果创建试卷时题目元数据尚未 ready，快照字段为空。
 
 ## 组卷 MVP
 
@@ -148,8 +148,9 @@ LLM 目标输出结构：
 - `PATCH /api/v1/papers/{paper_id}`
   - 原子保存 owner 的草稿试卷标题、描述及完整有序 items；非 `draft` 状态返回冲突错误。
   - `items` 不能为空且 `question_id` 不得重复；后端忽略客户端 position，严格按数组顺序重建连续 `1..N`。
-  - 已有条目使用 `kind=existing`，只提交当前 paper item 的 `id`、`question_id` 和 `score`；任何内容快照字段都会返回 `422`。
-  - 从题库新增使用 `kind=question` 和 `question_id`；服务端从当前用户题库的最新 QuestionRevision 冻结题干、答案、解析三区段、有序内容块、布局与全部配图。客户端不能提交或修改内容快照、题型、难度、知识点及 revision id。
+  - 已有条目使用 `kind=existing`，提交当前 paper item 的 `id`、`question_id`、`score` 和可选 `response_line_count`；省略行数兼容旧客户端并保留原值。任何内容快照字段都会返回 `422`。
+  - 从题库新增使用 `kind=question`、`question_id`、可选 `score` 和可选 `response_line_count`（默认 6）；服务端从当前用户题库的最新 QuestionRevision 冻结题干、答案、解析三区段、有序内容块、布局与全部配图。客户端不能提交或修改内容快照、题型、难度、知识点及 revision id。
+  - `response_line_count` 只接受整数 `0..24`，非法输入返回 `422`；它与其他编辑字段在同一事务内保存。
   - `show_answer`、`show_analysis` 随试卷持久化且默认关闭；任一开启时逐题内联渲染相应区段，并自动隐藏学生作答区。
   - 删除通过省略已有 item 表达；保存失败时整个事务回滚。试卷编辑不修改 Question 或 QuestionRevision。
 
@@ -162,12 +163,14 @@ LLM 目标输出结构：
       "kind": "existing",
       "id": 11,
       "question_id": 21,
-      "score": 10
+      "score": 10,
+      "response_line_count": 8
     },
     {
       "kind": "question",
       "question_id": 34,
-      "score": 8
+      "score": 8,
+      "response_line_count": 6
     }
   ]
 }
@@ -188,7 +191,7 @@ LLM 目标输出结构：
 }
 ```
 
-  - `answer_area_mode` 支持 `none` 和 `after_each_question`；API 请求体省略该字段时仍默认 `none`，组卷界面默认请求 `after_each_question`。
+  - `answer_area_mode` 支持 `none` 和 `after_each_question`；它是旧兼容渲染开关：`none` 仅临时隐藏全部作答区，`after_each_question` 使用每项已保存的行数。两者均不修改持久值。API 请求体省略该字段时仍默认 `none`，组卷界面默认请求 `after_each_question`。
   - 非法枚举值由 Pydantic 校验返回 `422`。
   - 试卷不存在或不属于当前用户时返回 `404`。
   - 学生版响应不包含答案或解析快照。
@@ -234,7 +237,8 @@ LLM 目标输出结构：
           ],
           "answer_area": {
             "mode": "after_each_question",
-            "height_mm": 50
+            "response_line_count": 6,
+            "height_mm": 48
           }
         }
       ]
@@ -248,14 +252,14 @@ LLM 目标输出结构：
   - 服务端执行固定链路：`Paper -> PaperRenderModel -> controlled HTML -> Gotenberg Chromium -> PDF`。
   - 成功返回 `application/pdf` 与 attachment `Content-Disposition`；响应不缓存，也不会在服务器永久保存 PDF。
   - 当前仅开放 A4 portrait 默认版式。Gotenberg 不可用时返回稳定的 `503`，不会向客户端暴露内部服务地址或上游响应。
-  - `after_each_question` 在每题后生成固定 `50mm` 的纯白留白，不包含横线；短题末尾与留白尽量连续，长题题干仍允许跨页。
+  - `after_each_question` 按每题 `response_line_count × 8mm` 生成纯白留白，正数时另有 `4mm` 顶部间距；不包含横线、边框或文字，0 行不生成元素或间距。题目末尾/知识点与作答区构成不可拆尾部，作答区本身不拆分。
   - 该接口不接受任意 HTML 或 URL，不能作为通用 HTML/URL-to-PDF 代理。
 
 组卷快照：
 
 - `PaperItem` 创建时保存题目内容快照，避免题库后续编辑导致历史试卷内容被动变化。
 - 如果题目已有 `QuestionRevision`，优先使用最新 revision 的内容生成快照。
-- 当前返回字段包括 `content_snapshot`、`answer_snapshot`、`analysis_snapshot`、`knowledge_tags_snapshot`，以及可选的题型和难度快照字段。
+- 当前返回字段包括只读 `content_snapshot`、`answer_snapshot`、`analysis_snapshot`、`knowledge_tags_snapshot`，可选的题型和难度快照字段，以及可编辑的卷内展示字段 `response_line_count`。
 
 ## Draft 流水线
 

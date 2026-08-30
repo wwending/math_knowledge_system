@@ -26,6 +26,8 @@
             <el-form label-position="top" @submit.prevent>
               <el-form-item label="试卷标题"><el-input v-model="editDraft.title" maxlength="80" show-word-limit /></el-form-item>
               <el-form-item label="试卷描述"><el-input v-model="editDraft.description" type="textarea" :rows="3" maxlength="300" show-word-limit /></el-form-item>
+              <el-form-item label="显示内容"><el-switch v-model="editDraft.show_answer" active-text="显示答案" /><el-switch v-model="editDraft.show_analysis" active-text="显示解析" /></el-form-item>
+              <el-form-item label="批量作答区"><el-input-number v-model="batchResponseLineCount" :min="0" :max="24" :step="1" step-strictly /><el-button @click="applyResponseLineCountToAll">全部设为 {{ batchResponseLineCount }} 行</el-button></el-form-item>
             </el-form>
             <div class="edit-actions">
               <el-button @click="openQuestionDialog">从题库添加题目</el-button>
@@ -48,6 +50,8 @@
           <el-alert v-if="previewErrorMessage" :title="previewErrorMessage" type="error" show-icon class="state-alert" />
           <el-skeleton v-if="previewLoading" :rows="5" animated />
           <paper-preview v-else-if="paperRenderModel && !editMode" :render-model="paperRenderModel" />
+          <el-alert v-if="editMode && (editDraft.show_answer || editDraft.show_analysis)" title="当前显示答案或解析，作答区暂不显示；行数设置将在关闭后生效" type="info" :closable="false" class="state-alert" />
+          <paper-preview v-if="editMode && draftRenderModel" :render-model="draftRenderModel" :has-unsaved-changes="hasUnsavedChanges" />
 
           <div v-if="editMode" class="paper-items edit-items">
             <el-card v-for="(item, index) in editDraft.items" :key="item.localKey" class="paper-item" shadow="never">
@@ -57,6 +61,7 @@
               </div>
               <el-form label-position="top" class="item-edit-form" @submit.prevent>
                 <el-form-item label="分值"><el-input-number v-model="item.score" :min="0" :precision="1" controls-position="right" /></el-form-item>
+                <el-form-item label="作答区行数"><el-input-number v-model="item.response_line_count" :min="0" :max="24" :step="1" step-strictly /><span class="response-line-label">{{ item.response_line_count === 0 ? '不留作答区' : `${item.response_line_count} 行` }}</span></el-form-item>
                 <el-alert title="题目内容为不可变快照；如需新版，请移除后从题库重新添加。" type="info" :closable="false" />
                 <div class="snapshot-preview markdown-body" v-html="renderSnapshot(item.content_snapshot)"></div>
               </el-form>
@@ -119,6 +124,7 @@ const errorMessage = ref('')
 const previewErrorMessage = ref('')
 const paperRenderModel = ref(null)
 const answerAreaMode = ref('after_each_question')
+const batchResponseLineCount = ref(6)
 // #77: 答题区模式变更后旧预览仍基于旧设置，直接失效待重新生成。
 watch(answerAreaMode, () => {
   if (paperRenderModel.value) paperRenderModel.value = null
@@ -133,10 +139,39 @@ const questionKeyword = ref('')
 const questionSelection = ref([])
 
 const clone = (value) => JSON.parse(JSON.stringify(value))
+const hasUnsavedChanges = computed(() => editMode.value && JSON.stringify(editDraft.value) !== editBaseline.value)
 const draftQuestionIds = computed(() => new Set((editDraft.value?.items || []).map((item) => item.question_id)))
 const filteredQuestions = computed(() => {
   const keyword = questionKeyword.value.trim().toLowerCase()
   return keyword ? questions.value.filter((question) => (question.content || '').toLowerCase().includes(keyword)) : questions.value
+})
+const draftRenderModel = computed(() => {
+  if (!editDraft.value || !currentPaper.value) return null
+  const items = editDraft.value.items.map((item, index) => ({
+    paper_item_id: item.id || item.localKey,
+    question_id: item.question_id,
+    position: index + 1,
+    display_number: index + 1,
+    score: Number(item.score) || 0,
+    content: item.content_snapshot || '',
+    answer: editDraft.value.show_answer ? item.answer_snapshot : null,
+    analysis: editDraft.value.show_analysis ? item.analysis_snapshot : null,
+    section_snapshot: item.section_snapshot || null,
+    question_type: item.question_type_snapshot || 'unknown',
+    question_type_label: formatQuestionType(item.question_type_snapshot),
+    knowledge_tags: getTags(item),
+    answer_area: (!editDraft.value.show_answer && !editDraft.value.show_analysis && item.response_line_count > 0)
+      ? { mode: 'after_each_question', response_line_count: item.response_line_count, height_mm: item.response_line_count * 8 }
+      : null,
+    figure_image_url: item.figure_image_snapshot ? `${API_BASE}/papers/${currentPaper.value.id}/items/${item.id}/image` : null,
+    figure_urls: Object.fromEntries((item.figure_ids || []).map((id) => [id, `${API_BASE}/papers/${currentPaper.value.id}/items/${item.id}/figures/${id}`]))
+  }))
+  return {
+    template_type: 'homework', version: 'student', paper_size: 'A4', group_by: 'question_type', sort_by: 'position', answer_area_mode: 'after_each_question',
+    paper: { id: currentPaper.value.id, title: editDraft.value.title || '未命名试卷', description: editDraft.value.description || null, status: currentPaper.value.status, item_count: items.length, total_score: items.reduce((sum, item) => sum + item.score, 0) },
+    layout: { show_answers: editDraft.value.show_answer, show_analysis: editDraft.value.show_analysis },
+    sections: [{ key: 'draft', title: '题目', items }]
+  }
 })
 const getErrorMessage = (error, fallback) => {
   const detail = error.response?.data?.detail
@@ -209,7 +244,7 @@ const fetchPaperRenderModel = async () => {
 }
 
 const startEditing = () => {
-  editDraft.value = { title: currentPaper.value.title, description: currentPaper.value.description || '', items: currentPaper.value.items.map((item) => ({ ...clone(item), kind: 'existing', localKey: `existing-${item.id}` })) }
+  editDraft.value = { title: currentPaper.value.title, description: currentPaper.value.description || '', show_answer: currentPaper.value.show_answer, show_analysis: currentPaper.value.show_analysis, items: currentPaper.value.items.map((item) => ({ ...clone(item), kind: 'existing', localKey: `existing-${item.id}` })) }
   editBaseline.value = JSON.stringify(editDraft.value)
   editMode.value = true
   paperRenderModel.value = null
@@ -234,6 +269,9 @@ const removeItem = async (index) => {
     await ElMessageBox.confirm('确认从当前试卷中删除这道题吗？题库原题不会被删除。', '删除题目', { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' })
     editDraft.value.items.splice(index, 1)
   } catch { /* User cancelled. */ }
+}
+const applyResponseLineCountToAll = () => {
+  for (const item of editDraft.value.items) item.response_line_count = batchResponseLineCount.value
 }
 const loadQuestions = async () => {
   questionLoading.value = true
@@ -264,14 +302,15 @@ const addSelectedQuestions = () => {
   for (const questionId of questionSelection.value) {
     if (draftQuestionIds.value.has(questionId)) continue
     const question = questions.value.find((item) => item.id === questionId)
-    editDraft.value.items.push({ kind: 'question', localKey: `question-${questionId}`, question_id: questionId, score: 0, content_snapshot: question?.content || '' })
+    editDraft.value.items.push({ kind: 'question', localKey: `question-${questionId}`, question_id: questionId, score: 0, response_line_count: 6, content_snapshot: question?.content || '', answer_snapshot: question?.answer || null, analysis_snapshot: question?.analysis || null, question_type_snapshot: question?.question_type || null, knowledge_tags_snapshot: question?.knowledge_tags || [] })
   }
   questionDialogVisible.value = false
   questionSelection.value = []
 }
 const buildUpdateItem = (item) => {
-  if (item.kind === 'existing' || item.id) return { kind: 'existing', id: item.id, question_id: item.question_id, score: Number(item.score) || 0 }
-  return { kind: 'question', question_id: item.question_id, score: Number(item.score) || 0 }
+  const responseLineCount = Math.max(0, Math.min(24, Number(item.response_line_count)))
+  if (item.kind === 'existing' || item.id) return { kind: 'existing', id: item.id, question_id: item.question_id, score: Number(item.score) || 0, response_line_count: responseLineCount }
+  return { kind: 'question', question_id: item.question_id, score: Number(item.score) || 0, response_line_count: responseLineCount }
 }
 const savePaper = async () => {
   const title = editDraft.value.title.trim()
@@ -279,7 +318,7 @@ const savePaper = async () => {
   if (editDraft.value.items.length === 0) return ElMessage.warning('试卷至少需要保留一道题。')
   saveLoading.value = true
   try {
-    const response = await axios.patch(`${API_BASE}/papers/${currentPaper.value.id}`, { title, description: editDraft.value.description.trim() || null, show_answer: currentPaper.value.show_answer, show_analysis: currentPaper.value.show_analysis, items: editDraft.value.items.map(buildUpdateItem) })
+    const response = await axios.patch(`${API_BASE}/papers/${currentPaper.value.id}`, { title, description: editDraft.value.description.trim() || null, show_answer: editDraft.value.show_answer, show_analysis: editDraft.value.show_analysis, items: editDraft.value.items.map(buildUpdateItem) })
     currentPaper.value = response.data
     papers.value = papers.value.map((paper) => paper.id === response.data.id ? { ...paper, title: response.data.title, status: response.data.status, item_count: response.data.item_count, total_score: response.data.total_score, updated_at: response.data.updated_at } : paper)
     paperRenderModel.value = null
@@ -375,6 +414,7 @@ onBeforeUnmount(() => window.removeEventListener('paper-created', handlePaperCre
 .reorder-actions { margin-left: auto; }
 .item-edit-form { margin-top: 16px; }
 .snapshot-preview { padding: 10px 12px; margin: -8px 0 18px; border-left: 3px solid #d9ecff; background: #fafcfe; }
+.response-line-label { margin-left: 10px; color: #667780; }
 .question-search { margin-bottom: 12px; }
 .question-picker-list { max-height: 460px; overflow: auto; display: flex; flex-direction: column; gap: 8px; }
 .question-picker-item { display: flex; gap: 10px; align-items: flex-start; padding: 10px; border: 1px solid #e5ece9; border-radius: 6px; cursor: pointer; }

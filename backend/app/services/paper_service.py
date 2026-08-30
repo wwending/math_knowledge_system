@@ -164,6 +164,7 @@ def _build_paper_read(paper: Paper) -> PaperRead:
                 question_id=item.question_id,
                 position=item.position,
                 score=item.score,
+                response_line_count=item.response_line_count,
                 content_snapshot=item.content_snapshot,
                 answer_snapshot=item.answer_snapshot,
                 analysis_snapshot=item.analysis_snapshot,
@@ -305,6 +306,8 @@ def update_paper(db: Session, current_user: User, paper_id: int, payload: PaperU
                 item = current_items_by_id[item_payload.id]
                 item.position = position
                 item.score = item_payload.score
+                if item_payload.response_line_count is not None:
+                    item.response_line_count = item_payload.response_line_count
                 continue
 
             new_items.append((position, item_payload))
@@ -319,6 +322,7 @@ def update_paper(db: Session, current_user: User, paper_id: int, payload: PaperU
                     question_id=question.id,
                     position=position,
                     score=item_payload.score,
+                    response_line_count=item_payload.response_line_count,
                     **new_snapshots[item_payload.question_id],
             )
 

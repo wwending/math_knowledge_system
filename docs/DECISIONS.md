@@ -1,5 +1,11 @@
 # DECISIONS
 
+## 决策 49：作答空间按 PaperItem 的标准物理行数持久化（#126）
+
+`response_line_count` 是 PaperItem 的卷内展示设置，不属于 Question 或冻结内容快照；值域为整数 `0..24`，新项与历史项默认 6。删除后重加创建新 PaperItem，因此恢复默认值而不恢复旧设置。用户只写行数，后端渲染模型计算 `height_mm = response_line_count × 8`；正数作答区另有固定 4mm 顶部间距，纯白、无横线、不可拆，0 不产生元素或间距。
+
+标题、说明、显示开关、题序、分值、增删题与逐题行数共享一次全量原子 PATCH。浏览器编辑预览消费本地草稿，PDF 始终消费服务端保存值，未保存时前端禁止导出。显示答案/解析或旧 `answer_area_mode=none` 只隐藏本次渲染的作答区，不改持久行数；旧 `after_each_question` 使用逐题值，不再保留固定 50mm 的第二套高度语义。
+
 ## 决策 48：PaperItem schema-v2 是不可变三区段/多图快照（#133）
 
 建卷或重新添加题目时，服务端从最新 QuestionRevision 冻结完整 `section_snapshot`，并把该 revision 的全部配图资产引用复制到 PaperItemFigureSnapshot；显示开关不影响冻结范围。正常 Paper 写入只允许卷级标题、说明、显示开关，以及条目顺序、分值和增删题，PaperItem 内容、图片和布局不提供编辑或“同步最新”入口。

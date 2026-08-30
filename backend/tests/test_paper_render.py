@@ -202,7 +202,7 @@ class PaperRenderModelTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         item = response.json()["sections"][0]["items"][0]
-        self.assertEqual(item["answer_area"], {"mode": "after_each_question", "height_mm": 50})
+        self.assertEqual(item["answer_area"], {"mode": "after_each_question", "response_line_count": 6, "height_mm": 48})
 
     def test_groups_by_question_type_and_sorts_by_position_with_global_display_number(self):
         first_solution = self._create_question(content="first solution", question_type="solution")
@@ -222,7 +222,7 @@ class PaperRenderModelTests(unittest.TestCase):
         self.assertEqual(sections[1]["items"][0]["display_number"], 2)
         self.assertEqual(
             [item["answer_area"] for section in sections for item in section["items"]],
-            [{"mode": "after_each_question", "height_mm": 50}] * 3,
+            [{"mode": "after_each_question", "response_line_count": 6, "height_mm": 48}] * 3,
         )
 
     def test_empty_question_type_goes_to_unknown_section(self):
@@ -292,7 +292,7 @@ class PaperRenderModelTests(unittest.TestCase):
         self.assertIn("PDF model source", html)
         self.assertIn("解答题", html)
         self.assertEqual(html.count('class="answer-area"'), 1)
-        self.assertIn('class="answer-area" style="height: 50mm"', html)
+        self.assertIn('class="answer-area" style="height: 48mm"', html)
         self.assertNotIn('class="answer-line"', html)
         self.assertEqual(options.paper_size, "A4")
 

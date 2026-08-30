@@ -49,7 +49,7 @@ def _render_model(content: str, *, with_answer_area: bool = True) -> PaperRender
                         question_type_label="解答题",
                         knowledge_tags=[],
                         answer_area=(
-                            PaperRenderAnswerArea(mode="after_each_question", height_mm=50)
+                            PaperRenderAnswerArea(mode="after_each_question", response_line_count=6, height_mm=48)
                             if with_answer_area
                             else None
                         ),
@@ -79,7 +79,7 @@ class PaperHtmlRendererTests(unittest.TestCase):
         self.assertIn("<strong>求解</strong>", first)
         self.assertIn("<math", first)
         self.assertEqual(first.count('class="answer-area"'), 1)
-        self.assertIn('class="answer-area" style="height: 50mm"', first)
+        self.assertIn('class="answer-area" style="height: 48mm"', first)
         self.assertNotIn('class="answer-line"', first)
         self.assertNotIn("border-bottom: 0.25mm solid #b8c4cc", first)
         self.assertIn(".question-content > :last-child { break-after: avoid;", first)

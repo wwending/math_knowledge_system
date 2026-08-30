@@ -27,6 +27,7 @@ class PaperExistingItemUpdate(BaseModel):
     id: int
     question_id: int
     score: float = Field(default=0, ge=0, allow_inf_nan=False)
+    response_line_count: Optional[int] = Field(default=None, ge=0, le=24, strict=True)
 
 
 class PaperQuestionItemUpdate(BaseModel):
@@ -34,6 +35,7 @@ class PaperQuestionItemUpdate(BaseModel):
     kind: Literal["question"]
     question_id: int
     score: float = Field(default=0, ge=0, allow_inf_nan=False)
+    response_line_count: int = Field(default=6, ge=0, le=24, strict=True)
 
 
 PaperItemUpdate = Annotated[
@@ -73,6 +75,7 @@ class PaperItemRead(BaseModel):
     question_id: int
     position: int
     score: Optional[float] = None
+    response_line_count: int
     content_snapshot: str
     answer_snapshot: Optional[str] = None
     analysis_snapshot: Optional[str] = None
