@@ -106,7 +106,7 @@ class FailurePathTests(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, 401)
-        self.assertEqual(response.json()["detail"], "Invalid phone or password")
+        self.assertEqual(response.json()["detail"], "Invalid username or password")
 
     def test_missing_token_rejected(self):
         response = self.client.get("/api/v1/auth/me")

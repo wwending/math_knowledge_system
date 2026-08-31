@@ -32,12 +32,24 @@ if (!panelSource.includes('已禁用，无法登录')) {
   failures.push('disabled user guidance is missing')
 }
 
-if (!panelSource.includes('下次登录后必须修改密码')) {
-  failures.push('must_change_password guidance is missing')
+if (panelSource.includes('下次登录后必须修改密码') || panelSource.includes('must_change_password')) {
+  failures.push('removed forced-password-change UI is still present')
 }
 
 if (!panelSource.includes('当前不开放自助找回密码，请通过管理员重置')) {
   failures.push('password recovery admin-contact guidance is missing')
+}
+
+if (!dashboardSource.includes('isSuperAdminUser')) {
+  failures.push('user management visibility is not restricted to super_admin')
+}
+
+if (!panelSource.includes('/settings/public-signup') || !panelSource.includes('ElMessageBox.confirm')) {
+  failures.push('persistent public-signup toggle or enable confirmation is missing')
+}
+
+if (!panelSource.includes('createRoleOptions') || !panelSource.includes("value !== 'super_admin'")) {
+  failures.push('create-user form still allows direct super_admin creation')
 }
 
 if (failures.length > 0) {

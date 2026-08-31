@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import re
 import secrets
+import unicodedata
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -15,18 +16,7 @@ from app.core.config import settings
 SECRET_KEY = settings.SECRET_KEY
 ALGORITHM = settings.ALGORITHM
 ACCESS_TOKEN_EXPIRE_MINUTES = settings.ACCESS_TOKEN_EXPIRE_MINUTES
-COMMON_WEAK_PASSWORDS = {
-    "12345678",
-    "123456789",
-    "1234567890",
-    "password",
-    "password123",
-    "qwerty123",
-    "admin123",
-    "admin1234",
-    "11111111",
-    "00000000",
-}
+RESERVED_ACCOUNT_NAMES = {"admin", "administrator", "root", "system", "superadmin", "super_admin", "管理员", "超级管理员", "系统"}
 PHONE_SANITIZE_PATTERN = re.compile(r"[\s\-\(\)]")
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -75,31 +65,30 @@ def validate_password_strength(
     phone: Optional[str] = None,
     display_name: Optional[str] = None,
 ) -> None:
+    del phone, display_name
     candidate = password or ""
-    if len(candidate) < 8:
-        raise PasswordValidationError("Password must be at least 8 characters")
-    if candidate.isdigit():
-        raise PasswordValidationError("Password cannot be numeric only")
-    if candidate.lower() in COMMON_WEAK_PASSWORDS:
-        raise PasswordValidationError("Password is too weak")
+    if len(candidate) < 6 or len(candidate) > 64:
+        raise PasswordValidationError("Password must be 6 to 64 characters")
+    if not candidate.strip(" "):
+        raise PasswordValidationError("Password cannot contain only spaces")
+    if any(ord(char) < 0x20 or ord(char) > 0x7E for char in candidate):
+        raise PasswordValidationError("Password must contain printable ASCII characters only")
 
-    classes = 0
-    classes += 1 if re.search(r"[A-Z]", candidate) else 0
-    classes += 1 if re.search(r"[a-z]", candidate) else 0
-    classes += 1 if re.search(r"\d", candidate) else 0
-    classes += 1 if re.search(r"[^A-Za-z0-9]", candidate) else 0
-    if classes < 2:
-        raise PasswordValidationError("Password must include at least two character classes")
 
-    lowered = candidate.lower()
-    if phone:
-        normalized_phone = normalize_phone(phone).lstrip("+")
-        if normalized_phone and normalized_phone in lowered:
-            raise PasswordValidationError("Password cannot contain the phone number")
-    if display_name:
-        compact_display_name = re.sub(r"\s+", "", display_name).lower()
-        if compact_display_name and len(compact_display_name) >= 3 and compact_display_name in lowered:
-            raise PasswordValidationError("Password cannot contain the display name")
+def normalize_account_name(value: str) -> str:
+    return unicodedata.normalize("NFC", (value or "").strip())
+
+
+def validate_account_name(value: str, *, field_name: str = "Username") -> str:
+    normalized = normalize_account_name(value)
+    def allowed(char: str) -> bool:
+        return char == "_" or (char.isascii() and char.isalnum()) or unicodedata.name(char, "").startswith("CJK UNIFIED IDEOGRAPH")
+
+    if not 1 <= len(normalized) <= 32 or not all(allowed(char) for char in normalized) or not any(char != "_" for char in normalized):
+        raise ValueError(f"{field_name} must be 1 to 32 Chinese, letter, digit, or underscore characters")
+    if normalized.casefold() in {name.casefold() for name in RESERVED_ACCOUNT_NAMES}:
+        raise ValueError(f"{field_name} is reserved")
+    return normalized
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:

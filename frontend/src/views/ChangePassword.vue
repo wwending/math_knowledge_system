@@ -7,21 +7,10 @@
             <h1>{{ pageTitle }}</h1>
             <p>{{ pageDescription }}</p>
           </div>
-          <el-tag v-if="isForcedFlow" type="warning" effect="dark">强制改密</el-tag>
         </div>
       </template>
 
       <el-alert
-        v-if="isForcedFlow"
-        title="当前账号由管理员创建或已被管理员重置密码，完成修改后才能继续访问系统。"
-        type="warning"
-        :closable="false"
-        show-icon
-        class="page-alert"
-      />
-
-      <el-alert
-        v-else
         title="如遗忘原密码，当前不开放自助找回，请联系管理员重置。"
         type="info"
         :closable="false"
@@ -59,11 +48,11 @@
         </el-form-item>
 
         <div class="password-rules">
-          <span>密码要求：至少 8 位，不能为纯数字，且不能使用明显弱密码。</span>
+          <span>密码要求：6～64 个可打印 ASCII 字符，不能全部为空格。</span>
         </div>
 
         <div class="actions">
-          <el-button v-if="!isForcedFlow" @click="router.replace('/')">返回系统</el-button>
+          <el-button @click="router.replace('/')">返回系统</el-button>
           <el-button type="primary" :loading="submitting" @click="handleSubmit">提交修改</el-button>
         </div>
       </el-form>
@@ -72,11 +61,11 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 
-import { authState, changePassword, needsPasswordChange } from '../utils/auth'
+import { changePassword } from '../utils/auth'
 
 const router = useRouter()
 const formRef = ref(null)
@@ -88,14 +77,8 @@ const form = reactive({
   confirmPassword: ''
 })
 
-const isForcedFlow = computed(() => needsPasswordChange(authState.currentUser))
-
-const pageTitle = computed(() => (isForcedFlow.value ? '先修改密码' : '修改密码'))
-const pageDescription = computed(() => (
-  isForcedFlow.value
-    ? '首次登录或管理员重置密码后，必须先完成改密。'
-    : '为提升账户安全，请定期更新密码。'
-))
+const pageTitle = '修改密码'
+const pageDescription = '为提升账户安全，请定期更新密码。'
 
 const validateConfirmPassword = (rule, value, callback) => {
   if (!value) {

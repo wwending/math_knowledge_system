@@ -3,13 +3,13 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 from app.models.user import UserRole, UserStatus
 
 
 class LoginRequest(BaseModel):
-    phone: str
+    username: str = Field(validation_alias=AliasChoices("username", "phone"))
     password: str
 
 
@@ -30,8 +30,8 @@ class ChangePasswordRequest(BaseModel):
 
 
 class RegisterRequest(BaseModel):
-    phone: str
-    display_name: str
+    username: str
+    display_name: Optional[str] = None
     password: str
 
 
@@ -73,11 +73,10 @@ class ChangePasswordResponse(BaseModel):
 
 
 class AdminCreateUserRequest(BaseModel):
-    phone: str
-    display_name: str
+    username: str
+    display_name: Optional[str] = None
     password: str
     role: UserRole = UserRole.USER
-    must_change_password: bool = True
 
 
 class AdminUserListResponse(BaseModel):
@@ -95,7 +94,14 @@ class UpdateUserRoleRequest(BaseModel):
 
 class AdminResetPasswordRequest(BaseModel):
     new_password: str
-    must_change_password: bool = True
+
+
+class PublicSignupSettingResponse(BaseModel):
+    public_signup_enabled: bool
+
+
+class UpdatePublicSignupSettingRequest(BaseModel):
+    public_signup_enabled: bool
 
 
 class AdminMutationResponse(BaseModel):

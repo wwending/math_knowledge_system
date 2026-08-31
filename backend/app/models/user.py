@@ -31,6 +31,7 @@ class User(Base):
     phone = Column(String, unique=True, index=True, nullable=True)
     phone_verified_at = Column(DateTime(timezone=True), nullable=True)
     display_name = Column(String, nullable=False)
+    display_name_key = Column(String, unique=True, index=True, nullable=True)
     hashed_password = Column(String, nullable=False)
     role = Column(String, nullable=False, default=UserRole.USER.value)
     status = Column(String, nullable=False, default=UserStatus.ACTIVE.value)

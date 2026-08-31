@@ -18,7 +18,7 @@
     <section class="auth-right">
       <div class="form-wrapper">
         <h2>欢迎回来</h2>
-        <p class="form-tip">请输入手机号和密码登录系统</p>
+        <p class="form-tip">请输入用户名和密码登录系统（历史手机号账号仍可使用手机号）</p>
 
         <el-alert
           type="info"
@@ -35,16 +35,15 @@
           size="large"
           class="login-form"
         >
-          <el-form-item prop="phone">
+          <el-form-item prop="username">
             <el-input
-              v-model="loginForm.phone"
-              name="phone"
-              autocomplete="tel"
-              inputmode="numeric"
+              v-model="loginForm.username"
+              name="username"
+              autocomplete="username"
               :spellcheck="false"
-              aria-label="手机号"
-              placeholder="手机号"
-              :prefix-icon="Iphone"
+              aria-label="用户名"
+              placeholder="用户名"
+              :prefix-icon="User"
               @keyup.enter="handleLogin"
             />
           </el-form-item>
@@ -88,7 +87,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { DataAnalysis, Iphone, Lock } from '@element-plus/icons-vue'
+import { DataAnalysis, Lock, User } from '@element-plus/icons-vue'
 
 import { getPublicSignupCapabilityState, login, resolvePublicSignupCapability } from '../utils/auth'
 
@@ -98,12 +97,12 @@ const loginFormRef = ref(null)
 const loading = ref(false)
 
 const loginForm = reactive({
-  phone: '',
+  username: '',
   password: ''
 })
 
 const rules = {
-  phone: [{ required: true, message: '请输入手机号', trigger: 'blur' }],
+  username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
   password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
 }
 
@@ -143,7 +142,7 @@ const getLoginErrorMessage = (error) => {
   const detail = error.response?.data?.detail
 
   if (status === 401) {
-    return detail || '手机号或密码错误。'
+    return detail || '用户名或密码错误。'
   }
   if (status === 403) {
     return detail || '当前账号暂不可用，请联系管理员。'
@@ -176,15 +175,11 @@ const handleLogin = async () => {
   loading.value = true
   try {
     const result = await login({
-      phone: loginForm.phone,
+      username: loginForm.username,
       password: loginForm.password
     })
     ElMessage.success('登录成功。')
-    router.replace(
-      result?.user?.must_change_password || result?.user?.status === 'pending_password_change'
-        ? '/change-password'
-        : '/'
-    )
+    router.replace('/')
   } catch (error) {
     ElMessage.error(getLoginErrorMessage(error))
   } finally {
@@ -193,10 +188,10 @@ const handleLogin = async () => {
 }
 
 watch(
-  () => route.query.phone,
-  (phone) => {
-    if (typeof phone === 'string' && phone.trim()) {
-      loginForm.phone = phone.trim()
+  () => route.query.username,
+  (username) => {
+    if (typeof username === 'string' && username.trim()) {
+      loginForm.username = username.trim()
     }
   },
   { immediate: true }
