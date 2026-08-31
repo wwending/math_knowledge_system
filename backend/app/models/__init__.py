@@ -1,8 +1,10 @@
 # Import model modules so SQLAlchemy metadata is populated.
 from app.models import auth_audit_log  # noqa: F401
+from app.models import auth_setting  # noqa: F401
 from app.models import auth_session  # noqa: F401
 from app.models import user  # noqa: F401
 from app.models import login_rate_limit  # noqa: F401
+from app.models import signup_rate_limit  # noqa: F401
 from app.models import question  # noqa: F401
 from app.models import source_asset  # noqa: F401
 from app.models import draft  # noqa: F401

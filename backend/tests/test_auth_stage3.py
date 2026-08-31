@@ -156,8 +156,8 @@ class AuthStage3TestCase(unittest.TestCase):
             "/api/v1/admin/users",
             headers=admin_headers,
             json={
-                "phone": "13800000002",
-                "display_name": "Managed User",
+                "username": "managed138",
+                "display_name": "ManagedUser",
                 "password": "TempPass123!",
                 "role": "user",
                 "must_change_password": True,
@@ -182,7 +182,7 @@ class AuthStage3TestCase(unittest.TestCase):
 
         disabled_login = self.client.post(
             "/api/v1/auth/login",
-            json={"phone": "13800000002", "password": "TempPass123!"},
+            json={"username": "managed138", "password": "TempPass123!"},
         )
         self.assertEqual(disabled_login.status_code, 403)
 
@@ -204,16 +204,16 @@ class AuthStage3TestCase(unittest.TestCase):
         try:
             user_login = user_client.post(
                 "/api/v1/auth/login",
-                json={"phone": "13800000002", "password": "ResetPass123!"},
+                json={"username": "managed138", "password": "ResetPass123!"},
             )
             self.assertEqual(user_login.status_code, 200)
-            self.assertTrue(user_login.json()["user"]["must_change_password"])
+            self.assertFalse(user_login.json()["user"]["must_change_password"])
             user_token = user_login.json()["access_token"]
             user_headers = self._auth_headers(user_token)
 
             me_response = user_client.get("/api/v1/auth/me", headers=user_headers)
             self.assertEqual(me_response.status_code, 200)
-            self.assertTrue(me_response.json()["must_change_password"])
+            self.assertFalse(me_response.json()["must_change_password"])
 
             change_password_response = user_client.post(
                 "/api/v1/auth/change-password",
@@ -229,7 +229,7 @@ class AuthStage3TestCase(unittest.TestCase):
             refreshed_token = change_password_response.json()["access_token"]
             refresh_response = user_client.post("/api/v1/auth/refresh")
             self.assertEqual(refresh_response.status_code, 200)
-            self.assertEqual(refresh_response.json()["user"]["phone"], "13800000002")
+            self.assertEqual(refresh_response.json()["user"]["username"], "managed138")
 
             logout_response = user_client.post(
                 "/api/v1/auth/logout",

@@ -99,7 +99,7 @@ class Settings(BaseSettings):
     ALLOW_RUNTIME_SCHEMA_MUTATIONS: bool = False
     AUTO_CREATE_TABLES: bool = False
     AUTO_APPLY_LEGACY_QUESTION_COMPAT: bool = False
-    PUBLIC_SIGNUP_ENABLED: bool = False
+    PUBLIC_SIGNUP_ENABLED: bool = True
     SMS_CODE_LOGIN_ENABLED: bool = False
     SMS_PASSWORD_RECOVERY_ENABLED: bool = False
     PASSWORD_RECOVERY_MODE: str = "admin_contact"

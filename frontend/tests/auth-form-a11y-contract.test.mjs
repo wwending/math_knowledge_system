@@ -15,11 +15,11 @@ const requireMatch = (source, pattern, message) => {
   }
 }
 
-// Login: the phone number identifies an existing account.
+// Login: username is primary; historical phone values remain valid identifiers.
 requireMatch(
   loginSource,
-  /v-model="loginForm\.phone"[^>]*name="phone"[^>]*autocomplete="tel"[^>]*inputmode="numeric"[^>]*:spellcheck="false"[^>]*aria-label="手机号"/,
-  'Login phone input must keep name, autocomplete="tel", numeric inputmode, spellcheck=false and aria-label'
+  /v-model="loginForm\.username"[^>]*name="username"[^>]*autocomplete="username"[^>]*:spellcheck="false"[^>]*aria-label="用户名"/,
+  'Login username input must keep name, autocomplete="username", spellcheck=false and aria-label'
 )
 requireMatch(
   loginSource,
@@ -27,17 +27,25 @@ requireMatch(
   'Login password input must keep name, autocomplete="current-password" and aria-label'
 )
 
-// Register: the phone becomes the saved credential username.
+// Register: the username becomes the saved credential.
 requireMatch(
   registerSource,
-  /v-model="registerForm\.phone"[^>]*name="phone"[^>]*autocomplete="username"[^>]*inputmode="numeric"[^>]*:spellcheck="false"[^>]*aria-label="手机号"/,
-  'Register phone input must keep name, autocomplete="username", numeric inputmode, spellcheck=false and aria-label'
+  /v-model="registerForm\.username"[^>]*name="username"[^>]*autocomplete="username"[^>]*:spellcheck="false"[^>]*aria-label="用户名"/,
+  'Register username input must keep name, autocomplete="username", spellcheck=false and aria-label'
 )
 requireMatch(
   registerSource,
-  /v-model="registerForm\.displayName"[^>]*name="displayName"[^>]*autocomplete="name"[^>]*aria-label="显示名称"/,
+  /v-model="registerForm\.displayName"[^>]*name="displayName"[^>]*autocomplete="name"[^>]*aria-label="昵称（选填）"/,
   'Register display-name input must keep name, autocomplete="name" and aria-label'
 )
+requireMatch(
+  registerSource,
+  /v-model="registerForm\.confirmPassword"[^>]*name="confirmPassword"[^>]*autocomplete="new-password"[^>]*aria-label="确认密码"/,
+  'Register confirmation input must keep name, autocomplete="new-password" and aria-label'
+)
+if (!registerSource.includes('validateAccountName') || !registerSource.includes('validatePassword') || !registerSource.includes('validateConfirmPassword')) {
+  failures.push('Register form must validate account names, password policy, and password confirmation')
+}
 requireMatch(
   registerSource,
   /type="password"[^>]*name="password"[^>]*autocomplete="new-password"[^>]*aria-label="密码"/,

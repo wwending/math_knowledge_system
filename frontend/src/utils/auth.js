@@ -107,12 +107,13 @@ const clearAuthSessionIfUnchanged = (expectedAccessToken = '') => {
 }
 
 export const needsPasswordChange = (user = authState.currentUser) => {
-  return Boolean(user && (user.must_change_password || user.status === 'pending_password_change'))
+  return false
 }
 
 export const isAdminRole = (role) => ['admin', 'super_admin'].includes(role)
 
 export const isAdminUser = (user = authState.currentUser) => isAdminRole(user?.role)
+export const isSuperAdminUser = (user = authState.currentUser) => user?.role === 'super_admin'
 
 export const getAuthCapabilities = () => normalizeAuthCapabilities(authState.capabilities)
 
@@ -184,10 +185,10 @@ export const resolvePublicSignupCapability = async ({ force = false } = {}) => {
   return getPublicSignupCapabilityState()
 }
 
-export const login = async ({ phone, password }) => {
+export const login = async ({ username, password }) => {
   const response = await axios.post(
     `${API_V1_BASE_URL}/auth/login`,
-    { phone, password },
+    { username, password },
     {
       skipAuthRedirect: true,
       skipRefreshRetry: true
@@ -196,11 +197,11 @@ export const login = async ({ phone, password }) => {
   return applyAuthPayload(response.data)
 }
 
-export const register = async ({ phone, displayName, password }) => {
+export const register = async ({ username, displayName, password }) => {
   const response = await axios.post(
     `${API_V1_BASE_URL}/auth/register`,
     {
-      phone,
+      username,
       display_name: displayName,
       password
     },

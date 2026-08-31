@@ -3,13 +3,20 @@
     <div class="panel-header">
       <div>
         <h2>用户管理</h2>
-        <p>管理员创建账号、控制启停用、调整角色并重置密码。当前不开放公开注册和自助找回。</p>
+        <p>超级管理员创建账号、控制启停用、调整角色、重置密码并治理公开注册。</p>
       </div>
       <div class="panel-actions">
         <el-button @click="loadUsers">刷新</el-button>
         <el-button type="primary" @click="openCreateDialog">创建用户</el-button>
       </div>
     </div>
+
+    <el-card shadow="never" class="signup-setting-card">
+      <div class="table-header">
+        <div><strong>公开注册</strong><p>关闭后只阻止新的匿名注册，不影响登录和代创建账号。</p></div>
+        <el-switch v-model="publicSignupEnabled" :loading="signupSettingLoading" @change="updatePublicSignupSetting" />
+      </div>
+    </el-card>
 
     <el-alert
       title="审计已覆盖登录成功/失败、创建用户、启停用、角色变更、重置密码和用户自助改密。"
@@ -25,7 +32,7 @@
           <el-input
             v-model="filters.q"
             clearable
-            placeholder="手机号 / 昵称"
+            placeholder="用户名 / 历史手机号 / 昵称"
             @keyup.enter="loadUsers"
           />
         </el-form-item>
@@ -56,7 +63,8 @@
 
       <el-table v-loading="loading" :data="users" border>
         <el-table-column prop="display_name" label="昵称" min-width="140" />
-        <el-table-column prop="phone" label="手机号" min-width="150" />
+        <el-table-column prop="username" label="用户名" min-width="150" />
+        <el-table-column prop="phone" label="历史手机号" min-width="150" />
         <el-table-column label="角色" min-width="120">
           <template #default="{ row }">
             <el-tag :type="roleTagType(row.role)">{{ roleLabel(row.role) }}</el-tag>
@@ -67,7 +75,6 @@
             <div class="status-cell">
               <el-tag :type="statusTagType(row.status)">{{ statusLabel(row.status) }}</el-tag>
               <span v-if="row.status === 'disabled'" class="status-note">已禁用，无法登录</span>
-              <span v-else-if="row.must_change_password" class="status-note">下次登录后必须修改密码</span>
             </div>
           </template>
         </el-table-column>
@@ -96,25 +103,22 @@
 
     <el-dialog v-model="createDialogVisible" title="创建用户" width="520px" destroy-on-close>
       <el-form ref="createFormRef" :model="createForm" :rules="createRules" label-position="top">
-        <el-form-item label="手机号" prop="phone">
-          <el-input v-model="createForm.phone" placeholder="请输入登录手机号" />
+        <el-form-item label="用户名" prop="username">
+          <el-input v-model="createForm.username" placeholder="请输入用户名" />
         </el-form-item>
         <el-form-item label="昵称" prop="display_name">
-          <el-input v-model="createForm.display_name" placeholder="请输入用户昵称" />
+          <el-input v-model="createForm.display_name" placeholder="选填，默认等于用户名" />
         </el-form-item>
         <el-form-item label="初始密码" prop="password">
           <el-input v-model="createForm.password" type="password" show-password placeholder="请输入初始密码" />
         </el-form-item>
         <el-form-item label="角色" prop="role">
           <el-select v-model="createForm.role" placeholder="请选择角色">
-            <el-option v-for="item in roleOptions" :key="item.value" :label="item.label" :value="item.value" />
+            <el-option v-for="item in createRoleOptions" :key="item.value" :label="item.label" :value="item.value" />
           </el-select>
         </el-form-item>
-        <el-form-item>
-          <el-checkbox v-model="createForm.must_change_password">首次登录后强制修改密码</el-checkbox>
-        </el-form-item>
         <el-alert
-          title="当前不开放公开注册。如用户忘记密码，只能由管理员在此重置。"
+          title="密码为 6～64 个可打印 ASCII 字符；用户忘记密码时由超级管理员重置。"
           type="warning"
           :closable="false"
           show-icon
@@ -160,9 +164,6 @@
             placeholder="请输入新的临时密码"
           />
         </el-form-item>
-        <el-form-item>
-          <el-checkbox v-model="resetPasswordForm.must_change_password">用户下次登录时强制修改密码</el-checkbox>
-        </el-form-item>
         <el-alert
           title="当前不开放自助找回密码，请通过管理员重置并通知用户及时修改。"
           type="warning"
@@ -202,6 +203,8 @@ const resetPasswordDialogVisible = ref(false)
 const submittingCreate = ref(false)
 const submittingRole = ref(false)
 const submittingResetPassword = ref(false)
+const signupSettingLoading = ref(false)
+const publicSignupEnabled = ref(false)
 
 const createFormRef = ref(null)
 const resetPasswordFormRef = ref(null)
@@ -214,11 +217,10 @@ const filters = reactive({
 })
 
 const createForm = reactive({
-  phone: '',
+  username: '',
   display_name: '',
   password: '',
-  role: 'user',
-  must_change_password: true
+  role: 'user'
 })
 
 const roleForm = reactive({
@@ -226,8 +228,7 @@ const roleForm = reactive({
 })
 
 const resetPasswordForm = reactive({
-  new_password: '',
-  must_change_password: true
+  new_password: ''
 })
 
 const roleOptions = [
@@ -235,11 +236,11 @@ const roleOptions = [
   { label: '管理员', value: 'admin' },
   { label: '超级管理员', value: 'super_admin' }
 ]
+const createRoleOptions = roleOptions.filter((item) => item.value !== 'super_admin')
 
 const statusOptions = [
   { label: '启用', value: 'active' },
-  { label: '禁用', value: 'disabled' },
-  { label: '待改密', value: 'pending_password_change' }
+  { label: '禁用', value: 'disabled' }
 ]
 
 // #75：筛选条件与 ?user_q= / ?user_role= / ?user_status= 同步，挂载时恢复。
@@ -266,21 +267,39 @@ watch(filters, () => {
   })
 })
 
+const reservedNames = new Set(['admin', 'administrator', 'root', 'system', 'superadmin', 'super_admin', '管理员', '超级管理员', '系统'])
+const accountNamePattern = /^[\p{Script=Han}A-Za-z0-9_]+$/u
+const validateAccountName = (required, label) => (rule, value, callback) => {
+  const normalized = String(value || '').trim().normalize('NFC')
+  if (!normalized && !required) return callback()
+  if (!normalized) return callback(new Error(`请输入${label}`))
+  if (normalized.length > 32 || !accountNamePattern.test(normalized) || /^_+$/.test(normalized)) {
+    return callback(new Error(`${label}须为 1～32 个中文、英文字母、数字或下划线，且不能全为下划线`))
+  }
+  if (reservedNames.has(normalized.toLocaleLowerCase('en-US'))) return callback(new Error(`${label}不能使用系统保留名`))
+  callback()
+}
+const validatePassword = (rule, value, callback) => {
+  if (!/^[\x20-\x7E]{6,64}$/.test(value || '') || !String(value || '').replaceAll(' ', '')) {
+    return callback(new Error('密码须为 6～64 个可打印 ASCII 字符，且不能全部为空格'))
+  }
+  callback()
+}
 const createRules = {
-  phone: [{ required: true, message: '请输入手机号', trigger: 'blur' }],
-  display_name: [{ required: true, message: '请输入昵称', trigger: 'blur' }],
-  password: [{ required: true, message: '请输入初始密码', trigger: 'blur' }]
+  username: [{ validator: validateAccountName(true, '用户名'), trigger: 'blur' }],
+  display_name: [{ validator: validateAccountName(false, '昵称'), trigger: 'blur' }],
+  password: [{ validator: validatePassword, trigger: 'blur' }]
 }
 
 const resetPasswordRules = {
-  new_password: [{ required: true, message: '请输入新密码', trigger: 'blur' }]
+  new_password: [{ validator: validatePassword, trigger: 'blur' }]
 }
 
 const selectedUserLabel = computed(() => {
   if (!selectedUser.value) {
     return ''
   }
-  return `${selectedUser.value.display_name} / ${selectedUser.value.phone}`
+  return `${selectedUser.value.display_name} / ${selectedUser.value.username}`
 })
 
 const getErrorMessage = (error) => {
@@ -309,9 +328,6 @@ const statusLabel = (status) => {
   }
   if (status === 'disabled') {
     return '已禁用'
-  }
-  if (status === 'pending_password_change') {
-    return '待改密'
   }
   return status
 }
@@ -365,12 +381,44 @@ const loadUsers = async () => {
   }
 }
 
+const loadPublicSignupSetting = async () => {
+  signupSettingLoading.value = true
+  try {
+    const response = await axios.get(`${API_V1_BASE_URL}/admin/users/settings/public-signup`)
+    publicSignupEnabled.value = Boolean(response.data?.public_signup_enabled)
+  } catch (error) {
+    ElMessage.error(getErrorMessage(error))
+  } finally {
+    signupSettingLoading.value = false
+  }
+}
+
+const updatePublicSignupSetting = async (enabled) => {
+  if (enabled) {
+    try {
+      await ElMessageBox.confirm('开启后匿名访客可立即注册普通用户，确认开启吗？', '开启公开注册', { type: 'warning' })
+    } catch {
+      publicSignupEnabled.value = false
+      return
+    }
+  }
+  signupSettingLoading.value = true
+  try {
+    await axios.put(`${API_V1_BASE_URL}/admin/users/settings/public-signup`, { public_signup_enabled: enabled })
+    ElMessage.success(enabled ? '公开注册已开启。' : '公开注册已关闭。')
+  } catch (error) {
+    publicSignupEnabled.value = !enabled
+    ElMessage.error(getErrorMessage(error))
+  } finally {
+    signupSettingLoading.value = false
+  }
+}
+
 const openCreateDialog = () => {
-  createForm.phone = ''
+  createForm.username = ''
   createForm.display_name = ''
   createForm.password = ''
   createForm.role = 'user'
-  createForm.must_change_password = true
   createDialogVisible.value = true
 }
 
@@ -426,7 +474,6 @@ const submitRoleChange = async () => {
 const openResetPasswordDialog = (user) => {
   selectedUser.value = user
   resetPasswordForm.new_password = ''
-  resetPasswordForm.must_change_password = true
   resetPasswordDialogVisible.value = true
 }
 
@@ -484,6 +531,7 @@ const toggleUserStatus = async (user) => {
 
 onMounted(() => {
   loadUsers()
+  loadPublicSignupSetting()
 })
 </script>
 

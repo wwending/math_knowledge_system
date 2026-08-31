@@ -466,7 +466,7 @@ import {
 import {
   authState,
   fetchCurrentUser,
-  isAdminUser,
+  isSuperAdminUser,
   logout
 } from '../utils/auth'
 import HistoryPanel from '../components/HistoryPanel.vue'
@@ -553,7 +553,7 @@ const changeCropperScale = (amount) => {
 }
 
 const currentUser = computed(() => authState.currentUser)
-const adminMode = computed(() => isAdminUser(currentUser.value))
+const adminMode = computed(() => isSuperAdminUser(currentUser.value))
 
 const pageTitle = computed(() => {
   if (activeMenu.value === 'bank') {
@@ -682,18 +682,12 @@ const statusLabel = (status) => {
   if (status === 'disabled') {
     return '已禁用'
   }
-  if (status === 'pending_password_change') {
-    return '待改密'
-  }
   return '已启用'
 }
 
 const statusTagType = (status) => {
   if (status === 'disabled') {
     return 'danger'
-  }
-  if (status === 'pending_password_change') {
-    return 'warning'
   }
   return 'success'
 }

@@ -309,3 +309,11 @@ Draft 图片所有权校验挂在 Draft 行：未认证 401、非本人草稿 40
 - Draft 后端异常契约已阶段性收口：缺失 asset/draft 返回 `404`，非图片 asset recognize 返回 `400`，状态冲突和重复保存返回 `409`。
 - 当前不表述为生产可用。
 - 当前不表述为完整多页 PDF 或批量 draft 能力已完成。
+## Issue #147 认证与用户治理 API（2026-08-31）
+
+- `GET /api/v1/auth/capabilities`：每次从数据库读取 `public_signup_enabled`。
+- `POST /api/v1/auth/register`：匿名注册字段为 `username`、可选 `display_name`、`password`；只创建启用的 `user`。用户名重复返回 `409`，关闭注册返回 `403`，注册限流返回 `429`。
+- `POST /api/v1/auth/login`：字段为 `username`、`password`；`username` 同时接受历史手机号值，失败继续返回统一凭证错误。
+- `POST /api/v1/auth/change-password`：密码采用 6～64 个可打印 ASCII 字符且不能全为空格。
+- `/api/v1/admin/users*`：全部仅 `super_admin` 可用。创建字段为 `username`、可选 `display_name`、`password`、`role`，其中 `role` 仅可为 `user` 或 `admin`。
+- `GET|PUT /api/v1/admin/users/settings/public-signup`：读取或即时修改持久化公开注册状态；修改写安全审计。

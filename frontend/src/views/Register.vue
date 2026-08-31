@@ -36,14 +36,14 @@
 
         <template v-else-if="publicSignupCapability.enabled">
           <h2>注册新账号</h2>
-          <p class="form-tip">请填写手机号、显示名称和密码</p>
+          <p class="form-tip">请填写用户名、昵称（选填）和密码</p>
 
           <el-alert
             type="info"
             :closable="false"
             show-icon
             class="auth-alert"
-            title="注册成功后将返回登录页，并自动带回手机号。"
+            title="注册成功后将返回登录页，并自动带回用户名。"
           />
 
           <el-form
@@ -53,16 +53,15 @@
             size="large"
             class="register-form"
           >
-            <el-form-item prop="phone">
+            <el-form-item prop="username">
               <el-input
-                v-model="registerForm.phone"
-                name="phone"
+                v-model="registerForm.username"
+                name="username"
                 autocomplete="username"
-                inputmode="numeric"
                 :spellcheck="false"
-                aria-label="手机号"
-                placeholder="手机号"
-                :prefix-icon="Iphone"
+                aria-label="用户名"
+                placeholder="用户名"
+                :prefix-icon="User"
               />
             </el-form-item>
 
@@ -71,8 +70,8 @@
                 v-model="registerForm.displayName"
                 name="displayName"
                 autocomplete="name"
-                aria-label="显示名称"
-                placeholder="显示名称"
+                aria-label="昵称（选填）"
+                placeholder="昵称（选填，默认等于用户名）"
                 :prefix-icon="User"
               />
             </el-form-item>
@@ -87,13 +86,26 @@
                 placeholder="密码"
                 show-password
                 :prefix-icon="Lock"
+              />
+            </el-form-item>
+
+            <el-form-item prop="confirmPassword">
+              <el-input
+                v-model="registerForm.confirmPassword"
+                type="password"
+                name="confirmPassword"
+                autocomplete="new-password"
+                aria-label="确认密码"
+                placeholder="确认密码"
+                show-password
+                :prefix-icon="Lock"
                 @keyup.enter="handleRegister"
               />
             </el-form-item>
 
             <!-- #77: 密码规则前置展示，与改密页文案一致，避免提交失败才得知要求。 -->
             <div class="password-rules">
-              <span>密码要求：至少 8 位，不能为纯数字，且不能使用明显弱密码。</span>
+              <span>密码要求：6～64 个可打印 ASCII 字符，不能全部为空格。</span>
             </div>
 
             <el-form-item>
@@ -134,7 +146,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { DataAnalysis, Iphone, Lock, User } from '@element-plus/icons-vue'
+import { DataAnalysis, Lock, User } from '@element-plus/icons-vue'
 
 import {
   getPublicSignupCapabilityState,
@@ -148,15 +160,39 @@ const registerFormRef = ref(null)
 const loading = ref(false)
 
 const registerForm = reactive({
-  phone: '',
+  username: '',
   displayName: '',
-  password: ''
+  password: '',
+  confirmPassword: ''
 })
 
+const reservedNames = new Set(['admin', 'administrator', 'root', 'system', 'superadmin', 'super_admin', '管理员', '超级管理员', '系统'])
+const accountNamePattern = /^[\p{Script=Han}A-Za-z0-9_]+$/u
+const validateAccountName = (required, label) => (rule, value, callback) => {
+  const normalized = String(value || '').trim().normalize('NFC')
+  if (!normalized && !required) return callback()
+  if (!normalized) return callback(new Error(`请输入${label}`))
+  if (normalized.length > 32 || !accountNamePattern.test(normalized) || /^_+$/.test(normalized)) {
+    return callback(new Error(`${label}须为 1～32 个中文、英文字母、数字或下划线，且不能全为下划线`))
+  }
+  if (reservedNames.has(normalized.toLocaleLowerCase('en-US'))) return callback(new Error(`${label}不能使用系统保留名`))
+  callback()
+}
+const validatePassword = (rule, value, callback) => {
+  if (!/^[\x20-\x7E]{6,64}$/.test(value || '') || !String(value || '').replaceAll(' ', '')) {
+    return callback(new Error('密码须为 6～64 个可打印 ASCII 字符，且不能全部为空格'))
+  }
+  callback()
+}
+const validateConfirmPassword = (rule, value, callback) => {
+  if (value !== registerForm.password) return callback(new Error('两次输入的密码不一致'))
+  callback()
+}
 const rules = {
-  phone: [{ required: true, message: '请输入手机号', trigger: 'blur' }],
-  displayName: [{ required: true, message: '请输入显示名称', trigger: 'blur' }],
-  password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
+  username: [{ validator: validateAccountName(true, '用户名'), trigger: 'blur' }],
+  displayName: [{ validator: validateAccountName(false, '昵称'), trigger: 'blur' }],
+  password: [{ validator: validatePassword, trigger: 'blur' }],
+  confirmPassword: [{ validator: validateConfirmPassword, trigger: 'blur' }]
 }
 
 const publicSignupCapability = computed(() => getPublicSignupCapabilityState())
@@ -200,7 +236,7 @@ const getRegisterErrorMessage = (error) => {
     return detail
   }
   if (error.response?.status === 409) {
-    return '手机号已存在。'
+    return '用户名已存在。'
   }
   return '注册失败，请稍后重试。'
 }
@@ -218,14 +254,14 @@ const handleRegister = async () => {
   loading.value = true
   try {
     await register({
-      phone: registerForm.phone,
+      username: registerForm.username,
       displayName: registerForm.displayName,
       password: registerForm.password
     })
     ElMessage.success('注册成功，请使用新账号登录。')
     router.replace({
       path: '/login',
-      query: { phone: registerForm.phone.trim() }
+      query: { username: registerForm.username.trim() }
     })
   } catch (error) {
     if (error.response?.data?.detail === PUBLIC_SIGNUP_DISABLED_DETAIL || error.response?.status === 403) {

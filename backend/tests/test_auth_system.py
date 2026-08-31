@@ -217,8 +217,8 @@ class AuthSystemTests(unittest.TestCase):
             f"{settings.API_V1_STR}/admin/users",
             headers=headers,
             json={
-                "phone": "13700000000",
-                "display_name": "Managed User",
+                "username": "managed137",
+                "display_name": "ManagedUser",
                 "password": "ManagedPass123!",
                 "role": "user",
                 "must_change_password": True,
@@ -226,7 +226,7 @@ class AuthSystemTests(unittest.TestCase):
         )
         self.assertEqual(create_response.status_code, 200, create_response.text)
         managed_user = create_response.json()
-        self.assertEqual(managed_user["status"], "pending_password_change")
+        self.assertEqual(managed_user["status"], "active")
 
         list_response = self.client.get(f"{settings.API_V1_STR}/admin/users", headers=headers)
         self.assertEqual(list_response.status_code, 200, list_response.text)
@@ -234,7 +234,7 @@ class AuthSystemTests(unittest.TestCase):
 
         detail_response = self.client.get(f"{settings.API_V1_STR}/admin/users/{managed_user['id']}", headers=headers)
         self.assertEqual(detail_response.status_code, 200, detail_response.text)
-        self.assertEqual(detail_response.json()["phone"], "13700000000")
+        self.assertEqual(detail_response.json()["username"], "managed137")
 
         role_response = self.client.patch(
             f"{settings.API_V1_STR}/admin/users/{managed_user['id']}/role",
@@ -266,8 +266,8 @@ class AuthSystemTests(unittest.TestCase):
             json={"new_password": "ResetPass123!", "must_change_password": True},
         )
         self.assertEqual(reset_response.status_code, 200, reset_response.text)
-        self.assertTrue(reset_response.json()["user"]["must_change_password"])
-        self.assertEqual(reset_response.json()["user"]["status"], "pending_password_change")
+        self.assertFalse(reset_response.json()["user"]["must_change_password"])
+        self.assertEqual(reset_response.json()["user"]["status"], "active")
 
     def test_non_admin_cannot_access_admin_routes(self):
         user_login = self._login("13900000000", "UserPass123!")
@@ -303,8 +303,8 @@ class AuthSystemTests(unittest.TestCase):
             f"{settings.API_V1_STR}/admin/users",
             headers=headers,
             json={
-                "phone": "13600000000",
-                "display_name": "Reset Target",
+                "username": "reset136",
+                "display_name": "ResetTarget",
                 "password": "ManagedPass123!",
                 "role": "user",
                 "must_change_password": True,
@@ -315,7 +315,7 @@ class AuthSystemTests(unittest.TestCase):
 
         managed_client = TestClient(self.app)
         try:
-            managed_login = self._login_with_client(managed_client, "13600000000", "ManagedPass123!")
+            managed_login = self._login_with_client(managed_client, "reset136", "ManagedPass123!")
 
             reset_response = self.client.post(
                 f"{settings.API_V1_STR}/admin/users/{managed_user['id']}/reset-password",
@@ -330,14 +330,14 @@ class AuthSystemTests(unittest.TestCase):
             )
             self.assertEqual(old_session_me.status_code, 401, old_session_me.text)
 
-            relogin = self._login_with_client(managed_client, "13600000000", "ResetPass123!")
-            self.assertTrue(relogin["user"]["must_change_password"])
+            relogin = self._login_with_client(managed_client, "reset136", "ResetPass123!")
+            self.assertFalse(relogin["user"]["must_change_password"])
 
             blocked_business_response = managed_client.get(
                 f"{settings.API_V1_STR}/questions",
                 headers=self._auth_headers(relogin["access_token"]),
             )
-            self.assertEqual(blocked_business_response.status_code, 403, blocked_business_response.text)
+            self.assertEqual(blocked_business_response.status_code, 200, blocked_business_response.text)
 
             change_password_response = managed_client.post(
                 f"{settings.API_V1_STR}/auth/change-password",
@@ -361,8 +361,8 @@ class AuthSystemTests(unittest.TestCase):
             f"{settings.API_V1_STR}/admin/users",
             headers=headers,
             json={
-                "phone": "13500000000",
-                "display_name": "First Login User",
+                "username": "first135",
+                "display_name": "FirstLoginUser",
                 "password": "FirstPass123!",
                 "role": "user",
                 "must_change_password": True,
@@ -371,7 +371,7 @@ class AuthSystemTests(unittest.TestCase):
         self.assertEqual(create_response.status_code, 200, create_response.text)
 
         with TestClient(self.app) as managed_client:
-            login_payload = self._login_with_client(managed_client, "13500000000", "FirstPass123!")
+            login_payload = self._login_with_client(managed_client, "first135", "FirstPass123!")
             me_response = managed_client.get(
                 f"{settings.API_V1_STR}/auth/me",
                 headers=self._auth_headers(login_payload["access_token"]),
@@ -382,7 +382,7 @@ class AuthSystemTests(unittest.TestCase):
                 f"{settings.API_V1_STR}/questions",
                 headers=self._auth_headers(login_payload["access_token"]),
             )
-            self.assertEqual(blocked_questions_response.status_code, 403, blocked_questions_response.text)
+            self.assertEqual(blocked_questions_response.status_code, 200, blocked_questions_response.text)
 
             change_password_response = managed_client.post(
                 f"{settings.API_V1_STR}/auth/change-password",
@@ -404,8 +404,8 @@ class AuthSystemTests(unittest.TestCase):
             f"{settings.API_V1_STR}/admin/users",
             headers=headers,
             json={
-                "phone": "13400000000",
-                "display_name": "Pending Admin",
+                "username": "pending134",
+                "display_name": "PendingAdmin",
                 "password": "PendingPass123!",
                 "role": "admin",
                 "must_change_password": True,
@@ -414,7 +414,7 @@ class AuthSystemTests(unittest.TestCase):
         self.assertEqual(create_response.status_code, 200, create_response.text)
 
         with TestClient(self.app) as pending_admin_client:
-            pending_login = self._login_with_client(pending_admin_client, "13400000000", "PendingPass123!")
+            pending_login = self._login_with_client(pending_admin_client, "pending134", "PendingPass123!")
             response = pending_admin_client.get(
                 f"{settings.API_V1_STR}/admin/users",
                 headers=self._auth_headers(pending_login["access_token"]),
@@ -453,8 +453,8 @@ class AuthSystemTests(unittest.TestCase):
             f"{settings.API_V1_STR}/admin/users",
             headers=headers,
             json={
-                "phone": "13300000000",
-                "display_name": "Managed Admin",
+                "username": "admin133",
+                "display_name": "ManagedAdmin",
                 "password": "OpsPassword123!",
                 "role": "admin",
                 "must_change_password": False,
@@ -464,7 +464,7 @@ class AuthSystemTests(unittest.TestCase):
         managed_admin = create_response.json()
 
         with TestClient(self.app) as admin_client:
-            admin_login = self._login_with_client(admin_client, "13300000000", "OpsPassword123!")
+            admin_login = self._login_with_client(admin_client, "admin133", "OpsPassword123!")
             admin_headers = self._auth_headers(admin_login["access_token"])
 
             disable_response = admin_client.patch(
@@ -472,14 +472,14 @@ class AuthSystemTests(unittest.TestCase):
                 headers=admin_headers,
                 json={"status": "disabled"},
             )
-            self.assertEqual(disable_response.status_code, 409, disable_response.text)
+            self.assertEqual(disable_response.status_code, 403, disable_response.text)
 
             role_response = admin_client.patch(
                 f"{settings.API_V1_STR}/admin/users/{managed_admin['id']}/role",
                 headers=admin_headers,
                 json={"role": "user"},
             )
-            self.assertEqual(role_response.status_code, 409, role_response.text)
+            self.assertEqual(role_response.status_code, 403, role_response.text)
 
     def test_user_can_change_password(self):
         login_payload = self._login("13900000000", "UserPass123!")

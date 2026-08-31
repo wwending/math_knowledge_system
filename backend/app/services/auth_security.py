@@ -22,6 +22,10 @@ ADMIN_USER_DISABLED = "admin.user.disabled"
 ADMIN_USER_ENABLED = "admin.user.enabled"
 ADMIN_USER_ROLE_CHANGED = "admin.user.role.changed"
 ADMIN_USER_PASSWORD_RESET = "admin.user.password.reset"
+AUTH_SIGNUP_SUCCESS = "auth.signup.success"
+AUTH_SIGNUP_RATE_LIMITED = "auth.signup.rate_limited"
+ADMIN_PUBLIC_SIGNUP_ENABLED = "admin.public_signup.enabled"
+ADMIN_PUBLIC_SIGNUP_DISABLED = "admin.public_signup.disabled"
 
 
 @dataclass(frozen=True)
