@@ -12,7 +12,6 @@ import {
   clearAuthSession,
   DISABLED_USER_DETAIL,
   getAccessToken,
-  PASSWORD_CHANGE_REQUIRED_DETAIL,
   refreshSession
 } from './utils/auth'
 
@@ -76,14 +75,6 @@ axios.interceptors.response.use(
       } catch (refreshError) {
         clearAuthSessionIfUnchanged(accessTokenBeforeRefresh)
       }
-    }
-
-    if (status === 403 && detail === PASSWORD_CHANGE_REQUIRED_DETAIL && !originalRequest.skipAuthRedirect) {
-      ElMessage.warning('当前账号需要先修改密码后再继续使用。')
-      if (router.currentRoute.value.path !== '/change-password') {
-        router.replace('/change-password')
-      }
-      return Promise.reject(error)
     }
 
     if (status === 403 && detail === DISABLED_USER_DETAIL && !originalRequest.skipAuthRedirect) {

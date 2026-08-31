@@ -4,10 +4,12 @@ import { resolve } from 'node:path'
 const authUtilPath = resolve(process.cwd(), 'src/utils/auth.js')
 const mainPath = resolve(process.cwd(), 'src/main.js')
 const routerPath = resolve(process.cwd(), 'src/router/index.js')
+const changePasswordPath = resolve(process.cwd(), 'src/views/ChangePassword.vue')
 
 const authSource = readFileSync(authUtilPath, 'utf8')
 const mainSource = readFileSync(mainPath, 'utf8')
 const routerSource = readFileSync(routerPath, 'utf8')
+const changePasswordSource = readFileSync(changePasswordPath, 'utf8')
 const failures = []
 
 if (/localStorage/.test(authSource)) {
@@ -38,16 +40,20 @@ if (!/withCredentials\s*=\s*true/.test(mainSource)) {
   failures.push('axios withCredentials is not enabled for refresh cookie transport')
 }
 
-if (!mainSource.includes('PASSWORD_CHANGE_REQUIRED_DETAIL')) {
-  failures.push('password change required redirect handling is missing')
-}
-
 if (!routerSource.includes('/change-password')) {
   failures.push('change password route is missing')
 }
 
-if (!routerSource.includes('needsPasswordChange')) {
-  failures.push('router does not guard must_change_password users')
+if (routerSource.includes('needsPasswordChange') || mainSource.includes('PASSWORD_CHANGE_REQUIRED_DETAIL')) {
+  failures.push('removed forced-password-change redirect remains wired')
+}
+
+if (/强制改密|首次登录|must_change_password|pending_password_change|needsPasswordChange/.test(changePasswordSource)) {
+  failures.push('removed forced-password-change product state remains on change-password page')
+}
+
+if (!changePasswordSource.includes('6～64 个可打印 ASCII 字符，不能全部为空格')) {
+  failures.push('change-password page does not show the unified password policy')
 }
 
 if (failures.length > 0) {

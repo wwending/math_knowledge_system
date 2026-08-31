@@ -9,6 +9,7 @@ from fastapi import APIRouter, Body, Cookie, Depends, HTTPException, Request, Re
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import ExpiredSignatureError, JWTError, jwt
 from sqlalchemy import and_, or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -20,12 +21,16 @@ from app.core.security import (
     get_password_hash,
     get_refresh_token_hash,
     normalize_datetime,
+    normalize_account_name,
     normalize_phone,
     utcnow,
     validate_password_strength,
+    validate_account_name,
     verify_password,
 )
 from app.models.auth_session import AuthSession
+from app.models.auth_setting import AuthSetting
+from app.models.signup_rate_limit import SignupRateLimit
 from app.models.user import ADMIN_ROLES, User, UserStatus
 from app.schemas.auth import (
     AuthCapabilitiesResponse,
@@ -42,6 +47,8 @@ from app.services.auth_security import (
     AUTH_LOGIN_FAILURE,
     AUTH_LOGIN_SUCCESS,
     AUTH_PASSWORD_CHANGED,
+    AUTH_SIGNUP_RATE_LIMITED,
+    AUTH_SIGNUP_SUCCESS,
     LoginRateLimitExceededError,
     build_rate_limit_scopes,
     clear_failed_login_state,
@@ -54,7 +61,7 @@ from app.services.auth_security import (
 LOGIN_REQUIRED_MESSAGE = "Login required"
 INVALID_TOKEN_MESSAGE = "Invalid login state"
 EXPIRED_TOKEN_MESSAGE = "Login expired"
-BAD_CREDENTIALS_MESSAGE = "Invalid phone or password"
+BAD_CREDENTIALS_MESSAGE = "Invalid username or password"
 DISABLED_USER_MESSAGE = "User account is disabled"
 ADMIN_REQUIRED_MESSAGE = "Administrator permission required"
 PUBLIC_SIGNUP_DISABLED_MESSAGE = "Public signup is disabled in this environment"
@@ -62,6 +69,7 @@ REFRESH_TOKEN_REQUIRED_MESSAGE = "Refresh token is required"
 WEAK_PASSWORD_MESSAGE = "Password does not meet the security policy"
 PASSWORD_CHANGE_REQUIRED_MESSAGE = "Password change is required before accessing this resource"
 RATE_LIMITED_LOGIN_MESSAGE = "Too many failed login attempts. Please try again later"
+RATE_LIMITED_SIGNUP_MESSAGE = "Too many signup attempts. Please try again later"
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -94,6 +102,10 @@ def _raise_auth_error(detail: str) -> None:
 
 
 def _client_ip(request: Request) -> Optional[str]:
+    if settings.SECURE_TRANSPORT_MODE_NORMALIZED == "trusted_proxy_tls":
+        forwarded = request.headers.get("x-forwarded-for", "")
+        if forwarded:
+            return forwarded.split(",")[0].strip() or None
     if request.client and request.client.host:
         return request.client.host
     return None
@@ -170,10 +182,7 @@ def _build_auth_response(user: User, session: AuthSession) -> AuthTokenResponse:
 
 
 def _requires_password_change(user: User) -> bool:
-    return (
-        user.must_change_password
-        or user.status == UserStatus.PENDING_PASSWORD_CHANGE.value
-    )
+    return False
 
 
 def _get_user_by_phone(db: Session, phone: str) -> Optional[User]:
@@ -187,6 +196,72 @@ def _get_user_by_phone(db: Session, phone: str) -> Optional[User]:
         )
         .first()
     )
+
+
+def _get_user_by_login_identifier(db: Session, identifier: str) -> Optional[User]:
+    normalized = normalize_account_name(identifier)
+    user = db.query(User).filter(or_(User.username == normalized, User.phone == normalized)).first()
+    if user:
+        return user
+    try:
+        legacy_phone = normalize_phone(identifier)
+    except ValueError:
+        return None
+    return db.query(User).filter(User.phone == legacy_phone).first()
+
+
+def _public_signup_enabled(db: Session) -> bool:
+    setting = db.query(AuthSetting).filter(AuthSetting.id == 1).one()
+    return bool(setting.public_signup_enabled)
+
+
+def _signup_rate_record(db: Session, ip_address: str) -> SignupRateLimit:
+    now = utcnow()
+    record = db.query(SignupRateLimit).filter(SignupRateLimit.ip_address == ip_address).first()
+    if record is None:
+        record = SignupRateLimit(
+            ip_address=ip_address,
+            success_count=0,
+            success_window_started_at=now,
+            failure_count=0,
+            failure_window_started_at=now,
+        )
+        db.add(record)
+        try:
+            db.flush()
+        except IntegrityError:
+            db.rollback()
+            record = db.query(SignupRateLimit).filter(SignupRateLimit.ip_address == ip_address).one()
+    if now - normalize_datetime(record.success_window_started_at) >= timedelta(hours=1):
+        record.success_count = 0
+        record.success_window_started_at = now
+    if now - normalize_datetime(record.failure_window_started_at) >= timedelta(minutes=10):
+        record.failure_count = 0
+        record.failure_window_started_at = now
+    return record
+
+
+def _ensure_signup_allowed(db: Session, request: Request) -> tuple[SignupRateLimit, str]:
+    ip_address = _client_ip(request) or "unknown"
+    record = _signup_rate_record(db, ip_address)
+    if record.success_count >= 5 or record.failure_count >= 20:
+        write_auth_audit_log(
+            db, event_type=AUTH_SIGNUP_RATE_LIMITED, outcome="rate_limited",
+            ip_address=ip_address, user_agent=_request_user_agent(request),
+            details={"success_count": record.success_count, "failure_count": record.failure_count},
+        )
+        db.commit()
+        raise HTTPException(status_code=429, detail=RATE_LIMITED_SIGNUP_MESSAGE)
+    return record, ip_address
+
+
+def _record_signup_failure(db: Session, record: SignupRateLimit) -> None:
+    (
+        db.query(SignupRateLimit)
+        .filter(SignupRateLimit.id == record.id, SignupRateLimit.failure_count < 20)
+        .update({SignupRateLimit.failure_count: SignupRateLimit.failure_count + 1}, synchronize_session=False)
+    )
+    db.commit()
 
 
 def _get_user_by_id(db: Session, user_id: int) -> Optional[User]:
@@ -321,10 +396,16 @@ def require_admin(user: User = Depends(require_active_user)) -> User:
     return user
 
 
+def require_super_admin(user: User = Depends(require_active_user)) -> User:
+    if user.role != "super_admin":
+        raise HTTPException(status_code=403, detail=ADMIN_REQUIRED_MESSAGE)
+    return user
+
+
 @router.get("/capabilities", response_model=AuthCapabilitiesResponse)
-def read_auth_capabilities():
+def read_auth_capabilities(db: Session = Depends(get_db)):
     return AuthCapabilitiesResponse(
-        public_signup_enabled=settings.PUBLIC_SIGNUP_ENABLED,
+        public_signup_enabled=_public_signup_enabled(db),
         password_recovery_mode=settings.PASSWORD_RECOVERY_MODE,
         sms_code_login_enabled=settings.SMS_CODE_LOGIN_ENABLED,
         sms_password_recovery_enabled=settings.SMS_PASSWORD_RECOVERY_ENABLED,
@@ -332,21 +413,36 @@ def read_auth_capabilities():
 
 
 @router.post("/register", response_model=UserResponse)
-def register(payload: RegisterRequest, db: Session = Depends(get_db)):
-    if not settings.PUBLIC_SIGNUP_ENABLED:
+def register(payload: RegisterRequest, request: Request, db: Session = Depends(get_db)):
+    if not _public_signup_enabled(db):
         raise HTTPException(status_code=403, detail=PUBLIC_SIGNUP_DISABLED_MESSAGE)
 
-    normalized_phone = _normalize_phone_or_422(payload.phone)
-    _validate_password_or_422(payload.password, phone=normalized_phone, display_name=payload.display_name)
+    rate_record, ip_address = _ensure_signup_allowed(db, request)
+    try:
+        username = validate_account_name(payload.username)
+        display_name = validate_account_name(payload.display_name or username, field_name="Display name")
+    except ValueError as exc:
+        _record_signup_failure(db, rate_record)
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    try:
+        _validate_password_or_422(payload.password, phone=None, display_name=display_name)
+    except HTTPException:
+        _record_signup_failure(db, rate_record)
+        raise
 
-    if _get_user_by_phone(db, normalized_phone):
-        raise HTTPException(status_code=409, detail="Phone number already exists")
+    if db.query(User).filter(or_(User.username == username, User.phone == username)).first():
+        _record_signup_failure(db, rate_record)
+        raise HTTPException(status_code=409, detail="Username already exists")
+    if db.query(User).filter(User.display_name == display_name).first():
+        _record_signup_failure(db, rate_record)
+        raise HTTPException(status_code=409, detail="Display name already exists")
 
     now = utcnow()
     user = User(
-        username=normalized_phone,
-        phone=normalized_phone,
-        display_name=payload.display_name.strip(),
+        username=username,
+        phone=None,
+        display_name=display_name,
+        display_name_key=display_name,
         hashed_password=get_password_hash(payload.password),
         role="user",
         status=UserStatus.ACTIVE.value,
@@ -354,7 +450,42 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
         password_changed_at=now,
     )
     db.add(user)
-    db.commit()
+    try:
+        reserved = (
+            db.query(SignupRateLimit)
+            .filter(
+                SignupRateLimit.id == rate_record.id,
+                SignupRateLimit.success_count < 5,
+                SignupRateLimit.failure_count < 20,
+            )
+            .update({SignupRateLimit.success_count: SignupRateLimit.success_count + 1}, synchronize_session=False)
+        )
+        if reserved != 1:
+            db.rollback()
+            retry_record = _signup_rate_record(db, ip_address)
+            write_auth_audit_log(
+                db, event_type=AUTH_SIGNUP_RATE_LIMITED, outcome="rate_limited",
+                ip_address=ip_address, user_agent=_request_user_agent(request),
+                details={"success_count": retry_record.success_count, "failure_count": retry_record.failure_count},
+            )
+            db.commit()
+            raise HTTPException(status_code=429, detail=RATE_LIMITED_SIGNUP_MESSAGE)
+        db.flush()
+        write_auth_audit_log(
+            db, event_type=AUTH_SIGNUP_SUCCESS, actor_user=None, target_user=user,
+            ip_address=ip_address, user_agent=_request_user_agent(request),
+            details={"username": username},
+        )
+        db.commit()
+    except HTTPException:
+        raise
+    except IntegrityError as exc:
+        db.rollback()
+        retry_record = _signup_rate_record(db, ip_address)
+        _record_signup_failure(db, retry_record)
+        if db.query(User).filter(or_(User.username == username, User.phone == username)).first():
+            raise HTTPException(status_code=409, detail="Username already exists") from exc
+        raise HTTPException(status_code=409, detail="Display name already exists") from exc
     db.refresh(user)
     return user
 
@@ -383,23 +514,8 @@ def _login_user(db: Session, response: Response, request: Request, *, phone: str
             headers={"Retry-After": str(exc.retry_after_seconds)},
         ) from exc
 
-    try:
-        normalized_phone = _normalize_phone_or_422(phone)
-    except HTTPException as exc:
-        record_failed_login(db, scopes=login_scopes)
-        write_auth_audit_log(
-            db,
-            event_type=AUTH_LOGIN_FAILURE,
-            outcome="failure",
-            target_phone=_normalize_phone_for_scope(phone),
-            ip_address=client_ip,
-            user_agent=user_agent,
-            details={"reason": "invalid_phone_format"},
-        )
-        db.commit()
-        raise exc
-
-    user = _get_user_by_phone(db, normalized_phone)
+    normalized_phone = normalize_account_name(phone)
+    user = _get_user_by_login_identifier(db, normalized_phone)
     if not user or not verify_password(password, user.hashed_password):
         record_failed_login(db, scopes=login_scopes)
         write_auth_audit_log(
@@ -452,7 +568,7 @@ def _login_user(db: Session, response: Response, request: Request, *, phone: str
 
 @router.post("/login", response_model=AuthTokenResponse)
 def login(payload: LoginRequest, response: Response, request: Request, db: Session = Depends(get_db)):
-    return _login_user(db, response, request, phone=payload.phone, password=payload.password)
+    return _login_user(db, response, request, phone=payload.username, password=payload.password)
 
 
 @router.post("/token", response_model=AuthTokenResponse)

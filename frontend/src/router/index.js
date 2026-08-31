@@ -9,7 +9,6 @@ import ChangePassword from '../views/ChangePassword.vue'
 import {
   ensureAuthenticated,
   getCurrentUser,
-  needsPasswordChange,
   resolvePublicSignupCapability
 } from '../utils/auth'
 
@@ -55,7 +54,7 @@ router.beforeEach(async (to, from, next) => {
     const authenticated = await ensureAuthenticated()
     if (authenticated) {
       const currentUser = getCurrentUser()
-      next(needsPasswordChange(currentUser) ? '/change-password' : '/')
+      next('/')
       return
     }
   }
@@ -82,21 +81,8 @@ router.beforeEach(async (to, from, next) => {
   }
 
   const currentUser = getCurrentUser()
-  const requiresPasswordChange = needsPasswordChange(currentUser)
-
   if (to.path === '/login' && currentUser) {
-    next(requiresPasswordChange ? '/change-password' : '/')
-    return
-  }
-
-  if (requiresPasswordChange && to.path !== '/change-password') {
-    ElMessage.warning('当前账号需要先完成密码修改。')
-    next('/change-password')
-    return
-  }
-
-  if (!to.meta.requiresAuth && from.path === '/change-password' && requiresPasswordChange) {
-    next('/change-password')
+    next('/')
     return
   }
 

@@ -61,3 +61,6 @@ Do not include credentials, production data, or complete third-party responses i
 - SSH keys for server access are dedicated per operator and per machine, protected by passphrases; rotate them at least every 90 days, and immediately after any suspected exposure or operator departure.
 - Remove stale entries from the server's `authorized_keys` and revoke revoked-operator tokens as part of each rotation pass.
 - Any credential that may have appeared in logs, issues, screenshots, or backups is treated as exposed and rotated out of band — rotation is not deferred to the next cycle.
+## 公开注册可信客户端 IP 边界
+
+匿名注册限流只在 `SECURE_TRANSPORT_MODE=trusted_proxy_tls` 时读取 `X-Forwarded-For` 的入口客户端地址；该模式必须配合部署文档要求的可信 TLS 代理和防火墙入口限制。其他模式使用直连地址并忽略转发头，禁止把任意客户端可写的头作为限流身份。注册审计不得包含密码。

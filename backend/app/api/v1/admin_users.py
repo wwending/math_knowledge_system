@@ -4,26 +4,31 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.api.v1.auth import require_admin
+from app.api.v1.auth import require_super_admin
 from app.core.database import get_db
 from app.core.security import (
     PasswordValidationError,
     get_password_hash,
     normalize_phone,
+    validate_account_name,
     utcnow,
     validate_password_strength,
 )
 from app.models.auth_session import AuthSession
+from app.models.auth_setting import AuthSetting
 from app.models.user import User, UserRole, UserStatus
 from app.schemas.auth import (
     AdminCreateUserRequest,
     AdminMutationResponse,
     AdminResetPasswordRequest,
     AdminUserListResponse,
+    PublicSignupSettingResponse,
     UpdateUserRoleRequest,
     UpdateUserStatusRequest,
+    UpdatePublicSignupSettingRequest,
     UserResponse,
 )
 from app.services.auth_security import (
@@ -32,6 +37,8 @@ from app.services.auth_security import (
     ADMIN_USER_ENABLED,
     ADMIN_USER_PASSWORD_RESET,
     ADMIN_USER_ROLE_CHANGED,
+    ADMIN_PUBLIC_SIGNUP_DISABLED,
+    ADMIN_PUBLIC_SIGNUP_ENABLED,
     write_auth_audit_log,
 )
 
@@ -140,49 +147,59 @@ def create_user(
     payload: AdminCreateUserRequest,
     request: Request,
     db: Session = Depends(get_db),
-    current_admin: User = Depends(require_admin),
+    current_admin: User = Depends(require_super_admin),
 ):
-    normalized_phone = _normalize_phone_or_422(payload.phone)
-    _ensure_role_assignable(current_admin, payload.role.value)
-    _validate_password_or_422(payload.password, phone=normalized_phone, display_name=payload.display_name)
+    if payload.role == UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=422, detail="Create user only supports user or admin")
+    try:
+        username = validate_account_name(payload.username)
+        display_name = validate_account_name(payload.display_name or username, field_name="Display name")
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    _validate_password_or_422(payload.password, phone=None, display_name=display_name)
 
     existing_user = (
         db.query(User)
-        .filter(or_(User.phone == normalized_phone, User.username == normalized_phone))
+        .filter(or_(User.phone == username, User.username == username))
         .first()
     )
     if existing_user:
-        raise HTTPException(status_code=409, detail="Phone number already exists")
+        raise HTTPException(status_code=409, detail="Username already exists")
+    if db.query(User).filter(User.display_name == display_name).first():
+        raise HTTPException(status_code=409, detail="Display name already exists")
 
     now = utcnow()
     user = User(
-        username=normalized_phone,
-        phone=normalized_phone,
-        display_name=payload.display_name.strip(),
+        username=username,
+        phone=None,
+        display_name=display_name,
+        display_name_key=display_name,
         hashed_password=get_password_hash(payload.password),
         role=payload.role.value,
-        status=(
-            UserStatus.PENDING_PASSWORD_CHANGE.value
-            if payload.must_change_password
-            else UserStatus.ACTIVE.value
-        ),
-        must_change_password=payload.must_change_password,
+        status=UserStatus.ACTIVE.value,
+        must_change_password=False,
         password_changed_at=now,
         created_by=current_admin.id,
     )
     db.add(user)
-    db.flush()
-    write_auth_audit_log(
-        db,
-        event_type=ADMIN_USER_CREATED,
-        outcome="success",
-        actor_user=current_admin,
-        target_user=user,
-        ip_address=_request_ip(request),
-        user_agent=_request_user_agent(request),
-        details={"role": user.role, "status": user.status, "must_change_password": user.must_change_password},
-    )
-    db.commit()
+    try:
+        db.flush()
+        write_auth_audit_log(
+            db,
+            event_type=ADMIN_USER_CREATED,
+            outcome="success",
+            actor_user=current_admin,
+            target_user=user,
+            ip_address=_request_ip(request),
+            user_agent=_request_user_agent(request),
+            details={"role": user.role, "status": user.status},
+        )
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        if db.query(User).filter(or_(User.username == username, User.phone == username)).first():
+            raise HTTPException(status_code=409, detail="Username already exists") from exc
+        raise HTTPException(status_code=409, detail="Display name already exists") from exc
     db.refresh(user)
     return user
 
@@ -195,7 +212,7 @@ def list_users(
     role: Optional[UserRole] = None,
     status: Optional[UserStatus] = None,
     db: Session = Depends(get_db),
-    current_admin: User = Depends(require_admin),
+    current_admin: User = Depends(require_super_admin),
 ):
     del current_admin
     query = db.query(User)
@@ -217,11 +234,49 @@ def list_users(
     return AdminUserListResponse(items=[UserResponse.model_validate(item) for item in items], total=total)
 
 
+@router.get("/settings/public-signup", response_model=PublicSignupSettingResponse)
+def get_public_signup_setting(
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(require_super_admin),
+):
+    del current_admin
+    setting = db.query(AuthSetting).filter(AuthSetting.id == 1).one()
+    return PublicSignupSettingResponse(public_signup_enabled=setting.public_signup_enabled)
+
+
+@router.put("/settings/public-signup", response_model=PublicSignupSettingResponse)
+def update_public_signup_setting(
+    payload: UpdatePublicSignupSettingRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(require_super_admin),
+):
+    setting = db.query(AuthSetting).filter(AuthSetting.id == 1).one()
+    setting.public_signup_enabled = payload.public_signup_enabled
+    setting.updated_by = current_admin.id
+    write_auth_audit_log(
+        db,
+        event_type=ADMIN_PUBLIC_SIGNUP_ENABLED if payload.public_signup_enabled else ADMIN_PUBLIC_SIGNUP_DISABLED,
+        actor_user=current_admin,
+        ip_address=_request_ip(request),
+        user_agent=_request_user_agent(request),
+        details={"public_signup_enabled": payload.public_signup_enabled},
+    )
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        if "last active super_admin" in str(exc):
+            raise HTTPException(status_code=409, detail="Cannot downgrade or disable the only super_admin") from exc
+        raise
+    return PublicSignupSettingResponse(public_signup_enabled=setting.public_signup_enabled)
+
+
 @router.get("/{user_id}", response_model=UserResponse)
 def get_user_detail(
     user_id: int,
     db: Session = Depends(get_db),
-    current_admin: User = Depends(require_admin),
+    current_admin: User = Depends(require_super_admin),
 ):
     del current_admin
     return _get_user_or_404(db, user_id)
@@ -233,7 +288,7 @@ def update_user_status(
     payload: UpdateUserStatusRequest,
     request: Request,
     db: Session = Depends(get_db),
-    current_admin: User = Depends(require_admin),
+    current_admin: User = Depends(require_super_admin),
 ):
     if payload.status not in {UserStatus.ACTIVE, UserStatus.DISABLED}:
         raise HTTPException(status_code=422, detail=STATUS_MUTATION_FORBIDDEN_MESSAGE)
@@ -258,7 +313,13 @@ def update_user_status(
         user_agent=_request_user_agent(request),
         details={"previous_status": previous_status, "next_status": user.status},
     )
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        if "last active super_admin" in str(exc):
+            raise HTTPException(status_code=409, detail="Cannot downgrade or disable the only super_admin") from exc
+        raise
     db.refresh(user)
     return AdminMutationResponse(user=UserResponse.model_validate(user))
 
@@ -269,7 +330,7 @@ def update_user_role(
     payload: UpdateUserRoleRequest,
     request: Request,
     db: Session = Depends(get_db),
-    current_admin: User = Depends(require_admin),
+    current_admin: User = Depends(require_super_admin),
 ):
     user = _get_user_or_404(db, user_id)
     _ensure_not_self_role_change(current_admin, user)
@@ -290,7 +351,13 @@ def update_user_role(
         user_agent=_request_user_agent(request),
         details={"previous_role": previous_role, "next_role": user.role},
     )
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        if "last active super_admin" in str(exc):
+            raise HTTPException(status_code=409, detail="Cannot downgrade or disable the only super_admin") from exc
+        raise
     db.refresh(user)
     return AdminMutationResponse(user=UserResponse.model_validate(user))
 
@@ -301,7 +368,7 @@ def reset_user_password(
     payload: AdminResetPasswordRequest,
     request: Request,
     db: Session = Depends(get_db),
-    current_admin: User = Depends(require_admin),
+    current_admin: User = Depends(require_super_admin),
 ):
     user = _get_user_or_404(db, user_id)
     _ensure_not_self_password_reset(current_admin, user)
@@ -310,13 +377,7 @@ def reset_user_password(
 
     user.hashed_password = get_password_hash(payload.new_password)
     user.password_changed_at = utcnow()
-    user.must_change_password = payload.must_change_password
-    if user.status != UserStatus.DISABLED.value:
-        user.status = (
-            UserStatus.PENDING_PASSWORD_CHANGE.value
-            if payload.must_change_password
-            else UserStatus.ACTIVE.value
-        )
+    user.must_change_password = False
     _revoke_user_sessions(db, user_id=user.id, reason="password_reset")
     db.add(user)
     write_auth_audit_log(
@@ -327,7 +388,7 @@ def reset_user_password(
         target_user=user,
         ip_address=_request_ip(request),
         user_agent=_request_user_agent(request),
-        details={"must_change_password": user.must_change_password, "status": user.status},
+        details={"status": user.status},
     )
     db.commit()
     db.refresh(user)
