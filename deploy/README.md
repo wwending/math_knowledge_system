@@ -108,7 +108,7 @@ rsync -a --checksum /srv/math-knowledge/backups/ backup-user@SECOND_SERVER:/srv/
 
 应用 release 与 TLS infrastructure 是两个独立生命周期：应用 release 由 exact Git SHA 和 main publisher 记录的 backend/web digest 标识；TLS 由宿主机 edge 和证书管理系统维护，Caddy 不属于 application image digest。
 
-2026-08-18 已验收 Demo 使用 `math.wwlabcode.top`、Host Caddy `2.11.4` 和 Let's Encrypt 托管证书。公网 IPv4 边界为 `22/80/443`，其中 `80` 重定向到 HTTPS，`443` 代理到 loopback `127.0.0.1:8000`；`backend:8000` 与 `gotenberg:3000` 仅在 Docker 内部。公网未开放 `8000/8080/3000`，也没有 IPv6 `80/443` listener。首次 HTTPS rollout 有意未启用 HSTS。
+2026-08-18 已验收 Demo 使用已配置的 Demo 域名、Host Caddy `2.11.4` 和 Let's Encrypt 托管证书。公网 IPv4 边界为 `22/80/443`，其中 `80` 重定向到 HTTPS，`443` 代理到 loopback `127.0.0.1:8000`；`backend:8000` 与 `gotenberg:3000` 仅在 Docker 内部。公网未开放 `8000/8080/3000`，也没有 IPv6 `80/443` listener。首次 HTTPS rollout 有意未启用 HSTS。
 
 该 Demo 已使用 production security mode 完成自动验收与用户人工浏览器验收，但这不等于所有 production-readiness 工作均已完成。Demo 不自动跟随 main；已部署 release 保持其显式选择的 exact Git SHA 与 publisher digest，直到下一次授权 rollout。
 
@@ -140,7 +140,7 @@ curl --fail http://127.0.0.1:8080/healthz
 
 # 当前 HTTPS Demo（HTTP_PORT=8000）
 curl --fail http://127.0.0.1:8000/healthz
-curl --fail https://math.wwlabcode.top/healthz
+curl --fail https://<demo-domain>/healthz
 
 docker image inspect \
   --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' \
