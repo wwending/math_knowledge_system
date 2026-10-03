@@ -33,6 +33,9 @@ class DraftPipelineTests(unittest.TestCase):
     TEST_PASSWORD = "Secret123!"
 
     def setUp(self):
+        self.legacy_provider_patch = patch.object(settings, "OCR_PROVIDER", "baidu")
+        self.legacy_provider_patch.start()
+        self.addCleanup(self.legacy_provider_patch.stop)
         self.temp_dir = tempfile.TemporaryDirectory()
         root_dir = Path(self.temp_dir.name)
         self.static_dir = root_dir / "static"

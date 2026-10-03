@@ -109,8 +109,16 @@ class Settings(BaseSettings):
 
     BAIDU_API_KEY: str = ""
     BAIDU_SECRET_KEY: str = ""
-    OCR_PROVIDER: str = "baidu"
+    OCR_PROVIDER: str = "vision"
     OCR_FALLBACK_PROVIDER: str = ""
+    VISION_PROVIDER: str = "deepseek"
+    VISION_API_KEY: str = ""
+    VISION_BASE_URL: str = "https://api.deepseek.com"
+    VISION_MODEL: str = "deepseek-flash"
+    VISION_TIMEOUT_SECONDS: int = 45
+    VISION_MAX_IMAGE_BYTES: int = 8 * 1024 * 1024
+    VISION_MAX_IMAGE_PIXELS: int = 20_000_000
+    VISION_MAX_OUTPUT_TOKENS: int = 4096
     DEEPSEEK_API_KEY: str = ""
     DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"
     DEEPSEEK_MODEL: str = "deepseek-chat"

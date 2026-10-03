@@ -354,6 +354,16 @@
                   <div v-else class="markdown-body" v-html="renderedContent"></div>
                 </el-card>
                 <el-collapse v-if="recognitionDebug" class="recognition-debug-collapse">
+                  <el-alert v-if="recognitionDebug.metadata_warning" type="warning" :closable="false"
+                    :title="recognitionDebug.metadata_warning" />
+                  <section v-if="recognitionDebug.uncertainties?.length" class="recognition-debug-block">
+                    <h4>不确定内容（请对照原图确认）</h4>
+                    <ul><li v-for="(item, index) in recognitionDebug.uncertainties" :key="index">{{ item }}</li></ul>
+                  </section>
+                  <section v-if="recognitionDebug.handwriting_annotations?.length" class="recognition-debug-block">
+                    <h4>手写批注（不进入保存题干）</h4>
+                    <ul><li v-for="(item, index) in recognitionDebug.handwriting_annotations" :key="index">{{ item }}</li></ul>
+                  </section>
                   <el-collapse-item title="识别调试信息" name="recognition-debug">
                     <el-alert
                       v-if="recognitionDebug.ocr_error"
@@ -376,7 +386,7 @@
                         <h4>原始 OCR 文本</h4>
                         <pre>{{ recognitionDebug.ocr_raw_text || '暂无原始 OCR 文本' }}</pre>
                       </section>
-                      <section class="recognition-debug-block">
+                      <section v-if="recognitionDebug.ocr_provider !== 'vision'" class="recognition-debug-block">
                         <h4>LLM 清洗文本</h4>
                         <pre>{{ recognitionDebug.llm_cleaned_text || '暂无 LLM 清洗文本' }}</pre>
                       </section>
