@@ -1,5 +1,11 @@
 # STATUS
 
+## 2026-10-04 列表图片请求收口与高清生成缓存（#150，待浏览器/服务验收）
+
+- 题库、回收站、历史列表移除小图及列表自身图片下载，题干摘要最多三行；详情/编辑保留高清题目区域图与可见配图，文字和图片独立加载。
+- 列表/详情 GET 和图片 GET 增加有限超时、失败提示、手动重试、取消及迟到响应隔离。生成 PNG 使用容量受限的私有磁盘缓存，每次仍先 owner/lifecycle 鉴权，源字节、裁剪或输出规格变化会失效；历史 `None` 与全图 `{}` 语义保持兼容。
+- 本地 backend compileall、聚焦 24 项/全量 431 项 pytest、frontend Stage 3 contract（含既有 cropper 浏览器测试）及 build 已通过。未新增依赖、迁移或外部服务，保存及试卷快照合同不变。真实列表/详情交互、断网恢复及固定样本等待时间/流量前后比较尚未验收；命令及环境边界见 WORKLOG，缓存运维见 TROUBLESHOOTING。
+
 ## 2026-10-03 单次视觉转录（#25，待真实服务验收）
 
 - Draft 代码推荐默认为 `vision`，一次 `deepseek-flash` 调用读取完整题目区域图，返回印刷正文、知识点、题型和估计难度；手写批注与不确定内容独立展示，不进入保存题干。
@@ -30,7 +36,7 @@
 ## 2026-08-30 题库详情只读化与 schema-v2 区段多图展示（#132）
 
 - Active 题目详情改为消费 owner-scoped document API，以题干、答案、解析三个只读 tab 按 schema-v2 ordered blocks 原序展示文字与图片区；文字继续使用安全 Markdown/KaTeX renderer，图片区复用 normalized placement canvas，支持单图、多图布局和纯图片题目。
-- 详情只加载当前可见区段 placement 实际引用的 figure Blob；切换区段、关闭弹窗、切换题目及迟到响应均按 generation/reachable set 释放 Object URL。空区段和纯文字区段不请求 figure。左侧和列表缩略图仍展示题目区域图，不与题目配图混用。
+- 详情只加载当前可见区段 placement 实际引用的 figure Blob；切换区段、关闭弹窗、切换题目及迟到响应均按 generation/reachable set 释放 Object URL。空区段和纯文字区段不请求 figure。左侧展示题目区域图，不与题目配图混用；列表图片已由 #150 移除。
 - 回收站详情继续使用 flat lifecycle endpoint，仅只读展示 `content/answer/analysis`，不开放已删除题目的 document/figure 访问面。题库搜索扩展为题干、答案、解析和知识点，并标示命中位置；编辑路由返回后继续恢复题库 tab、搜索词和原题详情。
 - 本期未新增数据库迁移、API endpoint、依赖或认证授权变化，也未修改 Paper/HTML/PDF 渲染。
 

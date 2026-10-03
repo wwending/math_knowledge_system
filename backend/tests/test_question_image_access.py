@@ -256,6 +256,53 @@ class QuestionImageAccessTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.content, PNG_BYTES)
 
+    def test_generated_cache_still_checks_owner_and_lifecycle_and_latest_revision(self):
+        from PIL import Image
+        from unittest.mock import patch
+        from app.api.v1 import endpoints
+        Image.new("RGB", (8, 4), "red").save(self.upload_dir / IMAGE_FILENAME)
+        with self.SessionLocal() as db:
+            db.add(QuestionRevision(question_id=self.owner_question_id, rev_no=1,
+                content={"text": "full"}, crop_bbox={}, change_reason="test"))
+            db.commit()
+        url = f"{self.IMAGE_URL_PREFIX}/{self.owner_question_id}/image"
+        with patch.object(endpoints, "render_draft_image", wraps=endpoints.render_draft_image) as render:
+            first = self.client.get(url, headers=self.owner_headers)
+            self.assertEqual(first.status_code, 200)
+            self.assertEqual(first.headers["cache-control"], "no-store")
+            self.assertEqual(self.client.get(url, headers=self.owner_headers).content, first.content)
+            self.assertEqual(render.call_count, 1)
+            self.assertEqual(self.client.get(url, headers=self.other_headers).status_code, 404)
+            self.assertEqual(self.client.get(url).status_code, 401)
+            with self.SessionLocal() as db:
+                db.add(QuestionRevision(question_id=self.owner_question_id, rev_no=2,
+                    content={"text": "half"}, crop_bbox=[0, 0, .5, 1], change_reason="test"))
+                db.commit()
+            second = self.client.get(url, headers=self.owner_headers)
+            self.assertEqual(second.status_code, 200)
+            self.assertNotEqual(first.content, second.content)
+            self.assertEqual(render.call_count, 2)
+            self.assertEqual(self.client.post(f"{self.IMAGE_URL_PREFIX}/{self.owner_question_id}/trash", headers=self.owner_headers).status_code, 200)
+            self.assertEqual(self.client.get(url, headers=self.owner_headers).status_code, 200)
+            with self.SessionLocal() as db:
+                question = db.get(Question, self.owner_question_id)
+                question.purge_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+                db.commit()
+            self.assertEqual(self.client.get(url, headers=self.owner_headers).status_code, 404)
+            self.assertEqual(render.call_count, 2)
+
+    def test_cache_lock_timeout_is_retryable_service_error(self):
+        from unittest.mock import patch
+        with self.SessionLocal() as db:
+            db.add(QuestionRevision(question_id=self.owner_question_id, rev_no=1,
+                content={"text": "full"}, crop_bbox={}, change_reason="test"))
+            db.commit()
+        with patch("app.api.v1.endpoints.cached_question_image", side_effect=TimeoutError):
+            response = self.client.get(f"{self.IMAGE_URL_PREFIX}/{self.owner_question_id}/image", headers=self.owner_headers)
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.headers["retry-after"], "1")
+        self.assertEqual(response.headers["cache-control"], "no-store")
+
     def test_missing_image_returns_404(self):
         response = self.client.get(
             f"{self.IMAGE_URL_PREFIX}/{self.imageless_question_id}/image",

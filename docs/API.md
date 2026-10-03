@@ -127,6 +127,9 @@ LLM 目标输出结构：
 - `POST /api/v1/drafts/{draft_id}/recognize` 和 `GET /api/v1/drafts/{draft_id}` 仍保留可空的 `question_type`、`difficulty_level`、`difficulty_label`、`difficulty_confidence`、`difficulty_reason` 字段用于兼容。
 - `GET /api/v1/questions` 和 `GET /api/v1/questions/{question_id}` 返回题型、难度、置信度、理由、评估模型、评估时间，以及 `metadata_status`、`metadata_error`、`metadata_started_at`、`metadata_finished_at`。
 - `GET /api/v1/questions/{question_id}/image` 先按 Question 所有权鉴权，再读取最新 `QuestionRevision` 的 `source_asset_id` 与页面归一化 `crop_bbox`；有合法 bbox 时返回该题区域裁图，多题可共享同一 SourceAsset 但各自区域不同。无 revision 或无 bbox 的历史题回退 `origin_image` 整图；bbox 非法、文件缺失或无法解析时 fail-closed 返回 404。
+  - `crop_bbox=None` 保持历史原文件响应；`{}` 是完整页面生成 PNG 的标记。生成 PNG 使用私有磁盘缓存，键包含源路径、源字节 SHA-256、规范化裁剪范围及输出规格；命中也先检查当前用户、题目归属及生命周期，永久删除或过期仍返回 404，回收站保留期内仍可读。
+  - 生成图片成功响应继续 `Cache-Control: no-store`，无裸缓存 URL。缓存锁等待超时返回 `503`、`Retry-After: 1` 和 `Cache-Control: no-store`；客户端提供手动重试，不自动重试。
+  - 题库、回收站、历史列表仅展示最多三行题干摘要、元信息及既有操作，不下载题目图片；详情/编辑按需加载高清题目区域图和可见配图。列表及详情文档 GET 默认 15 秒，图片 GET 默认 30 秒；失败可手动重试，关闭/离开或替换请求时取消并隔离迟到响应。这些前端预算不改变 OCR、PDF 或保存请求。
 - `GET /api/v1/papers/{paper_id}` 的 `items` 返回 `response_line_count`（整数 `0..24`，默认/历史迁移为 6）及可选快照字段 `question_type_snapshot`、`difficulty_level_snapshot`、`difficulty_label_snapshot`；如果创建试卷时题目元数据尚未 ready，快照字段为空。
 
 ## 组卷 MVP

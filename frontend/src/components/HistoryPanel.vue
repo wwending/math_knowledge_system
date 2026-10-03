@@ -16,6 +16,9 @@
       class="limit-alert"
     />
 
+    <el-alert v-if="listError" :title="listError" type="error" :closable="false" show-icon>
+      <el-button @click="fetchHistory">重试列表</el-button>
+    </el-alert>
     <el-skeleton v-if="loading" :rows="3" animated />
     
     <div v-else-if="list.length === 0" class="empty-state">
@@ -25,20 +28,6 @@
     <div v-else class="history-list">
       <el-card v-for="item in list" :key="item.id" class="history-item" shadow="hover">
         <div class="list-item-content">
-          <div class="thumb-box" @click="openDetail(item)">
-             <el-image
-                :src="getImageUrl(item)"
-                fit="cover"
-                class="thumb-img"
-             >
-                <template #error>
-                  <div class="image-slot">
-                    <el-icon><icon-picture /></el-icon>
-                  </div>
-                </template>
-             </el-image>
-          </div>
-          
           <div class="info-box" @click="openDetail(item)">
              <div class="meta-row">
                <el-tag size="small" type="info">ID: {{ item.id }}</el-tag>
@@ -79,8 +68,14 @@
         <div class="detail-left">
           <div class="image-wrapper">
             
+            <div v-if="imageLoadingFor(currentItem)">图片加载中…</div>
+            <el-alert v-if="imageErrorFor(currentItem)" :title="imageErrorFor(currentItem)" type="error" :closable="false">
+              <el-button @click="retryQuestionImage(currentItem)">重试图片</el-button>
+            </el-alert>
             <el-image
               :src="getImageUrl(currentItem)"
+              v-if="getImageUrl(currentItem)"
+              @error="markImageFailed(currentItem)"
               :preview-src-list="previewSources"
               fit="scale-down"
               class="detail-image"
@@ -123,7 +118,8 @@
 <script setup>
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import axios from 'axios'
-import { Refresh, Picture as IconPicture } from '@element-plus/icons-vue'
+import { boundedGet } from '../utils/boundedRequest.mjs'
+import { Refresh } from '@element-plus/icons-vue'
 import { API_V1_BASE_URL } from '../config/api'
 import { createQuestionImageLoader } from '../utils/questionImageLoader'
 import { renderMarkdown } from '@/utils/renderMarkdown'
@@ -135,14 +131,16 @@ const API_BASE = API_V1_BASE_URL
 const historyListLimit = 50
 
 const loading = ref(false)
+const listError = ref('')
+let listController = null
 const list = ref([])
 const dialogVisible = ref(false)
 const currentItem = ref(null)
 
 // 题目图片经鉴权接口以 blob 方式加载（#44），不再使用公开静态 URL。
-const { syncItems, imageUrlFor, dispose: disposeImageLoader } = createQuestionImageLoader()
+const { ensure: ensureQuestionImage, imageUrlFor, retry: retryQuestionImage, errorFor: imageErrorFor, loadingFor: imageLoadingFor, markFailed: markImageFailed, dispose: disposeImageLoader } = createQuestionImageLoader()
 
-watch(list, (items) => syncItems(items))
+
 
 const getImageUrl = (item) => imageUrlFor(item)
 
@@ -150,24 +148,36 @@ const previewSources = computed(() =>
   [imageUrlFor(currentItem.value)].filter(Boolean)
 )
 
-onBeforeUnmount(disposeImageLoader)
+let listGeneration = 0
+watch(dialogVisible, (visible) => { if (!visible) { disposeImageLoader(); currentItem.value = null } })
+onBeforeUnmount(() => { listGeneration += 1; listController?.abort(); disposeImageLoader() })
 
 const fetchHistory = async () => {
+  const token = ++listGeneration
+  listController?.abort()
+  const controller = new AbortController()
+  listController = controller
+  dialogVisible.value = false
+  disposeImageLoader()
+  list.value = []
+  listError.value = ''
   loading.value = true
   try {
-    const res = await axios.get(`${API_BASE}/history?limit=${historyListLimit}`)
-    list.value = res.data
-  } catch (e) {
-    console.error(e)
+    const res = await boundedGet(axios, `${API_BASE}/history?limit=${historyListLimit}`, { signal: controller.signal })
+    if (token === listGeneration) list.value = res.data || []
+  } catch (error) {
+    if (token === listGeneration) listError.value = error.code === 'ECONNABORTED' ? '历史列表加载超时，请重试' : '历史列表加载失败，请重试'
   } finally {
-    loading.value = false
+    if (token === listGeneration) loading.value = false
   }
 }
 
 // 打开详情弹窗
 const openDetail = (item) => {
+  disposeImageLoader()
   currentItem.value = item
   dialogVisible.value = true
+  ensureQuestionImage(item)
 }
 
 // 工具函数
@@ -177,7 +187,7 @@ const getPreviewText = (text) => {
   if (!text) return '暂无识别内容'
   // 移除 markdown 符号，只取纯文本做预览
   const clean = text.replace(/[#*`$]/g, '')
-  return clean.length > 50 ? clean.slice(0, 50) + '…' : clean
+  return clean
 }
 
 const formatTime = (str) => formatDateTime(str)
@@ -200,7 +210,7 @@ onMounted(() => {
 .info-box { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; cursor: pointer; }
 /* ID/时间列用等宽数字，多行排列时纵向对齐（#76） */
 .meta-row { display: flex; gap: 10px; align-items: center; font-size: 12px; color: #767676; font-variant-numeric: tabular-nums; }
-.preview-text { font-size: 14px; color: #333; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 500px;}
+.preview-text { font-size: 14px; color: #333; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow-wrap: anywhere;}
 
 .action-box { min-width: 100px; text-align: right; }
 

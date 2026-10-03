@@ -29,7 +29,7 @@ assert.equal(bank.includes('QuestionEditWorkbench'), false)
 assert.equal(bank.includes('renderTex'), false)
 assert.match(bank, /openingTab === 'trash'[\s\S]*questions\/trash\/\$\{item\.id\}[\s\S]*questions\/\$\{item\.id\}\/document/)
 assert.match(bank, /const handleBankTabChange = \(\) => \{[\s\S]*resetDetailState\(\)[\s\S]*fetchQuestions\(\)/, 'tab changes must invalidate pending detail requests through the shared reset')
-assert.match(bank, /if \(!item\) \{[\s\S]*axios\.get\(`\$\{API_BASE\}\/questions\/\$\{id\}`\)/, 'route return must fetch an owner-scoped question when it is outside the current 100-row/search result')
+assert.match(bank, /if \(!item\) \{[\s\S]*boundedGet\(axios, `\$\{API_BASE\}\/questions\/\$\{id\}`/, 'route return must fetch an owner-scoped question when it is outside the current 100-row/search result')
 assert.match(bank, /const result = await openDetail\(item\)[\s\S]*result === 'opened'[\s\S]*bank_question_id: null/, 'the pending route query must only be consumed after opening or a confirmed 404')
 
 for (const marker of ['renderMarkdown', "block.kind === 'text'", "block.kind === 'image_area'", 'QuestionImageAreaCanvas', 'el-empty']) {

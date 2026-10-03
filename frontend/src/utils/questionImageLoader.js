@@ -6,8 +6,8 @@ import { acceptsImageGeneration } from './questionImageLoaderHelpers.mjs'
 export { acceptsImageGeneration }
 
 export function createQuestionImageLoader({ http = axios, urlApi = URL } = {}) {
-  const blobUrlByQuestionId = reactive({})
-  const core = createQuestionImageLoaderCore({ http, urlApi, buildImageUrl: buildQuestionImageUrl, state: { urls: blobUrlByQuestionId } })
+  const state = reactive({ urls: {}, errors: {}, loading: {} })
+  const core = createQuestionImageLoaderCore({ http, urlApi, buildImageUrl: buildQuestionImageUrl, state })
   const hasImageField = (item) => Boolean(item && (item.image_url || item.origin_image))
   return { hasImageField, ...core }
 }

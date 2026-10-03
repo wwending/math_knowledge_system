@@ -2,6 +2,15 @@
 
 说明：本文件按时间倒序记录每轮工作。较早轮次中的“当前主链路”等表述保留为当时历史事实；当前状态以 `docs/STATUS.md` 最新 checkpoint 和较新的 DECISIONS 为准。
 
+## 2026-10-04 Issue #150 列表图片与高清缓存：本地验证及文档阶段
+
+- 接续已认可的 Issue 改动；基线/HEAD 为 `ed707862a4b5d2f1aced358b642906e1e37b64b5`，工作分支 `perf/issue-150-list-image-loading`。本阶段仅验证和文档，未提交、推送、创建 PR、部署或关闭 Issue。
+- 题库/回收站/历史列表不再下载题目图片，题干摘要三行；详情/编辑保留高清图片与配图。GET 增加超时、失败提示、手动重试、取消与代际隔离。后端生成缓存覆盖来源字节/路径、裁剪和规格，限制容量，使用固定条带线程/OS 锁、原子发布及损坏恢复；鉴权和生命周期仍先于缓存命中。
+- 在 `backend/` 使用现有项目解释器：`& 'D:\math_knowledge_system\backend\venv\Scripts\python.exe' -m compileall app` 通过；`& 'D:\math_knowledge_system\backend\venv\Scripts\python.exe' -m pytest -q tests/test_question_image_cache.py tests/test_question_image_access.py` 通过（24 项）；全量 `& 'D:\math_knowledge_system\backend\venv\Scripts\python.exe' -m pytest -q` 通过（431 项，exit 0）。测试数量由 `pytest --collect-only -o addopts='' -q` 核对；仓库默认 `addopts=-q` 与命令的 `-q` 叠加，因此运行输出只显示进度、不显示通过数量摘要。
+- 在 `frontend/`：`npm run test:stage3-contract` 通过，包含既有 Chrome cropper viewport 自动测试；`npm run build` 通过（既有 >500 kB chunk warning）。沙盒首跑后端因 Windows multiprocessing 管道 `WinError 5`、前端因 Node 子进程 `EPERM` 中止，沙盒外重跑解除，未为环境错误修改业务代码。
+- 更新 API 图片缓存/503 合同、STATUS 当前列表行为和 TROUBLESHOOTING 缓存参数/清理/验收步骤；无新领域概念或长期架构取舍，不新增 ADR，既有 KNOWN_ISSUES 不变。无依赖、数据库迁移或部署配置变更；运行时在现有私有 uploads 中创建可丢弃缓存。
+- 未运行本 Issue 的真实浏览器列表/详情/编辑交互、断网重试、服务端固定样本性能前后对比或 Staging/Demo；未调用真实 OCR/LLM。固定电脑/账号/样本下的等待时间、流量和操作验收仍由后续验收完成，不能把 contract 或 cropper 浏览器测试算作该验收。源 SHA-256 每请求读取及高清 PNG 下载仍有开销；网络文件系统锁未验证。Issue 保持 open 待用户验收，发布留给下一阶段。
+
 ## 2026-08-26 Issue #101 备份→恢复全流程演练（#97 A1 解除）
 
 目标：
