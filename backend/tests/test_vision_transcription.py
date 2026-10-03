@@ -12,6 +12,7 @@ from PIL import Image
 from app.api.v1 import endpoints
 from app.core.config import settings
 from app.models.draft import Draft
+from app.models.draft_event import DraftEvent
 from app.models.llm_run import LLMRun
 from app.models.ocr_run import OCRRun
 from app.models.question import Question
@@ -197,6 +198,89 @@ def test_recognize_save_one_generation_unmasked_and_metadata(pipeline, sdk, miss
         run = db.get(OCRRun, revision.ocr_run_id)
         assert run.response_raw_json["raw_response_summary"]["request_id"] == "request-vision"
         assert run.request_params_redacted["ocr_input"] == "original"
+
+
+@pytest.mark.parametrize("edit", ["meaning", "internal_whitespace", "revert", "unchanged", "outer_whitespace"])
+def test_recognize_edit_save_metadata_matches_current_statement(pipeline, sdk, edit):
+    case = CASES[1]
+    sdk[1].return_value = response(json.dumps(case))
+    draft_id = pipeline._create_draft(pipeline._create_source_asset())
+    changed = edit in {"meaning", "internal_whitespace", "revert"}
+    statement = case["statement"]
+    if edit in {"meaning", "revert"}:
+        statement = "求一次方程 $2x+2=0$ 的根。"
+    elif edit == "internal_whitespace":
+        statement = statement.replace("mx^2", "m x^2")
+    elif edit == "outer_whitespace":
+        statement = f" \n{statement}\t "
+
+    with patch.object(endpoints.layout_service, "detect", return_value=LayoutResult(success=True, boxes=[], latency_ms=1)), \
+         patch.object(endpoints.nlp_service, "analyze") as cleanup, \
+         patch.object(endpoints, "evaluate_question_metadata_task") as metadata, \
+         patch.object(endpoints.BackgroundTasks, "add_task") as schedule:
+        recognized = pipeline.client.post(f"/api/v1/drafts/{draft_id}/recognize", headers=pipeline.auth_headers)
+        assert recognized.status_code == 200, recognized.text
+        original = recognized.json()
+        assert original["success"] and original["knowledge_tags"]
+        with pipeline.SessionLocal() as db:
+            run_before = db.get(OCRRun, original["last_ocr_run_id"]).response_raw_json
+
+        edited = pipeline.client.patch(f"/api/v1/drafts/{draft_id}", headers=pipeline.auth_headers,
+                                       json={"content": statement})
+        assert edited.status_code == 200, edited.text
+        if edit == "revert":
+            # Editing back must not recover machine metadata from the original run.
+            statement = case["statement"]
+            edited = pipeline.client.patch(f"/api/v1/drafts/{draft_id}", headers=pipeline.auth_headers,
+                                           json={"content": statement})
+            assert edited.status_code == 200, edited.text
+        result = edited.json()
+        warning = result["recognition_debug"]["metadata_warning"]
+        assert result["content"] == statement.strip()
+        assert result["knowledge_tags"] == ([] if changed else original["knowledge_tags"])
+        fields = ["question_type", "difficulty_level", "difficulty_label", "difficulty_confidence", "difficulty_reason"]
+        for field in fields:
+            assert result[field] == (None if changed else original[field])
+        if changed:
+            assert warning and "失效" in warning and "确认" in warning
+            assert result["current_content"]["warning"] == warning
+        else:
+            assert warning is None
+            assert result["current_content"] == original["current_content"]
+        assert result["last_ocr_run_id"] == original["last_ocr_run_id"]
+        assert result["last_llm_run_id"] is None
+        assert result["recognition_debug"]["ocr_raw_text"] == case["statement"]
+        assert result["recognition_debug"]["handwriting_annotations"] == case["handwriting_annotations"]
+        assert result["recognition_debug"]["uncertainties"] == case["uncertainties"]
+
+        saved = pipeline.client.post(f"/api/v1/drafts/{draft_id}/save-to-bank", headers=pipeline.auth_headers)
+        assert saved.status_code == 200, saved.text
+        assert sdk[1].call_count == 1
+        cleanup.assert_not_called()
+        metadata.assert_not_called()
+        schedule.assert_not_called()
+
+    with pipeline.SessionLocal() as db:
+        draft = db.get(Draft, draft_id)
+        question = db.get(Question, saved.json()["question_id"])
+        revision = db.get(QuestionRevision, saved.json()["question_revision_id"])
+        assert question.content == statement.strip()
+        assert question.knowledge_tags == result["knowledge_tags"]
+        assert revision.content["knowledge_tags"] == result["knowledge_tags"]
+        for field in fields:
+            assert getattr(question, field) == result[field]
+            assert getattr(draft, field) == result[field]
+        assert question.difficulty_model == (None if changed else "deepseek-flash")
+        assert question.metadata_status == ("failed" if changed else "ready")
+        assert question.metadata_error == warning
+        assert revision.ocr_run_id == original["last_ocr_run_id"]
+        assert revision.llm_run_id is None
+        assert db.get(OCRRun, revision.ocr_run_id).response_raw_json == run_before
+        assert db.query(OCRRun).count() == 1
+        assert db.query(LLMRun).count() == 0
+        assert db.query(DraftEvent).filter(DraftEvent.event_type == "edit").count() == (
+            2 if edit == "revert" else 1 if changed else 0
+        )
 
 
 def test_failed_retry_clears_old_cleanup_and_cannot_save(pipeline, sdk):

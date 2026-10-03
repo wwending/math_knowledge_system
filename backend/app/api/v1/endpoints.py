@@ -852,6 +852,14 @@ def update_draft(
 
     current_content = dict(draft.current_content or {})
     current_content["text"] = normalized_content
+    if draft.last_ocr_run and draft.last_ocr_run.provider == "vision":
+        # Same-call metadata describes the recognized statement, not a manual edit.
+        # Keep the OCR run and annotation provenance; never recover its old metadata on save.
+        current_content["knowledge_tags"] = []
+        warning = "正文已修改，原识别知识点、题型和难度已失效，需人工确认；可先保存正文，再在题库中补充。"
+        current_content["metadata_warning"] = warning
+        current_content["warning"] = warning
+        _apply_draft_metadata(draft, {})
     draft.current_content = current_content
     db.add(
         DraftEvent(

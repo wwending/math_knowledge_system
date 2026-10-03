@@ -92,6 +92,8 @@ Draft 推荐默认 `OCR_PROVIDER=vision`：一次视觉调用读取完整题目�
 
 正文有效而元数据缺失/非法时，合法部分保留、其余字段留空，提示后仍允许确认保存。入库 `metadata_status` 为 `ready` 或辅助字段不完整的 `failed`，后者的 `metadata_error` 保存 warning，不表示正文入库失败。正文/分离结构无效、空响应、截断或超时则 Draft 为 `failed`，不能保存，必须手动重试；无自动重试、fallback 或修复调用。每个分题 Draft 各自一次生成，不承诺整页一次识别全部题目。
 
+视觉 Draft 通过 `PATCH /api/v1/drafts/{draft_id}` 修改正文后，若首尾 `strip()` 后的正文不同，清空原机器生成知识点、题型和全部难度字段，并返回 `recognition_debug.metadata_warning` 提示元数据失效、需人工确认。仅首尾空白变化或正文不变保留元数据；内部空白也按变化处理，不推断语义等价。仍允许保存有效正文，入库为辅助字段不完整的 `failed`，不调度模型补全；即使随后改回原文，也不从原识别记录恢复旧元数据。原转录、批注及识别记录关联保留，显式旧 provider 的编辑行为不变。
+
 下述 `corrected_text` 输出与保存后后台补全只适用于显式旧 provider（例如 `OCR_PROVIDER=baidu`）；已有部署配置未切换，legacy `/api/v1/recognize` 保持兼容。
 
 LLM 目标输出结构：

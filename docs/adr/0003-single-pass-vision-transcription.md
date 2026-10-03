@@ -8,6 +8,7 @@
 
 - 复用 `OCRRun` 记录视觉图像识别，`provider=vision`；`response_raw_json.raw_response_summary` 保存供应商、模型、prompt 版本、HTTP `request_id`、独立 completion `response_id`、usage、finish reason 和限量去秘密化原始输出。缺少 HTTP 请求编号时保留 null，不用 completion ID 代替；不保存输入 base64 或凭证。失败也写入 run。
 - `Draft.current_content` 保存正文和分离字段，既有 Draft/Question nullable 元数据字段承载同次结果；保存后 `metadata_status=ready`，有缺失/非法元数据则为 `failed` 并记录 warning，表示辅助字段不完整而非入库失败。视觉路径没有 `LLMRun`；手动重试清除旧清洗关联和旧结果，但不删除历史 run。
+- 同次元数据只适用于该次识别正文。视觉 Draft 人工编辑后，只要首尾 `strip()` 后正文不同，就清空当前知识点、题型和全部难度字段，并提示失效、需人工确认；仅首尾空白变化或无变化保留结果，不做语义等价判断。有效正文可带空元数据入库（`metadata_status=failed`、warning 记录在 `metadata_error`），不追加模型调用，也不因改回原文或保存而恢复旧元数据。原 OCRRun 转录、批注与关联继续保留。
 - 配图检测与裁图继续保留，视觉输入使用完整题目区域图，绝不遮白题目配图，以免丢失图中文字。批量分题仍为每个 Draft 各一次生成。
 - 显式 `OCR_PROVIDER=baidu` 及保留的旧 provider 继续走旧 OCR、文本清洗、保存后后台元数据流程；legacy `/api/v1/recognize` 不变。既有 Question、QuestionRevision 和 Paper 快照不改写，owner 隔离与现有 API 字段继续兼容，仅增加可选调试字段。
 - 视觉配置独立于文本模型，复用现有 OpenAI SDK；无新依赖、服务、数据库模型或迁移。代码默认改变不代表已有部署已切换；切换既有环境和真实付费 smoke 需另行授权。本轮仅离线 mock 验证，不宣称识别质量已通过真实服务验收。
