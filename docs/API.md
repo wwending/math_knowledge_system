@@ -88,7 +88,11 @@
 
 ## LLM 题目分析元数据
 
-第十九轮性能收口后，交互式 Draft recognize 只强制等待 OCR、`corrected_text` 和知识点标签；题型与五星难度作为增强元数据，在保存入题库后由后台任务补全。
+Draft 推荐默认 `OCR_PROVIDER=vision`：一次视觉调用读取完整题目区域图，生成正文与可选知识点、题型、估计难度。正文使用既有 `content` 返回；`recognition_debug` 新增可选 `handwriting_annotations`、`uncertainties` 数组及 `metadata_warning`。手写批注与疑点说明独立展示，不拼接进保存题干；未知字符仍需用户核对。视觉路径不生成 `LLMRun`，不进行文本清洗或保存后元数据调用。
+
+正文有效而元数据缺失/非法时，合法部分保留、其余字段留空，提示后仍允许确认保存。入库 `metadata_status` 为 `ready` 或辅助字段不完整的 `failed`，后者的 `metadata_error` 保存 warning，不表示正文入库失败。正文/分离结构无效、空响应、截断或超时则 Draft 为 `failed`，不能保存，必须手动重试；无自动重试、fallback 或修复调用。每个分题 Draft 各自一次生成，不承诺整页一次识别全部题目。
+
+下述 `corrected_text` 输出与保存后后台补全只适用于显式旧 provider（例如 `OCR_PROVIDER=baidu`）；已有部署配置未切换，legacy `/api/v1/recognize` 保持兼容。
 
 LLM 目标输出结构：
 
@@ -111,7 +115,7 @@ LLM 目标输出结构：
 - 旧字段 `tags` 仍兼容；如 LLM 返回 `tags` 但没有 `knowledge_tags`，后端会转换为知识点标签。
 - `corrected_text` 是主结果；`question_type` 和 `difficulty` 是增强结果。
 - `POST /api/v1/drafts/{draft_id}/recognize` 不再保证返回题型和难度，相关字段可为空。
-- `POST /api/v1/drafts/{draft_id}/save-to-bank` 创建 `Question` 后将 `metadata_status` 设为 `pending`，并用 FastAPI `BackgroundTasks` 后台补全题型与难度。
+- 旧 provider 的 `POST /api/v1/drafts/{draft_id}/save-to-bank` 创建 `Question` 后将 `metadata_status` 设为 `pending`，并用 FastAPI `BackgroundTasks` 后台补全题型与难度；视觉路径直接保存同次元数据，不安排该任务。
 - 后台元数据评估失败不会回滚已经保存入题库的题目，失败时 `metadata_status=failed` 并写入 `metadata_error`。
 - `question_type` 可选值为 `single_choice`、`multiple_choice`、`fill_blank`、`solution`、`judge`、`unknown`。
 - `difficulty.level` 为 1-5 星整数，`difficulty.confidence` 为 0-1 小数，`difficulty.reason` 是简短理由。
@@ -298,7 +302,7 @@ Draft 图片所有权校验挂在 Draft 行：未认证 401、非本人草稿 40
 
 - `DraftEvent`：创建、开始识别、识别成功/失败、保存入题库都会写入。
 - `OCRRun`：Draft 识别后写入，失败也记录错误。
-- `LLMRun`：OCR 成功后写入，LLM 失败记录错误并允许 `partial_success`。
+- `LLMRun`：仅旧 provider 在 OCR 成功后写入，LLM 失败记录错误并允许 `partial_success`。视觉识别复用 `OCRRun`，记录语义见 [ADR 0003](adr/0003-single-pass-vision-transcription.md)，视觉 revision 的 `llm_run_id` 为空；手动重试解除旧清洗关联而不删除历史 run。
 - `QuestionRevision`：保存入题库时创建 v1，并关联 `source_asset_id`、`ocr_run_id`、`llm_run_id`。
 
 ## 当前边界
