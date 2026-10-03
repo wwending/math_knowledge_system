@@ -5,7 +5,6 @@ from pathlib import Path
 from types import SimpleNamespace as NS
 from unittest.mock import MagicMock, patch
 
-import httpx
 import pytest
 from openai import APITimeoutError
 from PIL import Image
@@ -112,7 +111,7 @@ def test_failures_never_repair_or_retry(sdk, image_path, raw, finish, choices, c
 
 def test_timeout_no_retry_or_exception_leak(sdk, image_path):
     _, generate = sdk
-    generate.side_effect = APITimeoutError(request=httpx.Request("POST", "https://example.invalid"))
+    generate.side_effect = APITimeoutError(request=MagicMock())
     result = VisionOcrProvider().recognize(image_path)
     assert result.error_type == "timeout"
     assert generate.call_count == 1
