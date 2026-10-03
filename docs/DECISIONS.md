@@ -1,5 +1,9 @@
 # DECISIONS
 
+## 单次视觉转录（#25）
+
+当前推荐默认、单次结构化输出、可选元数据及记录兼容边界见 [ADR 0003](adr/0003-single-pass-vision-transcription.md)。视觉路径跳过清洗与保存后补全；决策 25、27、30 等历史记录中的旧 provider 行为仅适用于显式旧路径，既有部署配置未随代码候选实现切换。
+
 ## 决策 49：作答空间按 PaperItem 的标准物理行数持久化（#126）
 
 `response_line_count` 是 PaperItem 的卷内展示设置，不属于 Question 或冻结内容快照；值域为整数 `0..24`，新项与历史项默认 6。删除后重加创建新 PaperItem，因此恢复默认值而不恢复旧设置。用户只写行数，后端渲染模型计算 `height_mm = response_line_count × 8`；正数作答区另有固定 4mm 顶部间距，纯白、无横线、不可拆，0 不产生元素或间距。

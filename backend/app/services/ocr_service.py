@@ -8,6 +8,7 @@ from app.core.config import settings
 from app.services.ocr_providers.baidu import BaiduOcrProvider
 from app.services.ocr_providers.base import OCRResult, OcrProvider
 from app.services.ocr_providers.rapidocr import RapidOcrProvider
+from app.services.ocr_providers.vision import VisionOcrProvider
 
 
 class OCRService:
@@ -15,6 +16,7 @@ class OCRService:
         self.provider_factories = provider_factories or {
             "baidu": BaiduOcrProvider,
             "rapidocr": RapidOcrProvider,
+            "vision": VisionOcrProvider,
         }
         self._provider_cache: dict[str, OcrProvider] = {}
 

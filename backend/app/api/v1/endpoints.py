@@ -418,12 +418,16 @@ def _build_recognition_debug(draft: Draft) -> Optional[RecognitionDebug]:
     llm_run = draft.last_llm_run
     if not ocr_run and not llm_run:
         return None
+    separated = draft.current_content if isinstance(draft.current_content, dict) else {}
     return RecognitionDebug(
         ocr_provider=ocr_run.provider if ocr_run else None,
         ocr_raw_text=_extract_ocr_raw_text(draft, ocr_run),
         llm_cleaned_text=_extract_llm_cleaned_text(draft, llm_run),
         ocr_error=_run_error(ocr_run.error_code, ocr_run.error_message) if ocr_run else None,
         llm_error=_run_error(llm_run.error_code, llm_run.error_message) if llm_run else None,
+        handwriting_annotations=separated.get("handwriting_annotations", []),
+        uncertainties=separated.get("uncertainties", []),
+        metadata_warning=separated.get("metadata_warning"),
     )
 
 
@@ -848,6 +852,14 @@ def update_draft(
 
     current_content = dict(draft.current_content or {})
     current_content["text"] = normalized_content
+    if draft.last_ocr_run and draft.last_ocr_run.provider == "vision":
+        # Same-call metadata describes the recognized statement, not a manual edit.
+        # Keep the OCR run and annotation provenance; never recover its old metadata on save.
+        current_content["knowledge_tags"] = []
+        warning = "正文已修改，原识别知识点、题型和难度已失效，需人工确认；可先保存正文，再在题库中补充。"
+        current_content["metadata_warning"] = warning
+        current_content["warning"] = warning
+        _apply_draft_metadata(draft, {})
     draft.current_content = current_content
     db.add(
         DraftEvent(
@@ -895,6 +907,13 @@ def recognize_draft(
         commit=True,
     )
 
+    # A manual retry must not associate the new image run with old cleanup/metadata.
+    draft.last_llm_run = None
+    draft.last_llm_run_id = None
+    _apply_draft_metadata(draft, {})
+    draft.current_content = None
+    is_vision = draft_ocr_service.provider_name == "vision"
+
     file_path = _asset_file_path(asset)
     cropped_temp_path = None
     try:
@@ -931,7 +950,8 @@ def recognize_draft(
             for box in layout_result.boxes
         ]
         try:
-            masked_temp_path = write_masked_image(recognition_image_path, layout_result.boxes)
+            if not is_vision:
+                masked_temp_path = write_masked_image(recognition_image_path, layout_result.boxes)
         except Exception:
             # Masking failure degrades to unmasked OCR instead of leaking the
             # question crop temp file (it is always removed in the OCR finally).
@@ -995,6 +1015,31 @@ def recognize_draft(
     db.add(ocr_run)
     db.flush()
     draft.last_ocr_run_id = ocr_run.id
+
+    if is_vision:
+        summary = ocr_result.get("raw_response_summary") or {}
+        transcription = summary.get("transcription") or {}
+        success = bool(ocr_result.get("success"))
+        warning = transcription.get("metadata_warning") if success else None
+        _apply_draft_metadata(draft, transcription if success else {})
+        draft.current_content = {
+            "text": raw_content if success else "", "ocr_text": raw_content,
+            "recognition_mode": "vision", "knowledge_tags":
+            _normalize_llm_tags(transcription.get("knowledge_tags", [])) if success else [],
+            "handwriting_annotations": transcription.get("handwriting_annotations", []),
+            "uncertainties": transcription.get("uncertainties", []),
+            "metadata_warning": warning, "warning": warning,
+            "error": ocr_result.get("error"), "error_type": ocr_result.get("error_type"),
+        }
+        transition_draft_status(
+            db, draft, DraftStatus.DRAFT_READY if success else DraftStatus.FAILED,
+            DraftEventType.RECOGNIZE_SUCCESS if success else DraftEventType.RECOGNIZE_FAIL,
+            metadata={"ocr_run_id": ocr_run.id, "llm_run_id": None,
+                      "recognition_mode": "vision", "metadata_warning": warning}, commit=True,
+        )
+        detail = _build_draft_detail(draft)
+        return DraftRecognizeResponse(**detail.model_dump(), success=success, warning=warning,
+                                      error=ocr_result.get("error"), error_type=ocr_result.get("error_type"))
 
     if not ocr_result.get("success"):
         draft.current_content = {
@@ -1363,6 +1408,7 @@ def save_draft_to_bank(
 
     content_text = _content_text(draft.current_content).strip()
     knowledge_tags = [tag.model_dump() for tag in _content_tags(draft.current_content)]
+    is_vision = bool(draft.last_ocr_run and draft.last_ocr_run.provider == "vision")
     figure_bboxes = _normalize_draft_figure_bboxes(
         payload.resolved_figure_bboxes() if payload else []
     )
@@ -1383,7 +1429,16 @@ def save_draft_to_bank(
             user_id=current_user.id,
             content=content_text,
             knowledge_tags=knowledge_tags,
-            metadata_status="pending",
+            metadata_status=("failed" if draft.current_content.get("metadata_warning") else "ready")
+            if is_vision else "pending",
+            metadata_error=draft.current_content.get("metadata_warning") if is_vision else None,
+            question_type=draft.question_type if is_vision else None,
+            difficulty_level=draft.difficulty_level if is_vision else None,
+            difficulty_label=draft.difficulty_label if is_vision else None,
+            difficulty_confidence=draft.difficulty_confidence if is_vision else None,
+            difficulty_reason=draft.difficulty_reason if is_vision else None,
+            difficulty_model=(draft.last_ocr_run.response_raw_json.get("raw_response_summary", {}).get("model"))
+            if is_vision and draft.difficulty_level is not None else None,
             origin_image=(draft.source_asset.normalized_path or draft.source_asset.original_path)
             if draft.source_asset
             else None,
@@ -1442,7 +1497,8 @@ def save_draft_to_bank(
         db.refresh(question)
         db.refresh(revision)
         db.refresh(draft)
-        background_tasks.add_task(evaluate_question_metadata_task, question.id)
+        if not is_vision:
+            background_tasks.add_task(evaluate_question_metadata_task, question.id)
 
         detail = _build_draft_detail(draft)
         return DraftSaveToBankResponse(

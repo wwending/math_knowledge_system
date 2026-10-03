@@ -1,0 +1,21 @@
+{
+  "evidence": "Issue 25 approved Draft40 offline reference; expected transcription, not a captured live response or accuracy claim",
+  "cases": [
+    {
+      "statement": "关于 $x$ 的方程 $ax^2+2x+1=0$ 有两个不相等的实数根，则 $a$ 的取值范围是（ ）\nA. $a<1$\nB. $a\\leq1$\nC. $a\\leq1$ 且 $a\\ne0$\nD. $a<1$ 且 $a\\ne0$",
+      "handwriting_annotations": ["手写判别式计算"],
+      "uncertainties": [],
+      "knowledge_tags": ["一元二次方程", "判别式"],
+      "question_type": "single_choice",
+      "difficulty": {"level": 2, "label": "基础应用", "confidence": 0.8, "reason": "方程根与参数条件"}
+    },
+    {
+      "statement": "关于 $x$ 的一元二次方程 $mx^2-(m+2)x+2=0$，其中 $m\\ne0$。",
+      "handwriting_annotations": ["$\\Delta\\geq0$"],
+      "uncertainties": ["请核对题目末尾是否完整"],
+      "knowledge_tags": ["一元二次方程"],
+      "question_type": "solution",
+      "difficulty": {"level": 2, "label": "基础应用", "confidence": 0.7, "reason": "含参数的方程"}
+    }
+  ]
+}

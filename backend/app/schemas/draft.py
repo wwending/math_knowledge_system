@@ -29,6 +29,9 @@ class RecognitionDebug(BaseModel):
     llm_cleaned_text: Optional[str] = None
     ocr_error: Optional[str] = None
     llm_error: Optional[str] = None
+    handwriting_annotations: list[str] = Field(default_factory=list)
+    uncertainties: list[str] = Field(default_factory=list)
+    metadata_warning: Optional[str] = None
 
 
 class RecognitionQualityWarning(BaseModel):

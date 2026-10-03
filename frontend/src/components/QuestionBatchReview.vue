@@ -9,6 +9,15 @@
       <header><h4>第 {{ job.number }} 题</h4><el-tag :type="tagType(job.status)">{{ statusText(job.status) }}</el-tag></header>
       <el-alert v-if="job.error" :title="job.error" type="error" :closable="false" show-icon />
       <el-alert v-if="job.warning" :title="job.warning" type="warning" :closable="false" show-icon />
+      <el-alert v-if="job.recognitionDebug?.metadata_warning" :title="job.recognitionDebug.metadata_warning" type="warning" :closable="false" />
+      <section v-if="job.recognitionDebug?.uncertainties?.length">
+        <h5>不确定内容（请对照原图确认）</h5>
+        <ul><li v-for="(item, index) in job.recognitionDebug.uncertainties" :key="index">{{ item }}</li></ul>
+      </section>
+      <section v-if="job.recognitionDebug?.handwriting_annotations?.length">
+        <h5>手写批注（不进入保存题干）</h5>
+        <ul><li v-for="(item, index) in job.recognitionDebug.handwriting_annotations" :key="index">{{ item }}</li></ul>
+      </section>
       <div v-if="isBusy(job.status)" v-loading="true" class="batch-loading" aria-live="polite">正在处理第 {{ job.number }} 题…</div>
       <template v-else-if="job.status === 'draft_ready' || job.status === 'saved_to_bank'">
         <div class="batch-result-grid">
