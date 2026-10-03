@@ -112,3 +112,16 @@ if (failures.length > 0) {
 }
 
 console.log('List panel UX contract passed.')
+
+// Issue 150: only detail dialogs contain region images, never list cards.
+for (const [name, source] of [['BankPanel', bankSource], ['HistoryPanel', historySource]]) {
+  const listTemplate = source.slice(0, source.indexOf('<el-dialog'))
+  requireAbsent(listTemplate, /<el-image|<img|thumb-box/, `${name} list must contain no images`)
+  requireAbsent(source, /syncItems|watch\(list/, `${name} list must not trigger image loading`)
+  requireMatch(source, /-webkit-line-clamp:\s*3/, `${name} summaries have at most three lines`)
+  requireMatch(source, /boundedGet\(axios/, `${name} list requests must be bounded`)
+  requireMatch(source, /listController\?\.abort\(\)/, `${name} cancels superseded list requests`)
+  requireMatch(source, /重试列表/, `${name} failed lists support manual retry`)
+  requireMatch(source, /重试图片/, `${name} failed images support manual retry`)
+}
+if (failures.length) throw new Error(failures.join('\n'))

@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 
 from app.api.v1.auth import require_active_user
 from app.core.config import settings
+from app.services.question_image_cache import cached_question_image
 from app.core.constants import (
     ALLOWED_ASSET_MIME_TYPES,
     MAX_ASSET_SIZE_BYTES,
@@ -2055,7 +2056,14 @@ def get_question_image(
     if crop_bbox is None:
         return FileResponse(file_path)
     try:
-        content, media_type = render_draft_image(file_path, crop_bbox)
+        content, media_type = cached_question_image(
+            file_path, crop_bbox,
+            root=settings.UPLOAD_DIR_PATH / ".question-image-cache",
+            render=render_draft_image,
+        )
+    except TimeoutError:
+        logger.warning("Question image cache busy question_id={}", question.id)
+        raise HTTPException(status_code=503, detail="图片服务繁忙，请重试", headers={"Retry-After": "1", "Cache-Control": "no-store"})
     except Exception:
         logger.warning("Invalid or unreadable question crop question_id={}", question.id)
         raise HTTPException(status_code=404, detail=NOT_FOUND_MESSAGE)

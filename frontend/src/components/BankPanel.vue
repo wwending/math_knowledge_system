@@ -51,6 +51,9 @@
       class="limit-alert"
     />
 
+    <el-alert v-if="listError" :title="listError" type="error" :closable="false" show-icon>
+      <el-button @click="fetchQuestions">重试列表</el-button>
+    </el-alert>
     <el-skeleton v-if="loading" :rows="4" animated />
 
     <div v-else-if="filteredList.length === 0" class="empty-state">
@@ -74,20 +77,6 @@
               :model-value="isQuestionSelected(item.id)"
               @change="toggleQuestionSelection(item.id)"
             />
-          </div>
-
-          <div class="thumb-box" v-if="hasImageField(item)">
-            <el-image
-              :src="getImageUrl(item)"
-              fit="cover"
-              class="thumb-img"
-            >
-              <template #error>
-                <div class="image-slot">
-                  <el-icon><icon-picture /></el-icon>
-                </div>
-              </template>
-            </el-image>
           </div>
 
           <div class="info-box">
@@ -142,13 +131,17 @@
       top="5vh"
       destroy-on-close
     >
-      <el-skeleton v-if="detailLoading" :rows="6" animated />
-
-      <div class="detail-layout" v-else-if="currentItem">
+      <div class="detail-layout" v-if="currentItem">
         <div class="detail-left">
           <div class="image-wrapper" v-if="hasImageField(currentItem)">
+            <div v-if="imageLoadingFor(currentItem)">图片加载中…</div>
+            <el-alert v-if="imageErrorFor(currentItem)" :title="imageErrorFor(currentItem)" type="error" :closable="false">
+              <el-button @click="retryQuestionImage(currentItem)">重试图片</el-button>
+            </el-alert>
             <el-image
               :src="getImageUrl(currentItem)"
+              v-if="getImageUrl(currentItem)"
+              @error="markImageFailed(currentItem)"
               :preview-src-list="previewSources"
               fit="scale-down"
               class="detail-image"
@@ -164,6 +157,7 @@
         </div>
 
         <div class="detail-right">
+          <el-skeleton v-if="detailLoading" :rows="6" animated />
           <div class="detail-actions">
             <el-button v-if="activeBankTab === 'active'" type="primary" @click="editQuestion(currentItem)">编辑题目</el-button>
             <el-button v-if="activeBankTab === 'trash'" type="success" @click="restoreQuestion(currentItem)">恢复题目</el-button>
@@ -189,8 +183,9 @@
             </el-tag>
             <span v-if="getTags(displayItem).length === 0" class="empty-text">暂无知识点</span>
           </div>
-          <el-alert v-if="detailError" :title="detailError" type="error" :closable="false" show-icon />
-          <el-tabs v-else v-model="activeDetailSection" class="detail-section-tabs">
+          <el-alert v-if="detailError" :title="detailError" type="error" :closable="false" show-icon><el-button @click="openDetail(currentItem)">重试详情</el-button></el-alert>
+          <el-button v-if="Object.values(figureRegistry.errors).some(Boolean)" @click="figureRegistry.retryFailed()">重试配图</el-button>
+          <el-tabs v-if="!detailError" v-model="activeDetailSection" class="detail-section-tabs">
             <el-tab-pane v-for="section in detailSections" :key="section.value" :label="section.label" :name="section.value">
               <QuestionDocumentSectionView
                 :section="detailSectionData(section.value)"
@@ -250,8 +245,9 @@
 <script setup>
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import axios from 'axios'
+import { boundedGet } from '../utils/boundedRequest.mjs'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Refresh, Search, Picture as IconPicture } from '@element-plus/icons-vue'
+import { Refresh, Search } from '@element-plus/icons-vue'
 import { API_V1_BASE_URL } from '../config/api'
 import { createQuestionImageLoader } from '../utils/questionImageLoader'
 import { beginQuestionListRequest, acceptsQuestionListResponse } from '../utils/questionBankListLifecycle.mjs'
@@ -269,6 +265,8 @@ const emit = defineEmits(['paper-created', 'go-upload'])
 const questionListLimit = 100
 
 const loading = ref(false)
+const listError = ref('')
+let listController = null
 const activeBankTab = ref('active')
 const detailLoading = ref(false)
 const detailRequestToken = ref(0)
@@ -297,13 +295,14 @@ const paperForm = ref({
 })
 
 // 题目图片经鉴权接口以 blob 方式加载（#44），不再使用公开静态 URL。
-const { hasImageField, ensure: ensureQuestionImage, syncItems, imageUrlFor, remove: imageLoaderRemove, dispose: disposeImageLoader } = createQuestionImageLoader()
+const { hasImageField, ensure: ensureQuestionImage, imageUrlFor, retry: retryQuestionImage, errorFor: imageErrorFor, loadingFor: imageLoadingFor, markFailed: markImageFailed, remove: imageLoaderRemove, dispose: disposeImageLoader } = createQuestionImageLoader()
 const figureRegistry = createQuestionFigurePreviewRegistry()
 const figureUrlFor = (figureId) => figureRegistry.urlFor(figureId)
 const figureErrorFor = (figureId) => figureRegistry.errorFor(figureId)
 
 let searchTimer = null
-watch(list, (items) => syncItems(items))
+let detailController = null
+
 watch(keyword, (value) => {
   replaceQueryValues(router, route, { bank_q: value })
   if (searchTimer) clearTimeout(searchTimer)
@@ -332,6 +331,8 @@ const syncVisibleFigures = () => {
 const resetDetailState = () => {
   detailRequestToken.value += 1
   figureRegistry.dispose()
+  disposeImageLoader()
+  detailController?.abort()
   currentItem.value = null
   currentDocument.value = null
   detailLoading.value = false
@@ -343,6 +344,9 @@ watch(dialogVisible, (visible) => { if (!visible) resetDetailState() })
 
 onBeforeUnmount(() => {
   if (searchTimer) clearTimeout(searchTimer)
+  listRequestToken.value += 1
+  listController?.abort()
+  detailController?.abort()
   detailRequestToken.value += 1
   figureRegistry.dispose()
   disposeImageLoader()
@@ -361,7 +365,7 @@ const consumePendingQuestionDetail = async (expectedToken = listRequestToken.val
   let item = list.value.find((question) => question.id === id)
   if (!item) {
     try {
-      const response = await axios.get(`${API_BASE}/questions/${id}`)
+      const response = await boundedGet(axios, `${API_BASE}/questions/${id}`, { signal: listController?.signal })
       if (!acceptsQuestionListResponse(expectedToken, listRequestToken.value) || activeBankTab.value !== 'active') return
       item = response.data
     } catch (error) {
@@ -387,12 +391,16 @@ const fetchQuestions = async () => {
   const token = request.generation
   listRequestToken.value = token
   list.value = request.items
+  listController?.abort()
+  const controller = new AbortController()
+  listController = controller
+  listError.value = ''
   loading.value = true
   try {
     const params = new URLSearchParams({ limit: String(questionListLimit) })
     if (keyword.value.trim()) params.set('q', keyword.value.trim())
     const path = activeBankTab.value === 'trash' ? 'questions/trash' : 'questions'
-    const res = await axios.get(`${API_BASE}/${path}?${params}`)
+    const res = await boundedGet(axios, `${API_BASE}/${path}?${params}`, { signal: controller.signal })
     if (acceptsQuestionListResponse(token, listRequestToken.value)) {
       list.value = res.data || []
       await consumePendingQuestionDetail(token)
@@ -400,7 +408,7 @@ const fetchQuestions = async () => {
   } catch (error) {
     if (acceptsQuestionListResponse(token, listRequestToken.value)) {
       console.error(error)
-      ElMessage.error('获取题目列表失败')
+      listError.value = error.code === 'ECONNABORTED' ? '题目列表加载超时，请重试' : '获取题目列表失败，请重试'
     }
   } finally {
     if (acceptsQuestionListResponse(token, listRequestToken.value)) loading.value = false
@@ -422,6 +430,8 @@ const openDetail = async (item) => {
   const token = ++detailRequestToken.value
   const openingTab = activeBankTab.value
   dialogVisible.value = true
+  detailController = new AbortController()
+  const controller = detailController
   detailLoading.value = true
   currentItem.value = item
   ensureQuestionImage(item)
@@ -429,7 +439,7 @@ const openDetail = async (item) => {
   activeDetailSection.value = getQuestionSearchMatch(item, keyword.value).primarySection
   try {
     const endpoint = openingTab === 'trash' ? `${API_BASE}/questions/trash/${item.id}` : `${API_BASE}/questions/${item.id}/document`
-    const res = await axios.get(endpoint)
+    const res = await boundedGet(axios, endpoint, { signal: controller.signal })
     if (token !== detailRequestToken.value || !dialogVisible.value || currentItem.value?.id !== item.id || activeBankTab.value !== openingTab) return 'stale'
     if (openingTab === 'trash') currentItem.value = res.data
     else currentDocument.value = res.data
@@ -595,7 +605,7 @@ const formatDifficultyStatus = (item) => {
 const getPreviewText = (text) => {
   if (!text) return '暂无识别内容'
   const clean = text.replace(/[#*`$]/g, '')
-  return clean.length > 60 ? `${clean.slice(0, 60)}…` : clean
+  return clean
 }
 
 const formatTime = (value) => formatDateTime(value)
@@ -722,8 +732,12 @@ onMounted(() => {
   font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 520px;
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow-wrap: anywhere;
 }
 
 .tags-row,

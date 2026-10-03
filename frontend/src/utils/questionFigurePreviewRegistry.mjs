@@ -1,13 +1,18 @@
+import { boundedGet, IMAGE_TIMEOUT_MS } from './boundedRequest.mjs'
+
 export function createQuestionFigurePreviewRegistryCore({ http, urlApi, buildFigureUrl, createCropBlob, state = {} }) {
   const urls = state.urls || (state.urls = {})
   const errors = state.errors || (state.errors = {})
   const generations = new Map()
   const fingerprints = new Map()
   const pending = new Set()
+  const controllers = new Map()
+  let lastRequest = null
   let epoch = 0
   let wanted = new Set()
 
   const revoke = (id) => {
+    controllers.get(id)?.abort(); controllers.delete(id); pending.delete(id)
     generations.set(id, (generations.get(id) || 0) + 1)
     if (urls[id]) urlApi.revokeObjectURL(urls[id])
     delete urls[id]; delete errors[id]; fingerprints.delete(id)
@@ -22,34 +27,45 @@ export function createQuestionFigurePreviewRegistryCore({ http, urlApi, buildFig
   const load = (questionId, figure, source) => {
     const id = figure.id
     const fingerprint = figure.kind === 'crop' ? `crop:${figure.crop_bbox.join(',')}:${source?.generation || 0}` : `existing:${questionId}`
-    if (fingerprints.get(id) === fingerprint && (urls[id] !== undefined || pending.has(id))) return
+    if (fingerprints.get(id) === fingerprint && (urls[id] !== undefined || pending.has(id) || errors[id])) return
     revoke(id); fingerprints.set(id, fingerprint)
     pending.add(id)
+    const controller = new AbortController()
+    controllers.set(id, controller)
     const generation = (generations.get(id) || 0) + 1
     const requestEpoch = epoch
     generations.set(id, generation)
     const task = figure.kind === 'crop'
       ? createCropBlob(source, figure.crop_bbox)
-      : http.get(buildFigureUrl(questionId, id), { responseType: 'blob' }).then((response) => response.data)
+      : boundedGet(http, buildFigureUrl(questionId, id), { responseType: 'blob', timeout: IMAGE_TIMEOUT_MS, signal: controller.signal }).then((response) => response.data)
     Promise.resolve(task).then((blob) => store(id, requestEpoch, generation, fingerprint, blob)).catch(() => {
       if (epoch === requestEpoch && wanted.has(id) && generations.get(id) === generation) errors[id] = '配图预览加载失败'
     }).finally(() => {
-      if (epoch === requestEpoch && generations.get(id) === generation) pending.delete(id)
+      if (epoch === requestEpoch && generations.get(id) === generation) { pending.delete(id); controllers.delete(id) }
     })
   }
   const reconcile = ({ questionId, figures = [], reachableIds, source }) => {
+    lastRequest = { questionId, figures, reachableIds, source }
     wanted = new Set(reachableIds || figures.map((figure) => figure.id))
+    ;[...fingerprints.keys()].forEach((id) => { if (!wanted.has(id)) revoke(id) })
     Object.keys(urls).forEach((id) => { if (!wanted.has(id)) revoke(id) })
     Object.keys(errors).forEach((id) => { if (!wanted.has(id)) revoke(id) })
     figures.filter((figure) => wanted.has(figure.id)).forEach((figure) => load(questionId, figure, source))
   }
   const dispose = () => {
     epoch += 1
+    lastRequest = null
     wanted = new Set()
     ;[...new Set([...Object.keys(urls), ...fingerprints.keys()])].forEach(revoke)
     pending.clear()
   }
-  return { urls, errors, reconcile, urlFor: (id) => urls[id] || '', errorFor: (id) => errors[id] || '', revoke, dispose }
+  const retryFailed = () => {
+    const request = lastRequest
+    if (!request) return
+    Object.keys(errors).filter((id) => errors[id]).forEach(revoke)
+    reconcile(request)
+  }
+  return { urls, errors, retryFailed, reconcile, urlFor: (id) => urls[id] || '', errorFor: (id) => errors[id] || '', revoke, dispose }
 }
 
 export const cropBlobFromImage = async (source, bbox) => {
