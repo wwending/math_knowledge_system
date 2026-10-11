@@ -117,7 +117,12 @@ console.log('List panel UX contract passed.')
 for (const [name, source] of [['BankPanel', bankSource], ['HistoryPanel', historySource]]) {
   const listTemplate = source.slice(0, source.indexOf('<el-dialog'))
   requireAbsent(listTemplate, /<el-image|<img|thumb-box/, `${name} list must contain no images`)
-  requireAbsent(source, /syncItems|watch\(list/, `${name} list must not trigger image loading`)
+  requireAbsent(source, /syncItems/, `${name} list must not trigger bulk image loading`)
+  // A list watcher may prune text previews; it must never fetch list images.
+  const listWatchers = source.match(/watch\(list,[\s\S]*?\}\s*\)/g) || []
+  for (const watcher of listWatchers) {
+    requireAbsent(watcher, /ensureQuestionImage|ensureImage|imageLoader|axios|boundedGet/, `${name} list watcher must not load images`)
+  }
   requireMatch(source, /-webkit-line-clamp:\s*3/, `${name} summaries have at most three lines`)
   requireMatch(source, /boundedGet\(axios/, `${name} list requests must be bounded`)
   requireMatch(source, /listController\?\.abort\(\)/, `${name} cancels superseded list requests`)

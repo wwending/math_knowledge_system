@@ -88,9 +88,7 @@
               <span class="difficulty-text">难度：{{ formatDifficultyStatus(item) }}</span>
               <span class="time">{{ activeBankTab === 'trash' ? `删除：${formatTime(item.deleted_at)}｜到期：${formatTime(item.purge_at)}` : formatTime(item.created_at) }}</span>
             </div>
-            <div class="preview-text">
-              {{ getPreviewText(getQuestionPreviewSource(item, keyword)) }}
-            </div>
+            <div class="preview-text" v-html="listPreviews.get(item.id)"></div>
             <div v-if="keyword.trim()" class="search-hit-row" aria-label="搜索命中位置">
               <el-tag v-for="location in searchMatchFor(item).locations" :key="location" size="small" type="primary" effect="plain">
                 命中{{ questionSearchLocationLabel(location) }}
@@ -245,6 +243,8 @@
 <script setup>
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import axios from 'axios'
+import { createQuestionListPreviewCache } from '../utils/questionListPreview.mjs'
+import '../styles/questionListPreview.css'
 import { boundedGet } from '../utils/boundedRequest.mjs'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh, Search } from '@element-plus/icons-vue'
@@ -575,6 +575,10 @@ const createPaper = async () => {
 
 const searchMatchFor = (item) => getQuestionSearchMatch(item, keyword.value)
 const filteredList = computed(() => list.value.filter((item) => searchMatchFor(item).matched))
+const previewCache = createQuestionListPreviewCache()
+const listPreviews = computed(() => previewCache.sync(filteredList.value, (item) => getQuestionPreviewSource(item, keyword.value)))
+watch(list, () => { previewCache.clear() }, { flush: 'sync' })
+onBeforeUnmount(() => previewCache.clear())
 const getTags = (item) => normalizeQuestionTags(item)
 
 const questionTypeLabels = {
@@ -601,13 +605,6 @@ const formatDifficultyStatus = (item) => {
   if (status === 'ready' && item?.difficulty_level) return formatDifficultyStars(item.difficulty_level)
   return formatDifficultyStars(item?.difficulty_level)
 }
-
-const getPreviewText = (text) => {
-  if (!text) return '暂无识别内容'
-  const clean = text.replace(/[#*`$]/g, '')
-  return clean
-}
-
 const formatTime = (value) => formatDateTime(value)
 
 const handleGoUpload = () => {

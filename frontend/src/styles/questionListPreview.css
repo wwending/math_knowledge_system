@@ -1,0 +1,16 @@
+/* Shared list-only geometry: tall fractions/tables cannot expand a card past three lines. */
+.preview-text {
+  line-height: 1.6;
+  max-height: 4.8em;
+}
+.preview-text p,
+.preview-text blockquote,
+.preview-text pre,
+.preview-text ul,
+.preview-text ol {
+  margin: 0;
+}
+.preview-text .katex-display {
+  display: inline;
+  margin: 0;
+}

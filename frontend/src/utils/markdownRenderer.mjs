@@ -165,7 +165,7 @@ const markdownItKatex = (md) => {
   }
 }
 
-export const createMarkdownRenderer = () => {
+export const createMarkdownRenderer = ({ summary = false } = {}) => {
   const md = new MarkdownIt({
     html: false,
     breaks: true,
@@ -176,7 +176,45 @@ export const createMarkdownRenderer = () => {
   // The question bank has no data-URL use case, including inline data images.
   md.validateLink = (url) => !/^\s*data:/i.test(url) && validateMarkdownItLink(url)
 
-  return md.use(markdownItKatex)
+  md.use(markdownItKatex)
+  if (summary) {
+    // Summary display formulas use the same inline token boundaries as the excerpt.
+    md.block.ruler.disable('math_block')
+    // Suppress at token render time, including images nested inside link labels.
+    md.renderer.rules.image = () => ''
+    md.renderer.rules.link_open = () => ''
+    md.renderer.rules.link_close = () => ''
+    const summaryMath = (tokens, index) => {
+      const token = tokens[index]
+      try {
+        return katex.renderToString(token.content, {
+          ...KATEX_OPTIONS, throwOnError: true, displayMode: false
+        })
+      } catch {
+        return md.utils.escapeHtml(`${token.markup}${token.content}${token.closingMarkup || token.markup}`)
+      }
+    }
+    md.renderer.rules.math_inline = summaryMath
+    md.renderer.rules.math_block = summaryMath
+    md.inline.ruler.before('escape', 'summary_delimited_math', (state, silent) => {
+      const start = state.pos
+      const opening = state.src.slice(start, start + 2)
+      if (!['$$', '\\(', '\\['].includes(opening) || isEscaped(state.src, start)) return false
+      const closing = opening === '\\(' ? '\\)' : opening === '\\[' ? '\\]' : '$$'
+      let end = state.src.indexOf(closing, start + 2)
+      while (end >= 0 && isEscaped(state.src, end)) end = state.src.indexOf(closing, end + 2)
+      if (end < 0) return false
+      if (!silent) {
+        const token = state.push('math_inline', 'math', 0)
+        token.content = state.src.slice(start + 2, end)
+        token.markup = opening
+        token.closingMarkup = closing
+      }
+      state.pos = end + 2
+      return true
+    })
+  }
+  return md
 }
 
 const replaceLatexDelimiterPair = (source, opening, closing, markdownDelimiter) => {
