@@ -33,9 +33,7 @@
                <el-tag size="small" type="info">ID: {{ item.id }}</el-tag>
                <span class="time">{{ formatTime(item.created_at) }}</span>
              </div>
-             <div class="preview-text">
-               {{ getPreviewText(item.content) }}
-             </div>
+             <div class="preview-text" v-html="listPreviews.get(item.id)"></div>
              <div class="tags-row">
                 <el-tag 
                   v-for="(tag, idx) in (item.knowledge || []).slice(0, 3)" 
@@ -118,6 +116,8 @@
 <script setup>
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import axios from 'axios'
+import { createQuestionListPreviewCache } from '../utils/questionListPreview.mjs'
+import '../styles/questionListPreview.css'
 import { boundedGet } from '../utils/boundedRequest.mjs'
 import { Refresh } from '@element-plus/icons-vue'
 import { API_V1_BASE_URL } from '../config/api'
@@ -134,6 +134,10 @@ const loading = ref(false)
 const listError = ref('')
 let listController = null
 const list = ref([])
+const previewCache = createQuestionListPreviewCache()
+const listPreviews = computed(() => previewCache.sync(list.value))
+watch(list, () => { previewCache.clear() }, { flush: 'sync' })
+onBeforeUnmount(() => previewCache.clear())
 const dialogVisible = ref(false)
 const currentItem = ref(null)
 
@@ -182,14 +186,6 @@ const openDetail = (item) => {
 
 // 工具函数
 const renderTex = (text) => text ? renderMarkdown(text) : '<span style="color:#767676">暂无内容</span>'
-
-const getPreviewText = (text) => {
-  if (!text) return '暂无识别内容'
-  // 移除 markdown 符号，只取纯文本做预览
-  const clean = text.replace(/[#*`$]/g, '')
-  return clean
-}
-
 const formatTime = (str) => formatDateTime(str)
 
 onMounted(() => {

@@ -2,6 +2,14 @@
 
 说明：本文件按时间倒序记录每轮工作。较早轮次中的“当前主链路”等表述保留为当时历史事实；当前状态以 `docs/STATUS.md` 最新 checkpoint 和较新的 DECISIONS 为准。
 
+## 2026-10-11 Issue #152 列表 LaTeX 安全摘要
+
+- 在专用 `fix/issue-152-list-latex-preview` worktree 接续已认可实现；基线 `a088acd192f4413c6914b01e368d608a5abd3fe7`。列表此前删除 `$` 并以纯文本展示，改为有界安全摘要渲染；保留三行、无图和原文异常兜底。续办修复超长合法公式、公式数量与输入预算被误判为 malformed 的截断，覆盖四类定界符、转义和代码边界；详情 renderer 默认行为不变。
+- 缓存按当前行 ID 和实际截取源变化失效，搜索题干/答案/解析源码直接参与验证；勾选和创建试卷弹窗不重复解析。旧无图 contract 的 blanket `watch(list)` 禁令改为检查图片加载调用，允许文字缓存清理。
+- `frontend/` 的 `node ./tests/question-list-preview.test.mjs`、`node ./tests/question-list-preview-browser.test.mjs`、`npm run test:stage3-contract`、`npm run build` 及根目录显式 `git -C <task-worktree> diff --check` 通过。最初全链命中旧 watcher 断言，更新后并行运行的既有 cropper browser 曾超时，顺序全链重跑通过；未为超时修改 cropper 或业务代码。build 保留既有大 chunk 警告。
+- 同机同一独立 Chrome 154 会话、固定合成样本、实际 Vue 列表组件和摘要源码完成基线/当前五轮对照，三个列表图片请求均为 0。题库/回收站搜索中位数增加约 100–122 ms；勾选和创建试卷弹窗新增 Markdown/KaTeX 调用均为 0。详细测量方法、数据和复现命令见 `docs/validation/issue-152-list-preview.md`。
+- 更新 STATUS 的当前展示及验证状态；无新的架构/API/领域决策，不更新 DECISIONS、API 或安全政策。未改 backend、依赖锁、迁移和部署；未跑 backend 全测、真实账号/服务、OCR/LLM、Staging/Demo 或人工验收。Issue 保持开放，交付 Draft PR，不合并或部署。
+
 ## 2026-10-04 Issue #150 列表图片与高清缓存：本地验证及文档阶段
 
 - 接续已认可的 Issue 改动；基线/HEAD 为 `ed707862a4b5d2f1aced358b642906e1e37b64b5`，工作分支 `perf/issue-150-list-image-loading`。本阶段仅验证和文档，未提交、推送、创建 PR、部署或关闭 Issue。

@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<title>Issue 152 fixed-data list fixture</title>
+<style>body{margin:0;font-family:Arial,sans-serif}#app{width:1180px;margin:auto}</style>
+<div id="app"></div>
+<script type="module">
+import { createApp, nextTick } from 'vue'
+import { createRouter, createMemoryHistory } from 'vue-router'
+import ElementPlus from 'element-plus'
+import 'element-plus/dist/index.css'
+import 'katex/dist/katex.min.css'
+import axios from 'axios'
+import katex from 'katex'
+import MarkdownIt from 'markdown-it'
+import { getQuestionSearchMatch, getQuestionPreviewSource } from '../../src/utils/questionBankSearch.mjs'
+import { getQuestionListExcerpt } from '../../src/utils/questionListPreview.mjs'
+
+const params = new URLSearchParams(location.search)
+const baseline = params.get('version') === 'baseline'
+const panel = params.get('panel') || 'bank'
+const types = [
+  String.raw`题干 正常公式 $x^2\neq 0$ 且 \(x\leqslant 2\)`,
+  '题干 多公式 ' + '$x^2+1$ '.repeat(6),
+  String.raw`题干 异常 $\notACommand{x}$ 与缺定界符 x^2 \neq 0`,
+  '题干 图片 ![x](https://example.invalid/list.png) [![inner](https://example.invalid/nested.png)](https://example.invalid/link)',
+  '题干 长文 ' + '很长的题目文字'.repeat(2000) + '$x^2$',
+  '题干 ' + '文字'.repeat(285) + '$x+123456789$ 尾文',
+  String.raw`题干 块公式 $$\frac{1}{2}$$ 与 \[\begin{matrix}1&2\\3&4\end{matrix}\]`,
+  '题干 未闭合 $x+1 与 `code $literal$`'
+]
+const items = Array.from({ length: panel === 'history' ? 50 : 100 }, (_, index) => ({
+  id: index + 1, content: types[index % types.length],
+  answer: '答案命中 $y^2+1$', analysis: '解析命中 $z^2+2$',
+  knowledge_tags: ['代数'], knowledge: [{label:'代数'}],
+  question_type: 'solution', difficulty_level: 3,
+  image_url: true, has_question_image: true,
+  created_at: '2026-10-01T12:00:00Z', deleted_at: '2026-10-02T12:00:00Z', purge_at: '2026-11-02T12:00:00Z'
+}))
+let apiCalls = []
+axios.defaults.adapter = async (config) => {
+  apiCalls.push(config.url)
+  const url = new URL(config.url, location.origin)
+  let data
+  if (/\/image$/.test(url.pathname)) {
+    data = new Blob([Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII='), char => char.charCodeAt(0))], {type:'image/png'})
+  } else if (/\/document$/.test(url.pathname)) {
+    data = { ...items[0], schema_version: 2, sections: { stem: {blocks:[{id:'stem',kind:'text',markdown:items[0].content}]}, answer:{blocks:[]}, analysis:{blocks:[]} }, figures: [] }
+  } else if (/\/questions\/trash\/\d+$/.test(url.pathname)) {
+    data = items[0]
+  } else {
+    data = items.filter(item => getQuestionSearchMatch(item, url.searchParams.get('q')).matched)
+  }
+  return {data, status:200, statusText:'OK', headers:{}, config}
+}
+let parses = 0
+let renders = 0
+const originalRender = katex.renderToString
+katex.renderToString = (...args) => { parses++; return originalRender(...args) }
+const originalMarkdownRender = MarkdownIt.prototype.render
+MarkdownIt.prototype.render = function (...args) { renders++; return originalMarkdownRender.apply(this, args) }
+const component = panel === 'history'
+  ? (baseline ? await import('../../src/components/__issue152BaselineHistory.vue') : await import('../../src/components/HistoryPanel.vue'))
+  : (baseline ? await import('../../src/components/__issue152BaselineBank.vue') : await import('../../src/components/BankPanel.vue'))
+const frame = () => new Promise(resolve => requestAnimationFrame(resolve))
+const settle = async () => { await nextTick(); await frame(); await frame() }
+const until = async (condition) => {
+  const deadline = performance.now() + 5000
+  while (!condition()) { if (performance.now() > deadline) throw new Error('fixture condition timed out'); await frame() }
+}
+const input = async (text) => {
+  const element = document.querySelector('.search-input input')
+  element.value = text
+  element.dispatchEvent(new Event('input', {bubbles:true}))
+  await nextTick()
+  const rendersAfterUpdate = renders
+  await settle()
+  return rendersAfterUpdate
+}
+const check = (condition, message) => { if (!condition) throw new Error(message) }
+const results = []
+const version = baseline ? 'baseline' : 'current'
+try {
+  for (let iteration = 0; iteration < 5; iteration++) {
+    apiCalls = []
+    const router = createRouter({history:createMemoryHistory(),routes:[{path:'/',component:{template:'<div />'}}]})
+    await router.push('/')
+    const app = createApp(component.default).use(router).use(ElementPlus)
+    let start = performance.now()
+    app.mount('#app')
+    await until(() => document.querySelectorAll('.preview-text').length === items.length)
+    await settle()
+    let mountMs = performance.now() - start
+    if (panel === 'trash') {
+      document.querySelector('#tab-trash').click()
+      await until(() => apiCalls.some(url => url.includes('/questions/trash')) && document.querySelectorAll('.preview-text').length === 100)
+      await settle()
+      mountMs = performance.now() - start
+      document.querySelector('#tab-active').click()
+      await until(() => document.querySelector('#tab-active').getAttribute('aria-selected') === 'true' && document.querySelectorAll('.preview-text').length === 100)
+      document.querySelector('#tab-trash').click()
+      await settle()
+    }
+    const previews = [...document.querySelectorAll('.preview-text')]
+    check(previews.length === items.length, 'fixed row count')
+    check(!document.querySelector('.preview-text img, .preview-text a, .preview-text iframe'), 'list has no resource/link nodes')
+    const listImageRequests = apiCalls.filter(url => /\/image|\/figures/.test(url)).length
+    check(listImageRequests === 0, 'list triggered image API requests')
+    if (!baseline) {
+      check(previews[0].querySelector('.katex'), 'normal formula missing')
+      check(previews[2].textContent.includes(String.raw`$\notACommand{x}$`), 'invalid math original fallback missing')
+      check(previews[7].textContent.includes('$x+1'), 'missing delimiter fallback missing')
+      check(previews.every(element => element.getBoundingClientRect().height <= parseFloat(getComputedStyle(element).lineHeight) * 3 + 1), 'preview exceeds three lines')
+    } else {
+      check(!previews[0].querySelector('.katex'), 'baseline unexpectedly renders math')
+    }
+    let searchMs = null
+    let selectionMs = null
+    let selectionParses = null
+    let detailParses = null
+    let selectionRenders = null
+    let dialogRenders = null
+    const searchRenders = []
+    if (panel !== 'history') {
+      for (const query of ['答案命中', '解析命中', '题干']) {
+        const previousRenders = renders
+        start = performance.now()
+        const rendersAfterUpdate = await input(query)
+        searchMs = (searchMs || 0) + performance.now() - start
+        const preview = document.querySelector('.preview-text')
+        check(preview.textContent.includes(query.slice(0,2)), `stale ${query} summary`)
+        if (!baseline) check(preview.querySelector('.katex'), `search ${query} formula missing`)
+        const sourceRenders = rendersAfterUpdate - previousRenders
+        const expectedRenders = items.filter(item => {
+          const excerpt = getQuestionListExcerpt(getQuestionPreviewSource(item, query))
+          return excerpt.text && !excerpt.plain
+        }).length
+        if (!baseline) check(sourceRenders === expectedRenders, `search ${query} rendered ${sourceRenders}, expected ${expectedRenders} actual-source Markdown calls`)
+        searchRenders.push({query, renders:sourceRenders, expectedRenders:baseline ? 0 : expectedRenders})
+        // Let the real debounce and fixture list response finish.
+        await until(() => apiCalls.some(url => new URL(url, location.origin).searchParams.get('q') === query))
+        await settle()
+      }
+      searchMs /= 3
+      if (panel === 'bank') {
+        const before = parses
+        const beforeRenders = renders
+        start = performance.now()
+        document.querySelector('.select-box .el-checkbox').click()
+        await settle()
+        selectionMs = performance.now() - start
+        selectionParses = parses - before
+        selectionRenders = renders - beforeRenders
+        check(document.querySelector('.selection-summary').textContent.includes('1'), 'selection failed')
+        check(selectionParses === 0, 'selection reparses summaries')
+        check(selectionRenders === 0, 'selection rerenders Markdown summaries')
+        // Dialog with no question content: isolates list re-render from detail rendering.
+        const previous = parses
+        const previousRenders = renders
+        const paperButton = [...document.querySelectorAll('button')].find(button => button.textContent.includes('创建试卷'))
+        paperButton.click()
+        await settle()
+        detailParses = parses - previous
+        dialogRenders = renders - previousRenders
+        check(detailParses === 0, 'paper dialog reparses summaries')
+        check(dialogRenders === 0, 'paper dialog rerenders Markdown summaries')
+        document.querySelector('.el-dialog__headerbtn').click()
+        await settle()
+      }
+      // Check detail still renders math; its separate image request is expected.
+      document.querySelector('.list-item-content').click()
+      await until(() => document.querySelector('.el-dialog .katex'))
+      document.querySelector('.el-dialog__headerbtn').click()
+      await settle()
+      await input('')
+      await until(() => apiCalls.some(url => !new URL(url, location.origin).searchParams.get('q') && url.includes('questions?')))
+      await settle()
+    }
+    results.push({iteration, mountMs, searchMs, selectionMs, selectionParses, selectionRenders, dialogRenders, searchRenders, dialogParses:detailParses, listImageRequests, listFormulaCount:previews.reduce((sum,element) => sum+element.querySelectorAll('.katex').length,0)})
+    if (iteration < 4) { app.unmount(); await settle() }
+  }
+  window.__listPreviewResult = {version,panel,rows:items.length,results, userAgent:navigator.userAgent}
+} catch (error) { window.__listPreviewError = error.stack || String(error) }
+</script>
+</html>
